@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { API_BASE_URL } from '../config';
+import { BRANDING } from '../branding';
 
 export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
   const { reference, amount, nominee, votes } = checkoutData;
@@ -188,7 +189,7 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
             }}>
               <div style={{ display: 'flex', justifycontent: 'space-between', marginBottom: '0.4rem', color: 'var(--text-secondary)' }}>
                 <span>MERCHANT:</span>
-                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>VOTEEQ AWARDS</span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{BRANDING.platformName.toUpperCase()} · ASCES AWARDS {BRANDING.eventYear}</span>
               </div>
               <div style={{ display: 'flex', justifycontent: 'space-between', marginBottom: '0.4rem', color: 'var(--text-secondary)' }}>
                 <span>ORDER REFERENCE:</span>

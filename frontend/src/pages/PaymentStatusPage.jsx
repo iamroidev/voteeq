@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE_URL } from '../config';
+import { BRANDING } from '../branding';
+import TicketQrCode from '../components/TicketQrCode';
 
 export default function PaymentStatusPage({ onBack, onGoToVote, onGoToTickets }) {
   const getQueryParam = (name) => {
@@ -151,8 +153,14 @@ export default function PaymentStatusPage({ onBack, onGoToVote, onGoToTickets })
                     GH₵ {Number(details.amount).toFixed(2)}
                   </div>
                 </div>
+                {type === 'ticket' && details.ticket_code && (
+                  <div style={{ textAlign: 'center', marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px dashed rgba(var(--accent-rgb), 0.2)' }}>
+                    <TicketQrCode value={details.ticket_code} size={140} />
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.75rem' }}>Present this QR code or ticket code at the door.</p>
+                  </div>
+                )}
                 <p style={{ marginTop: '1rem', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                  Voteeq · {new Date(details.timestamp || Date.now()).toLocaleString()}
+                  {BRANDING.platformName} · {BRANDING.eventTitle} · {new Date(details.timestamp || Date.now()).toLocaleString()}
                 </p>
               </div>
             )}
@@ -196,7 +204,7 @@ export default function PaymentStatusPage({ onBack, onGoToVote, onGoToTickets })
             VOTE PORTAL
           </button>
           <button onClick={onGoToTickets} className="luxury-btn secondary" style={{ flex: 1, fontSize: '0.75rem' }}>
-            BUY TICKETS
+            {BRANDING.ticketsEnabled ? 'BUY TICKETS' : 'TICKETS (NOT OPEN)'}
           </button>
         </div>
       </div>

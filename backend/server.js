@@ -1,8 +1,14 @@
 const express = require('express');
+const { formatEventDateForDisplay } = require('./event-date');
+
+function withNormalizedEventDate(row) {
+  if (!row) return row;
+  return { ...row, event_date: formatEventDateForDisplay(row.event_date) };
+}
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const http = require('http');
-const { initDB, getDB, reseedCampusDemo } = require('./database');
+const { initDB, getDB, reseedAscesAwards, reseedCampusDemo } = require('./database');
 const {
   hashPin,
   verifyPin,
@@ -22,6 +28,7 @@ const {
 } = require('./security');
 const { validateGhanaPhone } = require('./phone');
 const { initializePaystackTransaction } = require('./paystack');
+const { calculatePaystackCheckout } = require('./paystack-fees');
 const {
   isValidEmail,
   normalizeEmail,
@@ -129,7 +136,9 @@ async function sendVoteReceipt(voteId) {
       return;
     }
 
-    const amountGHS = vote.channel === 'web' ? vote.vote_count * 1.0 : vote.vote_count * 0.5;
+    const amountGHS = vote.amount_paid != null
+      ? vote.amount_paid
+      : (vote.channel === 'web' ? vote.vote_count * 1.0 : vote.vote_count * 0.5);
     const timestamp = new Date(vote.created_at || Date.now()).toLocaleString();
 
     if (vote.email && isValidEmail(vote.email)) {
@@ -192,7 +201,7 @@ async function sendTicketReceipt(ticketId) {
           to: normalizeEmail(ticket.buyer_email),
           eventTitle: ticket.event_title,
           venue: ticket.event_venue,
-          date: ticket.event_date,
+          date: formatEventDateForDisplay(ticket.event_date),
           buyerName: ticket.buyer_name,
           quantity: ticket.quantity,
           amountGHS: ticket.price_paid,
@@ -474,10 +483,14 @@ app.get('/api/events', async (req, res) => {
           SELECT id, title, description, date, venue, ticket_price, privacy, total_tickets, tickets_sold, created_at
           FROM events ORDER BY date ASC
         `);
+    const normalizedEvents = events.map((event) => ({
+      ...event,
+      date: formatEventDateForDisplay(event.date),
+    }));
     if (!isAdmin) {
       setShortPublicCache(res);
     }
-    res.json(events);
+    res.json(normalizedEvents);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Database error fetching events' });
@@ -486,6 +499,10 @@ app.get('/api/events', async (req, res) => {
 
 // 1c. Purchase event ticket (initialize payment reference)
 app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, res) => {
+  if (process.env.TICKETS_ENABLED !== 'true') {
+    return res.status(503).json({ error: 'Ticket sales are not open yet.' });
+  }
+
   const { event_id, buyer_name, buyer_email, buyer_phone, quantity, access_code } = req.body;
 
   if (!event_id || !buyer_name || !buyer_email || !buyer_phone || !quantity) {
@@ -527,7 +544,8 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     }
 
     const ticketCode = `TIX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-    const totalPrice = event.ticket_price * qty;
+    const ticketPricing = calculatePaystackCheckout(event.ticket_price * qty);
+    const totalPrice = ticketPricing.totalDue;
     const reference = generateReference('tix');
     const statusToken = generateStatusToken(reference);
 
@@ -552,7 +570,8 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
         reference,
         statusToken,
         authorization_url: `/mock-paystack-checkout?reference=${reference}&statusToken=${statusToken}&amount=${totalPrice}&event=${encodeURIComponent(event.title)}&quantity=${qty}&isTicket=true`,
-        isMock: true
+        isMock: true,
+        pricing: ticketPricing,
       });
     }
 
@@ -560,7 +579,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
       const paystackData = await initializePaystackTransaction({
         secretKey,
         email: normalizedBuyerEmail,
-        amountMinor: Math.round(totalPrice * 100),
+        amountMinor: ticketPricing.amountMinor,
         reference,
         callbackUrl: `${frontendBase}/payment-status?token=${statusToken}`,
         metadata: {
@@ -577,6 +596,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
         authorization_url: paystackData.authorization_url,
         access_code: paystackData.access_code,
         isMock: false,
+        pricing: ticketPricing,
       });
     } catch (paystackErr) {
       console.error('Paystack ticket init error:', paystackErr);
@@ -1108,9 +1128,9 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
     return res.status(400).json({ error: `Invalid nomination id or vote count (max ${MAX_VOTES_PER_TRANSACTION})` });
   }
 
-  const amountPerVote = 1; // 1 GHS per vote
-  const totalGHS = amountPerVote * parsedVoteCount;
-  const amountMinor = Math.round(totalGHS * 100);
+  const amountPerVote = 1; // 1 GHS per vote (base, before Paystack fee pass-through)
+  const pricing = calculatePaystackCheckout(amountPerVote * parsedVoteCount);
+  const amountMinor = pricing.amountMinor;
 
   const reference = generateReference('v');
   const statusToken = generateStatusToken(reference);
@@ -1138,9 +1158,18 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
     }
 
     await db.run(`
-      INSERT INTO votes (nominee_id, voter_phone, email, vote_count, channel, payment_reference, status)
-      VALUES (?, ?, ?, ?, 'web', ?, 'pending')
-    `, [nomineeId, phoneCheck.normalized, normalizedEmail, parsedVoteCount, reference]);
+      INSERT INTO votes (nominee_id, voter_phone, email, vote_count, channel, payment_reference, status, amount_base, amount_fee, amount_paid)
+      VALUES (?, ?, ?, ?, 'web', ?, 'pending', ?, ?, ?)
+    `, [
+      nomineeId,
+      phoneCheck.normalized,
+      normalizedEmail,
+      parsedVoteCount,
+      reference,
+      pricing.baseAmount,
+      pricing.processingFee,
+      pricing.totalDue,
+    ]);
 
     const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
 
@@ -1166,6 +1195,10 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
           authorization_url: paystackData.authorization_url,
           access_code: paystackData.access_code,
           isMock: false,
+          pricing,
+          amount: pricing.totalDue,
+          votes: parsedVoteCount,
+          nominee: nominee.name,
         });
       } catch (paystackErr) {
         console.error('Paystack vote init error:', paystackErr);
@@ -1175,8 +1208,12 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
       res.json({
         reference,
         statusToken,
-        authorization_url: `/mock-paystack-checkout?reference=${reference}&statusToken=${statusToken}&amount=${totalGHS}&nominee=${encodeURIComponent(nominee.name)}&votes=${parsedVoteCount}`,
-        isMock: true
+        authorization_url: `/mock-paystack-checkout?reference=${reference}&statusToken=${statusToken}&amount=${pricing.totalDue}&nominee=${encodeURIComponent(nominee.name)}&votes=${parsedVoteCount}`,
+        isMock: true,
+        pricing,
+        amount: pricing.totalDue,
+        votes: parsedVoteCount,
+        nominee: nominee.name,
       });
     }
   } catch (err) {
@@ -1593,7 +1630,7 @@ app.get('/api/admin/tickets', requireAdmin, async (req, res) => {
       JOIN events e ON t.event_id = e.id 
       ORDER BY t.created_at DESC
     `);
-    res.json(tickets);
+    res.json(tickets.map(withNormalizedEventDate));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to load tickets logs' });
@@ -1966,7 +2003,7 @@ SMS/EMAIL TICKET RECEIPT (USSD MOCK)
 Ticket ID: TIX_${ticketRecord.id}_${ticketRecord.ticket_code}
 Event: ${event ? event.title : 'Event'}
 Venue: ${event ? event.venue : 'TBA'}
-Date: ${event ? event.date : 'TBA'}
+Date: ${event ? formatEventDateForDisplay(event.date) : 'TBA'}
 Buyer: ${ticketRecord.buyer_name} (${ticketRecord.buyer_phone})
 Quantity: ${ticketRecord.quantity}
 Price Paid: GH₵ ${ticketRecord.price_paid.toFixed(2)}
@@ -2046,7 +2083,11 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
       details = {
         nominee_name: vote.nominee_name,
         vote_count: vote.vote_count,
-        amount: vote.channel === 'web' ? vote.vote_count * 1.0 : vote.vote_count * 0.5,
+        amount: vote.amount_paid != null
+          ? vote.amount_paid
+          : (vote.channel === 'web' ? vote.vote_count * 1.0 : vote.vote_count * 0.5),
+        amount_base: vote.amount_base,
+        amount_fee: vote.amount_fee,
         timestamp: vote.created_at,
         email: vote.email,
         phone: vote.voter_phone,
@@ -2139,7 +2180,7 @@ app.get('/api/tickets/lookup', rateLimiter(1 * 60 * 1000, 20), async (req, res) 
       `, [reference, email]);
     }
     
-    res.json(tickets);
+    res.json(tickets.map(withNormalizedEventDate));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to lookup tickets' });
@@ -2169,7 +2210,7 @@ app.post('/api/admin/events', requireAdmin, async (req, res) => {
     const result = await db.run(`
       INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-    `, [title, description || '', date || '', venue || '', parseFloat(ticket_price), privacy || 'public', access_code || null, parseInt(total_tickets, 10)]);
+    `, [title, description || '', formatEventDateForDisplay(date, ''), venue || '', parseFloat(ticket_price), privacy || 'public', access_code || null, parseInt(total_tickets, 10)]);
     
     const newEventId = result.lastID;
     await logAdminAction(adminUsername(req), 'CREATE_EVENT', `Created event: ${title} (ID: ${newEventId})`);
@@ -2197,7 +2238,7 @@ app.put('/api/admin/events/:id', requireAdmin, async (req, res) => {
       UPDATE events 
       SET title = ?, description = ?, date = ?, venue = ?, ticket_price = ?, privacy = ?, access_code = ?, total_tickets = ?
       WHERE id = ?
-    `, [title, description || '', date || '', venue || '', parseFloat(ticket_price), privacy || 'public', access_code || null, parseInt(total_tickets, 10), id]);
+    `, [title, description || '', formatEventDateForDisplay(date, ''), venue || '', parseFloat(ticket_price), privacy || 'public', access_code || null, parseInt(total_tickets, 10), id]);
     
     await logAdminAction(adminUsername(req), 'UPDATE_EVENT', `Updated event: ${title} (ID: ${id})`);
     res.json({ success: true, message: 'Event updated successfully!' });
@@ -2207,7 +2248,25 @@ app.put('/api/admin/events/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// Replace legacy demo catalog with campus demo data (admin only)
+// Reset catalog for ASCES Awards '26 — UMaT Tarkwa (admin only)
+app.post('/api/admin/demo/reseed-asces', requireAdmin, async (req, res) => {
+  try {
+    const db = getDB();
+    await reseedAscesAwards(db);
+    await logAdminAction(adminUsername(req), 'RESEED_ASCES_AWARDS', "Reset catalog for ASCES Awards '26");
+    res.json({
+      success: true,
+      message: "ASCES AWARDS '26 loaded with 28 award categories. Add shortlisted nominees when ASCES sends the list.",
+    });
+  } catch (err) {
+    console.error('ASCES reseed error:', err);
+    res.status(500).json({
+      error: err.message || 'Failed to reset for ASCES Awards',
+    });
+  }
+});
+
+// Legacy campus demo catalog (admin only)
 app.post('/api/admin/demo/reseed-campus', requireAdmin, async (req, res) => {
   try {
     const db = getDB();

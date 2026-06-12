@@ -14,7 +14,7 @@ export default function TermsPage({ onBack }) {
         
         <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>1. Acceptance of Terms</h2>
-          <p style={{ marginBottom: '1rem' }}>By accessing or using the Voteeq Awards voting platform ("Platform"), you agree to be bound by these Terms & Conditions. If you do not agree, do not use the Platform.</p>
+          <p style={{ marginBottom: '1rem' }}>By accessing or using the VoteEQ platform for ASCES Awards (&quot;Platform&quot;), you agree to be bound by these Terms &amp; Conditions. If you do not agree, do not use the Platform.</p>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>2. Eligibility</h2>
           <p style={{ marginBottom: '1rem' }}>The Platform is available to individuals aged 13 and above. By using the Platform, you represent that you meet this age requirement and have the legal capacity to enter into these terms.</p>
@@ -28,13 +28,13 @@ export default function TermsPage({ onBack }) {
           </ul>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>4. Payment Terms</h2>
-          <p style={{ marginBottom: '1rem' }}>All payments are processed securely through local Mobile Money channels. Online voting is charged at GH₵ 1.00 per vote. USSD voting is charged at GH₵ 0.50 per vote. You are responsible for any mobile money transaction fees charged by your carrier.</p>
+          <p style={{ marginBottom: '1rem' }}>All payments are processed securely through Paystack (mobile money and card). Online voting is charged at GH₵ 1.00 per vote. Ticket prices are shown at checkout. You are responsible for any carrier or bank fees.</p>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>5. User Accounts</h2>
           <p style={{ marginBottom: '1rem' }}>Nominee dashboard credentials (code and PIN) are confidential. You are responsible for all activity that occurs under your account. Notify us immediately of any unauthorized use.</p>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>6. Limitation of Liability</h2>
-          <p style={{ marginBottom: '1rem' }}>Voteeq Awards shall not be liable for any indirect, incidental, or consequential damages arising from your use of the Platform. Our total liability shall not exceed the amount you paid for votes.</p>
+          <p style={{ marginBottom: '1rem' }}>VoteEQ shall not be liable for any indirect, incidental, or consequential damages arising from your use of the Platform. Our total liability shall not exceed the amount you paid for votes or tickets.</p>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>7. Modifications</h2>
           <p style={{ marginBottom: '1rem' }}>We reserve the right to modify these terms at any time. Changes will be effective immediately upon posting. Continued use of the Platform constitutes acceptance of the modified terms.</p>

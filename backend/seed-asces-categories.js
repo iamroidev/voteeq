@@ -1,0 +1,33 @@
+/** Award categories for ASCES Awards '26 — keep in sync with frontend/src/branding.js */
+const ASCES_AWARD_CATEGORIES = [
+  ['Rising Star Award', 'Outstanding emerging talent in the department'],
+  ['Most Influential Student of the Year (Male)', 'Male student with exceptional community impact'],
+  ['Most Influential Student of the Year (Female)', 'Female student with exceptional community impact'],
+  ['Most Dedicated Executive', 'Executive member with consistent service to ASCES'],
+  ['Course Rep of the Year', 'Exemplary course representative'],
+  ['Student Entrepreneur of the Year', 'Student building or leading a venture'],
+  ['Student Politician of the Year', 'Student leadership in campus politics and advocacy'],
+  ['International Student of the Year', 'Outstanding international student in the department'],
+  ['Personality of the Year', 'Charisma, presence, and positive influence'],
+  ['Best Programmer', 'Technical coding and software excellence'],
+  ['Best UI/UX Talent', 'Design and user experience craft'],
+  ['Social Media Influencer', 'Digital presence and community engagement'],
+  ['Content Creator of the Year', 'Creative content across platforms'],
+  ['Graphic Designer of the Year', 'Visual design and branding work'],
+  ['Photographer of the Year', 'Photography and visual storytelling'],
+  ['Student Artist of the Year', 'Music, performance, or creative arts'],
+  ['Sports Personality of the Year', 'Excellence in sports and athletics'],
+  ['Freshman of the Year', 'Outstanding first-year student'],
+  ['Leadership Excellence', 'Leadership that uplifts peers and the tech community'],
+  ['Innovative Student of the Year', 'Original ideas, research, or invention'],
+  ['Perfect Gentleman of the Year', 'Conduct, character, and respect'],
+  ['Perfect Lady of the Year', 'Conduct, character, and respect'],
+  ['Best Cyber Security Talent', 'Security research, practice, or competition excellence'],
+  ['Best Class of the Year', 'Most united and accomplished class cohort'],
+  ['Best Dancer', 'Dance and performance excellence'],
+  ['Best Female Student in Tech', 'Female student excelling in technology'],
+  ['Best Male Student in Tech', 'Male student excelling in technology'],
+  ['Most Innovative Fresher', 'First-year student with standout innovation'],
+];
+
+module.exports = { ASCES_AWARD_CATEGORIES };

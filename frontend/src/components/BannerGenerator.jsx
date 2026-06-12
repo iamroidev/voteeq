@@ -1,5 +1,169 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../config';
+import { BRANDING, getNomineeVoteUrl, formatVotePricingLine } from '../branding';
+
+const WHATSAPP_STATUS_W = 1080;
+const WHATSAPP_STATUS_H = 1920;
+
+function drawPhotoAreaWatermark(ctx, x, y, w, h) {
+  ctx.save();
+  ctx.globalAlpha = 0.11;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `700 ${Math.round(w * 0.085)}px "Space Grotesk", sans-serif`;
+  ctx.translate(x + w * 0.5, y + h * 0.4);
+  ctx.rotate(-Math.PI / 7);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(BRANDING.platformName.toUpperCase(), 0, 0);
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.58)';
+  ctx.fillRect(x + 20, y + h - 54, 210, 38);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 12px "Space Grotesk", sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`Powered by ${BRANDING.platformName}`, x + 32, y + h - 35);
+  ctx.restore();
+}
+
+function loadCoverPhoto(ctx, photoUrl, imgOffset, photoFilter, x, y, w, h) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      ctx.clip();
+      const imgRatio = img.width / img.height;
+      const targetRatio = w / h;
+      let drawW = w * imgOffset.scale;
+      let drawH = h * imgOffset.scale;
+      if (imgRatio > targetRatio) {
+        drawW = h * imgRatio * imgOffset.scale;
+      } else {
+        drawH = (w / imgRatio) * imgOffset.scale;
+      }
+      const cx = x + w / 2 + imgOffset.x;
+      const cy = y + h / 2 + imgOffset.y;
+      if (photoFilter === 'grayscale') ctx.filter = 'grayscale(100%) contrast(1.15)';
+      else if (photoFilter === 'sepia') ctx.filter = 'sepia(80%) contrast(1.05)';
+      else ctx.filter = 'none';
+      ctx.drawImage(img, cx - drawW / 2, cy - drawH / 2, drawW, drawH);
+      ctx.filter = 'none';
+      ctx.restore();
+      resolve();
+    };
+    img.onerror = reject;
+    img.src = photoUrl;
+  });
+}
+
+async function buildWhatsAppStatusCanvas({ photoUrl, imgOffset, photoFilter, nominee, accent, bgStyle, backgroundOptions, shareUrl }) {
+  const canvas = document.createElement('canvas');
+  canvas.width = WHATSAPP_STATUS_W;
+  canvas.height = WHATSAPP_STATUS_H;
+  const ctx = canvas.getContext('2d');
+  const activeBg = backgroundOptions.find((b) => b.id === bgStyle) || backgroundOptions[0];
+  const photoH = Math.round(WHATSAPP_STATUS_H * 0.58);
+  const panelY = photoH;
+
+  ctx.fillStyle = '#141312';
+  ctx.fillRect(0, 0, WHATSAPP_STATUS_W, photoH);
+  if (photoUrl) {
+    await loadCoverPhoto(ctx, photoUrl, imgOffset, photoFilter, 0, 0, WHATSAPP_STATUS_W, photoH);
+    drawPhotoAreaWatermark(ctx, 0, 0, WHATSAPP_STATUS_W, photoH);
+  } else {
+    ctx.fillStyle = '#2a2927';
+    ctx.fillRect(0, 0, WHATSAPP_STATUS_W, photoH);
+    ctx.fillStyle = '#8c8273';
+    ctx.font = '400 28px "Playfair Display", serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('UPLOAD PORTRAIT PHOTO', WHATSAPP_STATUS_W / 2, photoH / 2);
+    ctx.textAlign = 'left';
+  }
+
+  const fade = ctx.createLinearGradient(0, photoH - 140, 0, photoH);
+  fade.addColorStop(0, 'transparent');
+  fade.addColorStop(1, activeBg.bg);
+  ctx.fillStyle = fade;
+  ctx.fillRect(0, photoH - 140, WHATSAPP_STATUS_W, 140);
+
+  ctx.fillStyle = activeBg.bg;
+  ctx.fillRect(0, panelY, WHATSAPP_STATUS_W, WHATSAPP_STATUS_H - panelY);
+
+  const { text: textPrimary, secondaryText: textSecondary } = activeBg;
+
+  ctx.fillStyle = accent;
+  ctx.fillRect(48, panelY + 32, 100, 5);
+
+  ctx.fillStyle = textSecondary;
+  ctx.font = '700 20px "Space Grotesk", sans-serif';
+  ctx.fillText(`${BRANDING.eventTitle.toUpperCase()} // OFFICIAL NOMINEE`, 48, panelY + 76);
+
+  ctx.fillStyle = textPrimary;
+  ctx.font = '400 68px "Playfair Display", serif';
+  const name = nominee.name.toUpperCase();
+  ctx.fillText(name.length > 16 ? `${name.slice(0, 14)}…` : name, 48, panelY + 158);
+
+  ctx.fillStyle = textSecondary;
+  ctx.font = '700 18px "Space Grotesk", sans-serif';
+  ctx.fillText('CATEGORY', 48, panelY + 204);
+  ctx.fillStyle = accent;
+  ctx.font = '400 34px "Playfair Display", serif';
+  let cat = (nominee.category_name || 'Award category').toUpperCase();
+  if (cat.length > 30) cat = `${cat.slice(0, 28)}…`;
+  ctx.fillText(cat, 48, panelY + 248);
+
+  ctx.fillStyle = activeBg.cardBg;
+  ctx.fillRect(48, panelY + 278, WHATSAPP_STATUS_W - 96, 188);
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(48, panelY + 278, WHATSAPP_STATUS_W - 96, 188);
+
+  ctx.fillStyle = textSecondary;
+  ctx.font = '700 17px "Space Grotesk", sans-serif';
+  ctx.fillText('DIAL TO VOTE', 72, panelY + 316);
+  ctx.fillStyle = textPrimary;
+  ctx.font = '900 52px "Space Grotesk", sans-serif';
+  ctx.fillText(`*920*566*${nominee.code}#`, 72, panelY + 378);
+  ctx.fillStyle = textSecondary;
+  ctx.font = '700 14px "Space Grotesk", sans-serif';
+  ctx.fillText(formatVotePricingLine(), 72, panelY + 412);
+  ctx.font = '700 15px "Space Grotesk", sans-serif';
+  const linkDisplay = shareUrl.replace(/^https?:\/\//i, '');
+  ctx.fillText(`OR VOTE · ${linkDisplay}`, 72, panelY + 448);
+
+  ctx.save();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(WHATSAPP_STATUS_W - 96, panelY + 372, 48, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = accent;
+  ctx.font = '900 13px "Space Grotesk", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(BRANDING.platformName.toUpperCase(), WHATSAPP_STATUS_W - 96, panelY + 364);
+  ctx.font = '10px "Space Grotesk", sans-serif';
+  ctx.fillText('OFFICIAL', WHATSAPP_STATUS_W - 96, panelY + 382);
+  ctx.fillText('★', WHATSAPP_STATUS_W - 96, panelY + 398);
+  ctx.restore();
+
+  ctx.fillStyle = textSecondary;
+  ctx.font = '700 17px "Space Grotesk", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`CODE ${nominee.code} · ${BRANDING.eventYear}`, 48, WHATSAPP_STATUS_H - 64);
+
+  ctx.save();
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = textPrimary;
+  ctx.font = '700 88px "Space Grotesk", sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(BRANDING.platformName.toUpperCase(), WHATSAPP_STATUS_W - 36, WHATSAPP_STATUS_H - 40);
+  ctx.restore();
+
+  return canvas;
+}
 
 const accentColors = [
   { name: 'Brushed Gold', value: '#b8986c' },
@@ -70,6 +234,8 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
   const [template, setTemplate] = useState('classic'); // 'classic', 'aura', 'glass'
 
   const drawPosterDetails = useCallback((ctx, canvas) => {
+    const shareUrl = getNomineeVoteUrl(nominee.code);
+    const shareUrlDisplay = shareUrl.replace(/^https?:\/\//i, '').toUpperCase();
     const activeBg = backgroundOptions.find(b => b.id === bgStyle) || backgroundOptions[0];
     const rightBg = activeBg.bg;
     const textPrimaryColor = activeBg.text;
@@ -264,7 +430,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       
       ctx.fillStyle = '#000000'; // black text over shiny gold foil looks incredibly crisp!
       ctx.font = '700 16px "Space Grotesk", sans-serif';
-      ctx.fillText('VOTEEQ AWARDS // OFFICIAL NOMINEE', 670, 92);
+      ctx.fillText(`${BRANDING.eventTitle.toUpperCase()} // OFFICIAL NOMINEE`, 670, 92);
 
       // 2. Nominee Name Header
       ctx.save();
@@ -325,7 +491,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
 
       ctx.fillStyle = textPrimaryColor;
       ctx.font = '700 13px "Space Grotesk", sans-serif';
-      ctx.fillText('1 VOTE = GH₵ 0.50 // INSTANT SYNC', 670, 585);
+      ctx.fillText(formatVotePricingLine(), 670, 585);
 
       // Draw procedural QR Code inside voting card
       drawMockQRCode(1005, 455, 120);
@@ -351,7 +517,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       ctx.save();
       ctx.fillStyle = activeBg.isDark ? getFoilGradient(670, 740, 980, 790) : '#000000';
       ctx.font = '700 22px "Space Grotesk", sans-serif';
-      ctx.fillText(`WWW.VOTEEQ.COM/?NOMINEE=${nominee.code}`, 670, 780);
+      ctx.fillText(shareUrlDisplay, 670, 780);
       ctx.restore();
 
       // Draw dynamic official stamp seal
@@ -397,7 +563,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       // 2. Tagline
       ctx.fillStyle = getFoilGradient(canvas.width / 2 - 200, 190, canvas.width / 2 + 200, 230);
       ctx.font = '700 20px "Space Grotesk", sans-serif';
-      ctx.fillText('VOTEEQ AWARDS // OFFICIAL NOMINEE', canvas.width / 2, 220);
+      ctx.fillText(`${BRANDING.eventTitle.toUpperCase()} // OFFICIAL NOMINEE`, canvas.width / 2, 220);
 
       // 3. Nominee Name
       ctx.fillStyle = '#ffffff';
@@ -451,13 +617,17 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       ctx.font = '900 52px "Space Grotesk", sans-serif';
       ctx.fillText(`*920*566*${nominee.code}#`, cardX + 50, cardY + 145);
 
+      ctx.fillStyle = '#c8bfb0';
+      ctx.font = '700 13px "Space Grotesk", sans-serif';
+      ctx.fillText(formatVotePricingLine(), cardX + 50, cardY + 178);
+
       ctx.fillStyle = '#ffffff';
       ctx.font = '700 14px "Space Grotesk", sans-serif';
-      ctx.fillText('OR VOTE ONLINE AT WWW.VOTEEQ.COM', cardX + 50, cardY + 200);
+      ctx.fillText('OR VOTE ONLINE AT', cardX + 50, cardY + 200);
 
       ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 215, cardX + 450, cardY + 250);
       ctx.font = '700 16px "Space Grotesk", sans-serif';
-      ctx.fillText(`/?NOMINEE=${nominee.code}`, cardX + 50, cardY + 230);
+      ctx.fillText(shareUrlDisplay, cardX + 50, cardY + 230);
       ctx.restore();
 
       // Official Seal stamp at bottom left
@@ -564,12 +734,12 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       ctx.save();
       ctx.fillStyle = textPrimaryColor;
       ctx.font = '700 24px "Space Grotesk", sans-serif';
-      ctx.fillText(`WWW.VOTEEQ.COM/?NOMINEE=${nominee.code}`, cardX + 540, cardY + 445);
+      ctx.fillText(shareUrlDisplay, cardX + 540, cardY + 445);
       ctx.restore();
 
       ctx.fillStyle = textSecondaryColor;
       ctx.font = '700 12px "Space Grotesk", sans-serif';
-      ctx.fillText('1 VOTE = GH₵ 0.50 // SECURE MOBILE CHANNELS', cardX + 540, cardY + 480);
+      ctx.fillText(formatVotePricingLine(), cardX + 540, cardY + 480);
 
       // Draw vector QR code in glass card (top right area of layout details)
       drawMockQRCode(cardX + cardW - 190, cardY + 145, 140);
@@ -580,7 +750,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       // Footer metadata
       ctx.fillStyle = textSecondaryColor;
       ctx.font = '700 14px "Space Grotesk", sans-serif';
-      ctx.fillText('VOTEEQ AWARDS Night portal // verified ticket verification console integrated', 80, 1150);
+      ctx.fillText(`${BRANDING.organizerName} · ${BRANDING.university} · ${BRANDING.eventYear}`, 80, 1150);
 
       // Outer gold border frame
       ctx.strokeStyle = getFoilGradient(0, 0, canvas.width, canvas.height);
@@ -640,7 +810,8 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
         ctx.drawImage(img, cx - drawW / 2, cy - drawH / 2, drawW, drawH);
         ctx.filter = 'none';
         ctx.restore();
-        
+
+        drawPhotoAreaWatermark(ctx, 0, 0, targetW, canvas.height);
         drawPosterDetails(ctx, canvas);
       };
     } else {
@@ -704,14 +875,33 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
     }
   };
 
-  const handleDownload = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const url = canvas.toDataURL('image/png');
-    const link = document.createElement('a');
-    link.download = `VOTEEQ_Poster_${nominee.name.replace(/\s+/g, '_')}.png`;
-    link.href = url;
-    link.click();
+  const handleDownload = async (format = 'square') => {
+    try {
+      let exportCanvas = canvasRef.current;
+      if (format === 'status') {
+        exportCanvas = await buildWhatsAppStatusCanvas({
+          photoUrl,
+          imgOffset,
+          photoFilter,
+          nominee,
+          accent,
+          bgStyle,
+          backgroundOptions,
+          shareUrl: getNomineeVoteUrl(nominee.code),
+        });
+      }
+      if (!exportCanvas) return;
+      const url = exportCanvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = format === 'status'
+        ? `ASCES_Status_${nominee.code}.png`
+        : `ASCES_Poster_${nominee.name.replace(/\s+/g, '_')}.png`;
+      link.href = url;
+      link.click();
+    } catch (err) {
+      console.error(err);
+      setSaveStatus(`Error: Could not export poster (${err.message})`);
+    }
   };
 
   const handleMouseDown = (e) => {
@@ -752,7 +942,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       <div className="editorial-sheet">
         <h3 style={{ marginBottom: '0.75rem', fontFamily: 'var(--font-serif)', fontSize: '1.5rem' }}>Campaign Poster Studio</h3>
         <p style={{ marginBottom: '2rem', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-          Produce high-quality campaign posters. Upload a portrait photograph, drag to position the crop inside the graphic, choose background styles, and download the finished graphic.
+          Produce high-quality campaign posters with a VoteEQ watermark on your photo. Upload a portrait, drag to crop, then download a square feed graphic or a <strong style={{ color: 'var(--text-primary)' }}>9:16 WhatsApp Status</strong> (1080×1920) sized for phone screens.
         </p>
 
         {/* Customization Grid */}
@@ -803,8 +993,8 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
                 <button
                   key={c.value}
                   onClick={() => setAccent(c.value)}
-              className="banner-save-status"
-              style={{
+                  type="button"
+                  style={{
                     backgroundColor: c.value,
                     width: '22px',
                     height: '22px',
@@ -910,22 +1100,32 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '2.5rem' }}>
-          <div style={{ display: 'flex', gap: '1rem', width: '100%', maxWidth: '450px', justifyContent: 'center' }}>
-            <button 
-              onClick={handleDownload} 
-              className="luxury-btn" 
-              style={{ padding: '1rem', flex: 1, fontSize: '0.75rem', letterSpacing: '0.05em' }}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', width: '100%', maxWidth: '450px', justifyContent: 'center' }}>
+            <button
+              type="button"
+              onClick={() => handleDownload('square')}
+              className="luxury-btn"
+              style={{ padding: '1rem', flex: '1 1 140px', fontSize: '0.7rem', letterSpacing: '0.05em' }}
             >
-              DOWNLOAD POSTER
+              SQUARE POST
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDownload('status')}
+              className="luxury-btn"
+              style={{ padding: '1rem', flex: '1 1 140px', fontSize: '0.7rem', letterSpacing: '0.05em' }}
+            >
+              WHATSAPP STATUS
             </button>
             {token && (
-              <button 
-                onClick={handleSaveBanner} 
+              <button
+                type="button"
+                onClick={handleSaveBanner}
                 disabled={saving}
-                className="luxury-btn secondary" 
-                style={{ padding: '1rem', flex: 1, fontSize: '0.75rem', letterSpacing: '0.05em' }}
+                className="luxury-btn secondary"
+                style={{ padding: '1rem', flex: '1 1 100%', fontSize: '0.7rem', letterSpacing: '0.05em' }}
               >
-                {saving ? 'SAVING...' : 'SAVE FOR SHARING'}
+                {saving ? 'SAVING...' : 'SAVE SQUARE FOR LINK PREVIEW'}
               </button>
             )}
           </div>

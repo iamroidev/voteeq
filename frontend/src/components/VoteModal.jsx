@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { API_BASE_URL } from '../config';
+import { BRANDING } from '../branding';
 import { getGhanaPhoneError, normalizeGhanaPhone } from '../utils/phone';
 import { getEmailError, normalizeEmail } from '../utils/email';
+import { calculatePaystackCheckout } from '../utils/paystackFees';
 
 export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
   const [voteCount, setVoteCount] = useState(10);
@@ -15,10 +17,11 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
   const [captchaInput, setCaptchaInput] = useState('');
 
   const voteShortcuts = [5, 10, 25, 50, 100];
-  const pricePerVote = 1; // 1 GH₵ per vote
+  const pricePerVote = parseFloat(BRANDING.votePriceOnlineGhs) || 1;
 
   const MAX_VOTES = 10000;
   const parsedVotes = Math.min(parseInt(voteCount) || 0, MAX_VOTES);
+  const pricing = calculatePaystackCheckout(parsedVotes * pricePerVote);
   const isInvalidVotes = parsedVotes <= 0 || isNaN(parseInt(voteCount)) || parseFloat(voteCount) !== parseInt(voteCount);
 
   const handleVoteSubmit = async (e) => {
@@ -73,7 +76,8 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
 
       onPaymentRedirect({
         ...data,
-        amount: parsedVotes * pricePerVote,
+        amount: data.amount ?? data.pricing?.totalDue ?? pricing.totalDue,
+        pricing: data.pricing ?? pricing,
         nominee: nominee.name,
         nomineeId: nominee.id,
         votes: parsedVotes,
@@ -288,7 +292,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
                   Total cost due
                 </span>
                 <p style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', color: 'var(--accent-dark)', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  GH₵ {(parsedVotes * pricePerVote).toFixed(2)}
+                  GH₵ {pricing.totalDue.toFixed(2)}
                 </p>
               </div>
             </div>

@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { API_BASE_URL } from '../config';
+import { BRANDING, formatEventDate, formatEventMeta } from '../branding';
 import { authFetch } from '../utils/api';
 
 export default function AdminDashboard({ token, onLogout, categories, nominees, refreshData, wsTrigger }) {
@@ -58,6 +59,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [reseedLoading, setReseedLoading] = useState(false);
   const [reseedMessage, setReseedMessage] = useState('');
+  const wsTriggerRef = useRef(wsTrigger);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -182,7 +184,13 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       }
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, [fetchStats, fetchRegistrations, fetchTicketsData, fetchAuditLogs, wsTrigger, activeSubTab]);
+  }, [fetchStats, fetchRegistrations, fetchTicketsData, fetchAuditLogs, activeSubTab]);
+
+  useEffect(() => {
+    if (wsTriggerRef.current === wsTrigger) return;
+    wsTriggerRef.current = wsTrigger;
+    fetchStats();
+  }, [wsTrigger, fetchStats]);
 
   const handleApproveRegistration = (id) => {
     setConfirmDialog({
@@ -432,9 +440,9 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       {activeSubTab === 'overview' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
           <div className="editorial-sheet" style={{ margin: 0, padding: '1.5rem 2rem' }}>
-            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', marginBottom: '0.5rem' }}>Campus demo catalog</h3>
+            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', marginBottom: '0.5rem' }}>ASCES AWARDS '26 catalog</h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '1rem' }}>
-              Replace legacy demo data (music awards) with campus events, categories, and nominees. This clears votes, tickets, registrations, and the current catalog.
+              Reset the portal for ASCES AWARDS '26. Clears votes, tickets, and registrations, then loads the ticketed event and 28 award categories. Add nominees per category when ASCES provides the shortlist.
             </p>
             {reseedMessage && (
               <p style={{ fontSize: '0.8rem', color: 'var(--accent-dark)', marginBottom: '1rem', fontWeight: 500 }}>{reseedMessage}</p>
@@ -446,24 +454,24 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
               style={{ fontSize: '0.7rem' }}
               onClick={() => {
                 setConfirmDialog({
-                  message: 'Load campus demo data? All current events, nominees, votes, tickets, and pending applications will be removed.',
+                  message: "Reset for ASCES AWARDS '26? All current events, nominees, votes, tickets, and pending applications will be removed.",
                   onConfirm: async () => {
                     setReseedLoading(true);
                     setReseedMessage('');
                     try {
-                      const res = await fetch(`${API_BASE_URL}/api/admin/demo/reseed-campus`, {
+                      const res = await fetch(`${API_BASE_URL}/api/admin/demo/reseed-asces`, {
                         method: 'POST',
                         headers: { Authorization: `Bearer ${token}` },
                       });
                       const data = await res.json();
                       if (!res.ok) throw new Error(data.error || 'Reseed failed');
-                      setReseedMessage(data.message || 'Campus demo loaded.');
+                      setReseedMessage(data.message || "ASCES AWARDS '26 loaded.");
                       fetchStats();
                       fetchRegistrations();
                       fetchTicketsData();
                       refreshData();
                     } catch (err) {
-                      setReseedMessage(err.message || 'Failed to load campus demo.');
+                      setReseedMessage(err.message || 'Failed to reset ASCES catalog.');
                     } finally {
                       setReseedLoading(false);
                     }
@@ -471,7 +479,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                 });
               }}
             >
-              {reseedLoading ? 'Loading campus demo...' : 'Load campus demo data'}
+              {reseedLoading ? 'Resetting...' : "Reset for ASCES AWARDS '26"}
             </button>
           </div>
 
@@ -952,7 +960,11 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                         {ev.privacy.toUpperCase()}
                       </span>
                     </div>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>{ev.venue} // {ev.date}</p>
+                    {(formatEventDate(ev) || formatEventMeta(ev)) && (
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
+                        {[formatEventDate(ev), formatEventMeta(ev)].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.75rem', marginBottom: '1.25rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1295,12 +1307,14 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Event Date</label>
-                  <input type="text" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className="luxury-input" placeholder="e.g. 2026-07-25" />
+                  <input type="text" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className="luxury-input" placeholder="e.g. 2026" />
                 </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Venue Location</label>
-                  <input type="text" value={eventVenue} onChange={(e) => setEventVenue(e.target.value)} className="luxury-input" placeholder="e.g. National Theatre, Accra" />
-                </div>
+                {BRANDING.showVenue && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Venue Location</label>
+                    <input type="text" value={eventVenue} onChange={(e) => setEventVenue(e.target.value)} className="luxury-input" placeholder="e.g. Main Auditorium" />
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
@@ -1363,7 +1377,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                 <tr>
                   <th>Event ID</th>
                   <th>Title</th>
-                  <th>Venue</th>
+                  {BRANDING.showVenue && <th>Venue</th>}
                   <th>Date</th>
                   <th>Ticket Price</th>
                   <th>Capacity</th>
@@ -1375,15 +1389,15 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
               <tbody>
                 {eventsList.length === 0 ? (
                   <tr>
-                    <td colSpan="9" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>No events configured.</td>
+                    <td colSpan={BRANDING.showVenue ? 9 : 8} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>No events configured.</td>
                   </tr>
                 ) : (
                   eventsList.map(ev => (
                     <tr key={ev.id}>
                       <td style={{ fontWeight: 700 }}>{ev.id}</td>
                       <td style={{ fontWeight: 600 }}>{ev.title}</td>
-                      <td>{ev.venue || '-'}</td>
-                      <td>{ev.date || '-'}</td>
+                      {BRANDING.showVenue && <td>{ev.venue || '—'}</td>}
+                      <td>{formatEventDate(ev) || '—'}</td>
                       <td style={{ fontWeight: 700 }}>GH₵ {ev.ticket_price.toFixed(2)}</td>
                       <td>{ev.total_tickets}</td>
                       <td style={{ fontWeight: 600, color: 'var(--accent-dark)' }}>{ev.tickets_sold}</td>
@@ -1441,7 +1455,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
         <div className="editorial-sheet" style={{ margin: 0, padding: '2rem' }}>
           <h3 style={{ fontSize: '1.25rem', marginBottom: '1.5rem', fontFamily: 'var(--font-serif)', fontWeight: 400 }}>System Administrative Audit Trail</h3>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '2rem' }}>
-            A verified chronological log of write transactions and staff actions performed on the Voteeq database.
+            A verified chronological log of write transactions and staff actions on the VoteEQ database.
           </p>
 
           <div style={{ overflowX: 'auto' }}>

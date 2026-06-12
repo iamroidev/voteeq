@@ -1,3 +1,5 @@
+import { BRANDING } from '../branding';
+
 export default function NotFoundPage() {
   return (
     <div style={{ maxWidth: '600px', margin: '4rem auto', padding: '2rem 1.5rem', textAlign: 'center' }}>
@@ -34,7 +36,7 @@ export default function NotFoundPage() {
             className="luxury-btn secondary" 
             style={{ padding: '0.8rem 1.5rem', letterSpacing: '0.1em' }}
           >
-            BUY EVENT TICKETS
+            {BRANDING.ticketsEnabled ? 'BUY EVENT TICKETS' : 'AWARDS NIGHT TICKETS (NOT OPEN)'}
           </button>
         </div>
       </div>

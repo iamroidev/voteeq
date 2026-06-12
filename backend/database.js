@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const { hashPin, isProduction } = require('./security');
 const { CAMPUS_EVENTS, CAMPUS_CATEGORIES, CAMPUS_NOMINEES } = require('./seed-campus');
+const { ASCES_EVENT } = require('./seed-asces');
+const { ASCES_AWARD_CATEGORIES } = require('./seed-asces-categories');
 
 // Support local volume fallback (e.g. Railway volume or local dev folder)
 const dbDir = process.env.RAILWAY_VOLUME_MOUNT 
@@ -227,6 +229,21 @@ async function initDB() {
     // Suppress if column already exists
   }
   try {
+    await dbWrapper.exec('ALTER TABLE votes ADD COLUMN amount_base REAL;');
+  } catch (e) {
+    // Suppress if column already exists
+  }
+  try {
+    await dbWrapper.exec('ALTER TABLE votes ADD COLUMN amount_fee REAL;');
+  } catch (e) {
+    // Suppress if column already exists
+  }
+  try {
+    await dbWrapper.exec('ALTER TABLE votes ADD COLUMN amount_paid REAL;');
+  } catch (e) {
+    // Suppress if column already exists
+  }
+  try {
     await dbWrapper.exec('ALTER TABLE nominees ADD COLUMN event_id INTEGER;');
   } catch (e) {
     // Suppress if column already exists
@@ -237,25 +254,28 @@ async function initDB() {
   await dbWrapper.exec('CREATE INDEX IF NOT EXISTS idx_tickets_ticket_code ON tickets(ticket_code);');
   await dbWrapper.exec('CREATE INDEX IF NOT EXISTS idx_nominees_code ON nominees(code);');
 
-  const allowCampusSeed = !isProduction() || process.env.SEED_CAMPUS_DEMO === 'true';
+  const allowAscesSeed = !isProduction() || process.env.SEED_ASCES_AWARDS === 'true';
+  const allowCampusSeed = process.env.SEED_CAMPUS_DEMO === 'true';
 
-  if (allowCampusSeed && process.env.FORCE_CAMPUS_RESEED === 'true') {
+  if (allowAscesSeed && process.env.FORCE_ASCES_RESEED === 'true') {
+    console.warn('FORCE_ASCES_RESEED: resetting catalog for ASCES Awards...');
+    await reseedAscesAwards(dbWrapper);
+  } else if (allowAscesSeed) {
+    await seedAscesIfEmpty(dbWrapper);
+  } else if (allowCampusSeed && process.env.FORCE_CAMPUS_RESEED === 'true') {
     console.warn('FORCE_CAMPUS_RESEED: replacing demo catalog with campus data...');
     await reseedCampusDemo(dbWrapper);
   } else if (allowCampusSeed) {
     await seedCampusDemoIfEmpty(dbWrapper);
   }
 
+  await normalizeLegacyEventDates(dbWrapper);
+
   return dbWrapper;
 }
 
 async function clearCampusDemoData(db) {
-  await db.run('DELETE FROM votes');
-  await db.run('DELETE FROM tickets');
-  await db.run('DELETE FROM nominees');
-  await db.run('DELETE FROM nominee_registrations');
-  await db.run('DELETE FROM categories');
-  await db.run('DELETE FROM events');
+  await clearCatalogData(db);
 }
 
 async function insertCampusDemoEvents(db) {
@@ -348,6 +368,88 @@ async function seedCampusDemoIfEmpty(db) {
   }
 }
 
+async function clearCatalogData(db) {
+  await db.run('DELETE FROM votes');
+  await db.run('DELETE FROM tickets');
+  await db.run('DELETE FROM nominees');
+  await db.run('DELETE FROM nominee_registrations');
+  await db.run('DELETE FROM categories');
+  await db.run('DELETE FROM events');
+}
+
+async function insertAscesCategories(db) {
+  for (const [name, description] of ASCES_AWARD_CATEGORIES) {
+    await db.run(
+      'INSERT INTO categories (name, description) VALUES (?, ?)',
+      [name, description]
+    );
+  }
+}
+
+async function insertAscesEvent(db) {
+  const event = ASCES_EVENT;
+  const result = await db.run(
+    `INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    [
+      event.title,
+      event.description,
+      event.date,
+      event.venue,
+      event.ticket_price,
+      event.privacy,
+      event.access_code,
+      event.total_tickets,
+    ]
+  );
+  return result.lastID;
+}
+
+async function seedAscesIfEmpty(db) {
+  const eventCount = await db.get('SELECT COUNT(*) as count FROM events');
+  if (eventCount.count === 0) {
+    console.log('Seeding ASCES Awards event...');
+    await insertAscesEvent(db);
+  }
+
+  const categoryCount = await db.get('SELECT COUNT(*) as count FROM categories');
+  if (categoryCount.count === 0) {
+    console.log('Seeding ASCES award categories...');
+    await insertAscesCategories(db);
+  }
+}
+
+async function normalizeLegacyEventDates(db) {
+  const legacyDates = new Set(['26', "'26", '\u201926']);
+  try {
+    const events = await db.all('SELECT id, date FROM events');
+    for (const ev of events || []) {
+      const trimmed = String(ev.date ?? '').trim();
+      if (legacyDates.has(trimmed)) {
+        await db.run('UPDATE events SET date = ? WHERE id = ?', ['2026', ev.id]);
+      }
+    }
+  } catch (err) {
+    console.warn('normalizeLegacyEventDates skipped:', err.message);
+  }
+}
+
+async function reseedAscesAwards(db) {
+  try {
+    await db.transaction(async (tx) => {
+      await clearCatalogData(tx);
+      await insertAscesEvent(tx);
+      await insertAscesCategories(tx);
+    });
+  } catch (txErr) {
+    console.warn('ASCES reseed transaction failed, retrying without transaction:', txErr.message);
+    await clearCatalogData(db);
+    await insertAscesEvent(db);
+    await insertAscesCategories(db);
+  }
+  await normalizeLegacyEventDates(db);
+}
+
 async function reseedCampusDemo(db) {
   const hashedPins = await Promise.all(CAMPUS_NOMINEES.map(([, , , , , pin]) => hashPin(pin)));
 
@@ -370,5 +472,6 @@ async function reseedCampusDemo(db) {
 module.exports = {
   initDB,
   getDB: () => dbWrapper,
+  reseedAscesAwards,
   reseedCampusDemo,
 };

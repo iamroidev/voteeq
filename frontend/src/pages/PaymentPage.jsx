@@ -13,7 +13,7 @@ export default function PaymentPage({ onBack }) {
         
         <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
           <p style={{ marginBottom: '1.5rem' }}>
-            Your payment security is our top priority. Here's how we protect every transaction on the Voteeq Awards platform.
+            Your payment security is our top priority. Here is how we protect every transaction on VoteEQ for ASCES Awards.
           </p>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', color: 'var(--text-primary)', marginBottom: '1rem', marginTop: '2rem' }}>
@@ -27,7 +27,7 @@ export default function PaymentPage({ onBack }) {
             Mobile Money Security
           </h2>
           <p style={{ marginBottom: '1rem' }}>
-            When voting via mobile money, the transaction is handled directly by your mobile carrier (MTN, Telecel, or AirtelTigo). Your mobile money PIN is never shared with or stored by Voteeq. We only receive a confirmation that the payment was successful.
+            Payments are handled by Paystack. Your mobile money PIN or full card details are never shared with or stored by VoteEQ. We only receive confirmation that the payment succeeded.
           </p>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', color: 'var(--text-primary)', marginBottom: '1rem', marginTop: '2rem' }}>

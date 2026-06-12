@@ -66,22 +66,32 @@ function buildVoteReceiptHtml({ nomineeName, voteCount, amountGHS, reference, ph
   `;
 }
 
+function ticketQrImageUrl(ticketCode) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(ticketCode)}&margin=8`;
+}
+
 function buildTicketReceiptHtml({ eventTitle, venue, date, buyerName, quantity, amountGHS, ticketCode, reference }) {
+  const venueRow = venue
+    ? `<tr><td style="padding: 8px 0; color: #6b6560;">Venue</td><td style="padding: 8px 0; text-align: right;">${venue}</td></tr>`
+    : '';
   return `
     <div style="font-family: Georgia, serif; max-width: 520px; margin: 0 auto; color: #1a1918;">
-      <h1 style="font-size: 22px; font-weight: 400; margin-bottom: 8px;">Voteeq ticket receipt</h1>
-      <p style="color: #6b6560; font-size: 14px; margin-top: 0;">Your ticket purchase is confirmed.</p>
+      <h1 style="font-size: 22px; font-weight: 400; margin-bottom: 8px;">VoteEQ ticket — ${eventTitle}</h1>
+      <p style="color: #6b6560; font-size: 14px; margin-top: 0;">Your ticket is confirmed. Present the QR code or ticket code at the door.</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <img src="${ticketQrImageUrl(ticketCode)}" width="160" height="160" alt="Ticket QR code" style="border: 1px solid #e8e4df; border-radius: 8px;" />
+        <p style="font-family: monospace; font-size: 16px; font-weight: bold; margin: 12px 0 0; letter-spacing: 0.04em;">${ticketCode}</p>
+      </div>
       <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin: 24px 0;">
         <tr><td style="padding: 8px 0; color: #6b6560;">Event</td><td style="padding: 8px 0; text-align: right;"><strong>${eventTitle}</strong></td></tr>
-        <tr><td style="padding: 8px 0; color: #6b6560;">Venue</td><td style="padding: 8px 0; text-align: right;">${venue || 'TBA'}</td></tr>
-        <tr><td style="padding: 8px 0; color: #6b6560;">Date</td><td style="padding: 8px 0; text-align: right;">${date || 'TBA'}</td></tr>
+        ${venueRow}
+        ${date ? `<tr><td style="padding: 8px 0; color: #6b6560;">Date</td><td style="padding: 8px 0; text-align: right;">${date}</td></tr>` : ''}
         <tr><td style="padding: 8px 0; color: #6b6560;">Buyer</td><td style="padding: 8px 0; text-align: right;">${buyerName}</td></tr>
-        <tr><td style="padding: 8px 0; color: #6b6560;">Quantity</td><td style="padding: 8px 0; text-align: right;">${quantity}</td></tr>
-        <tr><td style="padding: 8px 0; color: #6b6560;">Ticket code</td><td style="padding: 8px 0; text-align: right; font-family: monospace; font-weight: bold;">${ticketCode}</td></tr>
+        <tr><td style="padding: 8px 0; color: #6b6560;">Admits</td><td style="padding: 8px 0; text-align: right;">${quantity} guest(s)</td></tr>
         <tr><td style="padding: 8px 0; color: #6b6560;">Amount</td><td style="padding: 8px 0; text-align: right;"><strong>GH₵ ${amountGHS.toFixed(2)}</strong></td></tr>
         <tr><td style="padding: 8px 0; color: #6b6560;">Reference</td><td style="padding: 8px 0; text-align: right; font-family: monospace; font-size: 12px;">${reference}</td></tr>
       </table>
-      <p style="font-size: 12px; color: #6b6560;">Present your ticket code at the venue. You can also look up tickets on Voteeq using this reference and your email.</p>
+      <p style="font-size: 12px; color: #6b6560;">You can retrieve this pass anytime on VoteEQ using your ticket code or payment reference and email.</p>
     </div>
   `;
 }
@@ -94,7 +104,7 @@ async function sendVoteReceiptEmail({ to, nomineeName, voteCount, amountGHS, ref
 }
 
 async function sendTicketReceiptEmail({ to, eventTitle, venue, date, buyerName, quantity, amountGHS, ticketCode, reference }) {
-  const subject = `Voteeq ticket — ${eventTitle}`;
+  const subject = `VoteEQ ticket — ${eventTitle}`;
   const html = buildTicketReceiptHtml({ eventTitle, venue, date, buyerName, quantity, amountGHS, ticketCode, reference });
   const text = `Voteeq ticket receipt\nEvent: ${eventTitle}\nTicket code: ${ticketCode}\nQuantity: ${quantity}\nAmount: GH₵ ${amountGHS.toFixed(2)}\nReference: ${reference}`;
   return sendResendEmail({ to, subject, html, text });

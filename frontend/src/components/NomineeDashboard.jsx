@@ -11,8 +11,11 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
   const [bannerVersion, setBannerVersion] = useState(() => Date.now());
   const [showBannerStudio, setShowBannerStudio] = useState(false);
   const abortRef = useRef(null);
+  const wsTriggerRef = useRef(wsTrigger);
+  const onLogoutRef = useRef(onLogout);
+  onLogoutRef.current = onLogout;
 
-  const loadDashboardData = useCallback(async ({ isInitial = false } = {}) => {
+  const loadDashboardData = useCallback(async ({ isInitial = false, bustBannerCache = false } = {}) => {
     if (abortRef.current) {
       abortRef.current.abort();
     }
@@ -37,17 +40,21 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
       const resData = await response.json();
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
-          onLogout();
+          onLogoutRef.current();
           throw new Error('Session expired. Please log in again.');
         }
         throw new Error(resData.error || 'Failed to load dashboard metrics');
       }
       setData(resData);
       setError('');
-      setBannerVersion(Date.now());
+      if (bustBannerCache) {
+        setBannerVersion(Date.now());
+      }
     } catch (err) {
       if (err.name === 'AbortError') {
-        setError('Dashboard request timed out. Check your connection and try again.');
+        if (abortRef.current === controller) {
+          setError('Dashboard request timed out. Check your connection and try again.');
+        }
       } else {
         console.error(err);
         setError(err.message || 'Error updating dashboard metrics');
@@ -60,22 +67,28 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
       setInitialLoading(false);
       setRefreshing(false);
     }
-  }, [code, token, onLogout]);
+  }, [code, token]);
 
   useEffect(() => {
-    loadDashboardData({ isInitial: true });
+    loadDashboardData({ isInitial: true, bustBannerCache: true });
     const interval = setInterval(() => {
       if (!document.hidden) {
         loadDashboardData();
       }
-    }, 30000);
+    }, 60000);
     return () => {
       clearInterval(interval);
       if (abortRef.current) {
         abortRef.current.abort();
       }
     };
-  }, [loadDashboardData, wsTrigger]);
+  }, [loadDashboardData]);
+
+  useEffect(() => {
+    if (wsTriggerRef.current === wsTrigger) return;
+    wsTriggerRef.current = wsTrigger;
+    loadDashboardData();
+  }, [wsTrigger, loadDashboardData]);
 
   if (initialLoading) {
     return (
@@ -286,7 +299,10 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
               <BannerGenerator
                 nominee={nominee}
                 token={token}
-                onSaveSuccess={() => setData(prev => ({ ...prev, hasCustomBanner: true }))}
+                onSaveSuccess={() => {
+                  setData(prev => ({ ...prev, hasCustomBanner: true }));
+                  setBannerVersion(Date.now());
+                }}
               />
             </Suspense>
           ) : (

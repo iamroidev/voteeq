@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config';
+import { BRANDING, eventMatchesTickets, formatEventDate } from '../branding';
+import { calculatePaystackCheckout } from '../utils/paystackFees';
+import TicketQrCode from '../components/TicketQrCode';
 import { readStoredAuth } from '../utils/storage';
 import { getGhanaPhoneError, normalizeGhanaPhone } from '../utils/phone';
 import { getEmailError, normalizeEmail } from '../utils/email';
@@ -19,6 +22,10 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
   const [submitting, setSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
   const [copiedCode, setCopiedCode] = useState(null);
+
+  const ticketQty = parseInt(quantity, 10) || 1;
+  const ticketSubtotal = selectedEvent ? selectedEvent.ticket_price * ticketQty : 0;
+  const ticketPricing = calculatePaystackCheckout(ticketSubtotal);
 
   // Ticket Lookup States
   const [lookupQuery, setLookupQuery] = useState('');
@@ -105,9 +112,10 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
     }
   };
 
+  const ticketEvents = events.filter(eventMatchesTickets);
   const visibleEvents = activeEventId
-    ? events.filter(ev => String(ev.id) === String(activeEventId))
-    : events;
+    ? ticketEvents.filter(ev => String(ev.id) === String(activeEventId))
+    : ticketEvents;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -176,7 +184,8 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
         isTicket: true,
         eventTitle: selectedEvent.title,
         quantity: parseInt(quantity, 10),
-        amount: selectedEvent.ticket_price * parseInt(quantity, 10),
+        amount: data.pricing?.totalDue ?? ticketPricing.totalDue,
+        pricing: data.pricing ?? ticketPricing,
         phone: normalizedPhone,
         onSuccessCallback: () => {
           // After success, reload list and save ticket locally so nominee/admin can inspect
@@ -195,6 +204,36 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
     }
   };
 
+  if (!BRANDING.ticketsEnabled) {
+    return (
+      <div style={{ maxWidth: '640px', margin: '0 auto', padding: '2rem 1.5rem 6rem 1.5rem' }}>
+        {!isTab && (
+          <button onClick={onBack} className="luxury-btn secondary" style={{ marginBottom: '2.5rem', padding: '0.5rem 1.5rem', fontSize: '0.7rem' }}>
+            ← Back to Portal
+          </button>
+        )}
+        <div className="editorial-header-section" style={{ marginBottom: '2rem', textAlign: 'center' }}>
+          <span className="editorial-tagline">{BRANDING.organizerName} · {BRANDING.university.toUpperCase()}</span>
+          <h1 className="editorial-title">AWARDS NIGHT TICKETS</h1>
+          <div className="editorial-divider" />
+        </div>
+        <div className="editorial-sheet" style={{ padding: '3rem 2rem', textAlign: 'center' }}>
+          <span className="ref-badge" style={{ marginBottom: '1rem', display: 'inline-block' }}>Not on sale yet</span>
+          <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', marginBottom: '0.75rem' }}>
+            {BRANDING.ticketEventTitle} tickets are not on sale
+          </h2>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.7, maxWidth: '460px', margin: '0 auto 1.5rem' }}>
+            {BRANDING.organizerName} will open ticket sales on this page when the time comes — after nominations and voting are underway.
+            You can return here anytime; purchase will be enabled once sales go live.
+          </p>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', letterSpacing: '0.06em' }}>
+            Nominations and voting are not open yet either.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto', padding: '2rem 1.5rem 6rem 1.5rem' }}>
       {!isTab && (
@@ -204,13 +243,13 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
       )}
 
       <div className="editorial-header-section" style={{ marginBottom: '3rem' }}>
-        <span className="editorial-tagline">2-IN-1 ELECTIONS & TICKETING</span>
-        <h1 className="editorial-title">EVENT TICKETS</h1>
+        <span className="editorial-tagline">{BRANDING.organizerName} · {BRANDING.university.toUpperCase()}</span>
+        <h1 className="editorial-title">AWARDS NIGHT TICKETS</h1>
         <div className="editorial-divider" />
         <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '600px', margin: '1rem auto 0 auto', lineHeight: 1.6 }}>
-          Get your passes securely to the official Voteeq Awards Night. Select between the standard entry pass or the exclusive VIP afterparty package.
+          Secure your pass to {BRANDING.eventTitle}. After payment you receive a ticket code, scannable QR pass, and email receipt.
         </p>
-        {events.length > 1 && (
+        {ticketEvents.length > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1.5rem' }}>
             <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.12em', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
               Event Filter
@@ -221,7 +260,7 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
               className="luxury-select"
               style={{ padding: '0.55rem 0.75rem', fontSize: '0.7rem' }}
             >
-              {events.map(ev => (
+              {ticketEvents.map(ev => (
                 <option key={ev.id} value={ev.id}>{ev.title}</option>
               ))}
             </select>
@@ -288,14 +327,12 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
                     </p>
 
                     <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', fontSize: '0.75rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                      <div>
-                        <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Date</span>
-                        {ev.date}
-                      </div>
-                      <div>
-                        <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Venue</span>
-                        {ev.venue}
-                      </div>
+                      {formatEventDate(ev) && (
+                        <div>
+                          <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Date</span>
+                          {formatEventDate(ev)}
+                        </div>
+                      )}
                       <div>
                         <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.65rem', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Tickets Availability</span>
                         {isSoldOut ? (
@@ -442,10 +479,10 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
             <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', padding: '1.25rem', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <span style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-                  Subtotal
+                  {ticketQty} ticket{ticketQty === 1 ? '' : 's'}
                 </span>
                 <p style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
-                  {quantity} x {selectedEvent.title}
+                  GH₵ {selectedEvent.ticket_price.toFixed(2)} each
                 </p>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -453,7 +490,7 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
                   Total cost
                 </span>
                 <p style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', color: 'var(--accent-dark)', marginTop: '0.15rem' }}>
-                  GH₵ {(selectedEvent.ticket_price * quantity).toFixed(2)}
+                  GH₵ {ticketPricing.totalDue.toFixed(2)}
                 </p>
               </div>
             </div>
@@ -578,37 +615,15 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
                   <h4 style={{ fontSize: '1rem', fontWeight: 600, marginTop: '0.75rem', color: 'var(--text-primary)' }}>
                     {t.event_title}
                   </h4>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                    {t.event_venue} <br /> {t.event_date}
-                  </p>
+                  {formatEventDate({ date: t.event_date }) && (
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                      {formatEventDate({ date: t.event_date })}
+                    </p>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-                  {/* Procedural Visual QR Code mockup */}
-                  <div style={{
-                    width: '60px',
-                    height: '60px',
-                    background: '#000',
-                    borderRadius: '6px',
-                    padding: '4px',
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(5, 1fr)',
-                    gap: '2px'
-                  }}>
-                    {/* Visual pattern representing QR blocks */}
-                    {Array.from({ length: 25 }).map((_, i) => {
-                      // Anchor corners
-                      const isCorner = (i === 0 || i === 4 || i === 20 || i === 24);
-                      const isInsideCorner = (i === 1 || i === 3 || i === 5 || i === 9 || i === 15 || i === 19 || i === 21 || i === 23);
-                      const active = isCorner || (!isInsideCorner && (i * 7 + idx * 13) % 2 === 0);
-                      return (
-                        <div key={i} style={{
-                          background: active ? 'var(--accent)' : 'transparent',
-                          borderRadius: '1px'
-                        }} />
-                      );
-                    })}
-                  </div>
+                  <TicketQrCode value={t.ticket_code} size={72} />
 
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
