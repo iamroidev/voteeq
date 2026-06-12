@@ -2191,8 +2191,10 @@ app.post('/api/admin/demo/reseed-campus', requireAdmin, async (req, res) => {
       message: 'Campus demo data loaded. Nominee login: code 101, PIN 1234 (and 102/4321, 103/9999).',
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to load campus demo data' });
+    console.error('Campus reseed error:', err);
+    res.status(500).json({
+      error: err.message || 'Failed to load campus demo data',
+    });
   }
 });
 

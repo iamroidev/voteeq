@@ -258,9 +258,10 @@ async function clearCampusDemoData(db) {
   await db.run('DELETE FROM events');
 }
 
-async function insertCampusDemoData(db) {
+async function insertCampusDemoEvents(db) {
+  const eventIds = [];
   for (const event of CAMPUS_EVENTS) {
-    await db.run(
+    const result = await db.run(
       `INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
@@ -274,77 +275,96 @@ async function insertCampusDemoData(db) {
         event.total_tickets,
       ]
     );
+    eventIds.push(result.lastID);
   }
+  return eventIds;
+}
 
+async function insertCampusDemoCategories(db) {
+  const categoryIds = [];
   for (const [name, description] of CAMPUS_CATEGORIES) {
-    await db.run(
+    const result = await db.run(
       'INSERT INTO categories (name, description) VALUES (?, ?)',
       [name, description]
     );
+    categoryIds.push(result.lastID);
   }
+  return categoryIds;
+}
 
-  for (const [code, name, photo, catId, eventId, pin, votes] of CAMPUS_NOMINEES) {
-    const hashedPin = await hashPin(pin);
+async function insertCampusDemoNominees(db, eventIds, categoryIds, hashedPins = null) {
+  let pinIndex = 0;
+  for (const [code, name, photo, catIdx, eventIdx, pin, votes] of CAMPUS_NOMINEES) {
+    const categoryId = categoryIds[catIdx - 1];
+    const eventId = eventIds[eventIdx - 1];
+    if (!categoryId || !eventId) {
+      throw new Error(`Campus seed mapping failed for nominee ${code}`);
+    }
+    const passcode = hashedPins ? hashedPins[pinIndex] : await hashPin(pin);
+    pinIndex += 1;
     await db.run(
       'INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [code, name, photo, catId, eventId, hashedPin, votes]
+      [code, name, photo, categoryId, eventId, passcode, votes]
     );
   }
+}
+
+async function insertCampusDemoData(db) {
+  const eventIds = await insertCampusDemoEvents(db);
+  const categoryIds = await insertCampusDemoCategories(db);
+  const hashedPins = await Promise.all(CAMPUS_NOMINEES.map(([, , , , , pin]) => hashPin(pin)));
+  await insertCampusDemoNominees(db, eventIds, categoryIds, hashedPins);
 }
 
 async function seedCampusDemoIfEmpty(db) {
   let eventCount = await db.get('SELECT COUNT(*) as count FROM events');
   if (eventCount.count === 0) {
     console.log('Seeding campus demo events...');
-    for (const event of CAMPUS_EVENTS) {
-      await db.run(
-        `INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-        [
-          event.title,
-          event.description,
-          event.date,
-          event.venue,
-          event.ticket_price,
-          event.privacy,
-          event.access_code,
-          event.total_tickets,
-        ]
-      );
-    }
+    await insertCampusDemoEvents(db);
     eventCount = { count: CAMPUS_EVENTS.length };
   }
 
   let categoryCount = await db.get('SELECT COUNT(*) as count FROM categories');
   if (categoryCount.count === 0) {
     console.log('Seeding campus demo categories...');
-    for (const [name, description] of CAMPUS_CATEGORIES) {
-      await db.run(
-        'INSERT INTO categories (name, description) VALUES (?, ?)',
-        [name, description]
-      );
-    }
+    await insertCampusDemoCategories(db);
     categoryCount = { count: CAMPUS_CATEGORIES.length };
   }
 
   const nomineeCount = await db.get('SELECT COUNT(*) as count FROM nominees');
   if (nomineeCount.count === 0 && categoryCount.count > 0 && eventCount.count > 0) {
     console.log('Seeding campus demo nominees (hashed PINs)...');
-    for (const [code, name, photo, catId, eventId, pin, votes] of CAMPUS_NOMINEES) {
-      const hashedPin = await hashPin(pin);
-      await db.run(
-        'INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [code, name, photo, catId, eventId, hashedPin, votes]
-      );
-    }
+    const events = await db.all(
+      'SELECT id FROM events ORDER BY id ASC LIMIT ?',
+      [CAMPUS_EVENTS.length]
+    );
+    const categories = await db.all(
+      'SELECT id FROM categories ORDER BY id ASC LIMIT ?',
+      [CAMPUS_CATEGORIES.length]
+    );
+    const eventIds = events.map((row) => row.id);
+    const categoryIds = categories.map((row) => row.id);
+    await insertCampusDemoNominees(db, eventIds, categoryIds);
   }
 }
 
 async function reseedCampusDemo(db) {
-  await db.transaction(async (tx) => {
-    await clearCampusDemoData(tx);
-    await insertCampusDemoData(tx);
-  });
+  const hashedPins = await Promise.all(CAMPUS_NOMINEES.map(([, , , , , pin]) => hashPin(pin)));
+
+  try {
+    await db.transaction(async (tx) => {
+      await clearCampusDemoData(tx);
+      const eventIds = await insertCampusDemoEvents(tx);
+      const categoryIds = await insertCampusDemoCategories(tx);
+      await insertCampusDemoNominees(tx, eventIds, categoryIds, hashedPins);
+    });
+  } catch (txErr) {
+    console.warn('Campus reseed transaction failed, retrying without transaction:', txErr.message);
+    await clearCampusDemoData(db);
+    const eventIds = await insertCampusDemoEvents(db);
+    const categoryIds = await insertCampusDemoCategories(db);
+    await insertCampusDemoNominees(db, eventIds, categoryIds, hashedPins);
+  }
 }
 
 module.exports = {
