@@ -3,12 +3,16 @@ const { open } = require('sqlite');
 const path = require('path');
 const fs = require('fs');
 
-// On Render free tier, use the app directory directly (no persistent disk)
-// Data will reset on redeploy, but keeps it 100% free
-const dbDir = path.join(__dirname, 'db');
+// On Railway, use /data if available (Railway persistent volume), otherwise use local db/ folder
+const dbDir = process.env.RAILWAY_VOLUME_MOUNT 
+  ? path.join(process.env.RAILWAY_VOLUME_MOUNT, 'db')
+  : path.join(__dirname, 'db');
+
+// Ensure the directory exists
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
+
 const dbPath = path.join(dbDir, 'voteeq.db');
 
 let db = null;
