@@ -174,7 +174,13 @@ Voteeq Awards: Verified GHS ${amountGHS.toFixed(2)} for ${vote.vote_count} votes
 // CORS: Allow frontend origins from Vercel + local dev
 const allowedOrigins = process.env.CORS_ORIGIN 
   ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()) 
-  : ['http://localhost:5173', 'http://localhost:4173', 'https://voteeq-roi-dev.vercel.app', 'https://frontend-roi-dev.vercel.app'];
+  : [
+    'http://localhost:5173',
+    'http://localhost:4173',
+    'https://voteeq.vercel.app',
+    'https://voteeq-roi-dev.vercel.app',
+    'https://frontend-roi-dev.vercel.app',
+  ];
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -184,14 +190,16 @@ app.use((req, res, next) => {
 });
 
 app.use(cors({
-  origin: function (origin, callback) {
+  origin(origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || !isProduction()) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    if (allowedOrigins.includes(origin) || !isProduction()) {
+      return callback(null, true);
     }
-  }
+    console.warn(`CORS blocked origin: ${origin}`);
+    callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(bodyParser.json({ 
   limit: '2mb',

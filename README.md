@@ -46,8 +46,8 @@ App runs at `http://localhost:5173`. API URL defaults to `http://localhost:5000`
 | `ADMIN_PASSWORD` | Yes | Admin login password |
 | `TURSO_DATABASE_URL` | Yes | `libsql://...` from Turso dashboard |
 | `TURSO_AUTH_TOKEN` | Yes | Turso auth token |
-| `CORS_ORIGIN` | Yes | Vercel URL (comma-separated for previews) |
-| `FRONTEND_URL` | Yes | Vercel URL for Paystack callbacks |
+| `CORS_ORIGIN` | Yes | Comma-separated, e.g. `https://voteeq.vercel.app,https://voteeq-roi-dev.vercel.app` |
+| `FRONTEND_URL` | Yes | Primary Vercel URL for Paystack callbacks |
 | `PAYSTACK_SECRET_KEY` | When live | Enables real payments |
 
 ### Vercel
