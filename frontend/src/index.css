@@ -5,6 +5,7 @@
   --text-primary: #1c1c1c;    /* Deep Soft Charcoal */
   --text-secondary: #7a7368;  /* Muted Warm Taupe */
   --accent: #b8986c;          /* Brushed Antique Gold */
+  --accent-rgb: 184, 152, 108;/* Accent RGB for opacity */
   --accent-light: #f5eedf;    /* Creamy Champagne */
   --accent-dark: #8e714b;     /* Deeper Rich Gold */
   
@@ -16,6 +17,35 @@
   
   --transition-smooth: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
   --transition-fast: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* Ambient glow bubbles that shift with active color selection */
+.ambient-glow-1 {
+  position: absolute;
+  top: 5%;
+  left: -10%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(var(--accent-rgb), 0.12) 0%, rgba(250, 249, 246, 0) 70%);
+  border-radius: 50%;
+  z-index: -1;
+  pointer-events: none;
+  filter: blur(70px);
+  transition: background 0.8s ease;
+}
+
+.ambient-glow-2 {
+  position: absolute;
+  top: 40%;
+  right: -10%;
+  width: 650px;
+  height: 650px;
+  background: radial-gradient(circle, rgba(var(--accent-rgb), 0.08) 0%, rgba(250, 249, 246, 0) 75%);
+  border-radius: 50%;
+  z-index: -1;
+  pointer-events: none;
+  filter: blur(90px);
+  transition: background 0.8s ease;
 }
 
 * {
@@ -109,19 +139,29 @@ h1, h2, h3, h4 {
   }
 }
 
-/* Luxury Editorial Navigation */
+/* Luxury Editorial Sticky Navigation with Glassmorphism */
 .luxury-nav {
-  padding: 2rem 0;
+  padding: 1rem 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: var(--border-width) solid var(--border-color);
-  margin-bottom: 3rem;
+  background: rgba(250, 249, 246, 0.7);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: var(--border-width) solid rgba(28, 28, 28, 0.05);
+  border-radius: 40px;
+  margin-top: 1.5rem;
+  margin-bottom: 4rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.015);
+  position: sticky;
+  top: 1.5rem;
+  z-index: 100;
+  transition: var(--transition-smooth);
 }
 
 .luxury-logo {
   font-family: var(--font-serif);
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   text-decoration: none;
   color: var(--text-primary);
   letter-spacing: 0.15em;
@@ -140,12 +180,25 @@ h1, h2, h3, h4 {
   gap: 4rem 2rem;
 }
 
-/* Editorial Portrait Card */
+/* Editorial Portrait Card with Premium Glassmorphism */
 .editorial-card {
   display: flex;
   flex-direction: column;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  padding: 1.5rem;
+  border-radius: 16px;
+  box-shadow: 0 10px 35px -10px rgba(28, 28, 28, 0.02);
   transition: var(--transition-smooth);
+}
+
+.editorial-card:hover {
+  transform: translateY(-6px);
+  background: rgba(255, 255, 255, 0.75);
+  border-color: rgba(var(--accent-rgb), 0.25);
+  box-shadow: 0 25px 50px -15px rgba(var(--accent-rgb), 0.15);
 }
 
 .editorial-image-wrapper {
@@ -217,7 +270,7 @@ h1, h2, h3, h4 {
   padding-top: 1.25rem;
 }
 
-/* Modern Luxury Buttons */
+/* Modern Luxury Buttons - Dynamic Theme Responsive Colors */
 .luxury-btn {
   font-family: var(--font-sans);
   font-size: 0.75rem;
@@ -225,9 +278,9 @@ h1, h2, h3, h4 {
   text-transform: uppercase;
   letter-spacing: 0.15em;
   padding: 1rem 2rem;
-  background-color: var(--text-primary);
+  background-color: var(--accent);
   color: #ffffff;
-  border: 1px solid var(--text-primary);
+  border: 1px solid var(--accent);
   cursor: pointer;
   outline: none;
   display: inline-flex;
@@ -235,23 +288,30 @@ h1, h2, h3, h4 {
   justify-content: center;
   gap: 0.5rem;
   transition: var(--transition-fast);
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.15);
 }
 
 .luxury-btn:hover {
-  background-color: var(--accent);
-  border-color: var(--accent);
+  background-color: var(--text-primary);
+  border-color: var(--text-primary);
   color: #ffffff;
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
 }
 
 .luxury-btn.secondary {
-  background-color: transparent;
+  background-color: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   color: var(--text-primary);
-  border-color: var(--text-primary);
+  border-color: rgba(28, 28, 28, 0.15);
+  box-shadow: none;
 }
 
 .luxury-btn.secondary:hover {
-  background-color: var(--text-primary);
+  background-color: var(--accent);
   color: #ffffff;
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.15);
 }
 
 .luxury-btn.text-link {
@@ -334,42 +394,35 @@ h1, h2, h3, h4 {
 
 .category-tabs {
   display: flex;
-  gap: 2rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .category-tab-btn {
-  background: none;
-  border: none;
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(28, 28, 28, 0.05);
   font-family: var(--font-sans);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 500;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-secondary);
-  padding: 0.5rem 0;
+  padding: 0.6rem 1.2rem;
+  border-radius: 30px;
   cursor: pointer;
-  position: relative;
+  outline: none;
   transition: var(--transition-fast);
 }
 
 .category-tab-btn:hover, .category-tab-btn.active {
-  color: var(--text-primary);
-}
-
-.category-tab-btn::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 0;
-  height: 1px;
-  background-color: var(--accent);
-  transition: var(--transition-fast);
-}
-
-.category-tab-btn.active::after {
-  width: 100%;
+  background: rgba(255, 255, 255, 0.85);
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  box-shadow: 0 6px 15px rgba(var(--accent-rgb), 0.12);
+  transform: translateY(-1px);
 }
 
 /* Premium Theme Pickers */
@@ -454,10 +507,12 @@ h1, h2, h3, h4 {
 
 /* Modern Editorial Sheet / Panel */
 .editorial-sheet {
-  background: var(--bg-secondary);
-  border: var(--border-width) solid var(--border-color);
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: var(--border-width) solid rgba(28, 28, 28, 0.05);
   padding: 3rem;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.015);
   margin-bottom: 4rem;
 }
 
@@ -569,13 +624,15 @@ h1, h2, h3, h4 {
 }
 
 .luxury-drawer {
-  background: var(--bg-secondary);
-  border-left: var(--border-width) solid var(--border-color);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-left: var(--border-width) solid rgba(28, 28, 28, 0.06);
   width: 100%;
   max-width: 480px;
   display: flex;
   flex-direction: column;
-  box-shadow: -10px 0 50px rgba(26, 25, 24, 0.08);
+  box-shadow: -15px 0 50px rgba(26, 25, 24, 0.06);
   animation: drawer-slide-in-right 0.45s cubic-bezier(0.25, 1, 0.5, 1) forwards;
   height: 100vh;
   position: relative;
@@ -609,12 +666,15 @@ h1, h2, h3, h4 {
   }
 
   .luxury-drawer {
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border-left: none;
-    border-top: var(--border-width) solid var(--border-color);
+    border-top: var(--border-width) solid rgba(28, 28, 28, 0.06);
     max-width: 100%;
     height: auto;
     max-height: 85vh; /* Don't cover entire screen, show page behind */
-    border-radius: 16px 16px 0 0;
+    border-radius: 20px 20px 0 0;
     animation: drawer-slide-up 0.45s cubic-bezier(0.25, 1, 0.5, 1) forwards;
   }
 
@@ -732,5 +792,11 @@ h1, h2, h3, h4 {
 
 .animate-spin {
   animation: spin 0.8s linear infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.35; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 0.35; transform: scale(0.95); }
 }
 

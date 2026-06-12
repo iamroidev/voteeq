@@ -167,17 +167,18 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
 
       {/* Analytics grids */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '2.5rem', marginBottom: '3rem' }}>
-        <div className="editorial-sheet" style={{ padding: '2rem 2.5rem' }}>
+        <div className="editorial-sheet" style={{ padding: '2rem 2.5rem', position: 'relative' }}>
           <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
             Total Votes
           </span>
           <p style={{ fontSize: '3.6rem', fontFamily: 'var(--font-serif)', color: 'var(--accent-dark)', margin: '0.5rem 0' }}>
             {totalVotes.toLocaleString()}
           </p>
-          <div style={{ height: '3px', background: 'var(--bg-primary)' }}>
+          <div style={{ height: '2px', background: 'var(--border-color)', overflow: 'hidden' }}>
             <div style={{ height: '100%', background: 'var(--accent)', width: '100%' }}></div>
           </div>
-          <p style={{ fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+          <p style={{ fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', animation: 'pulse 2s infinite' }} />
             UPDATED IN REAL-TIME
           </p>
         </div>
@@ -191,16 +192,16 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
               <span style={{ color: 'var(--text-secondary)' }}>ONLINE VOTING</span>
               <span>{channelStats.web} ({webPercentage}%)</span>
             </div>
-            <div style={{ height: '8px', background: 'var(--bg-primary)', marginBottom: '1.25rem' }}>
-              <div style={{ height: '100%', background: 'var(--accent)', width: `${webPercentage}%` }}></div>
+            <div style={{ height: '4px', background: 'var(--border-color)', marginBottom: '1.25rem', overflow: 'hidden' }}>
+              <div style={{ height: '100%', background: 'var(--accent)', width: `${webPercentage}%`, transition: 'width 1s cubic-bezier(0.25, 1, 0.5, 1)' }}></div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 500, marginBottom: '0.35rem' }}>
               <span style={{ color: 'var(--text-secondary)' }}>MOBILE SHORTCODE</span>
               <span>{channelStats.ussd} ({ussdPercentage}%)</span>
             </div>
-            <div style={{ height: '8px', background: 'var(--bg-primary)' }}>
-              <div style={{ height: '100%', background: 'var(--text-primary)', width: `${ussdPercentage}%` }}></div>
+            <div style={{ height: '4px', background: 'var(--border-color)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', background: 'var(--text-primary)', width: `${ussdPercentage}%`, transition: 'width 1s cubic-bezier(0.25, 1, 0.5, 1)' }}></div>
             </div>
           </div>
         </div>

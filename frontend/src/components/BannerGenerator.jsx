@@ -187,6 +187,33 @@ export default function BannerGenerator({ nominee }) {
 
         ctx.drawImage(img, cx - drawW / 2, cy - drawH / 2, drawW, drawH);
         ctx.filter = 'none';
+
+        // Draw crosshair guidelines if actively dragging (Rules of Thirds Overlay)
+        if (isDragging) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([5, 5]);
+
+          // Center guides
+          ctx.beginPath();
+          ctx.moveTo(300, 0);
+          ctx.lineTo(300, canvas.height);
+          ctx.moveTo(0, canvas.height / 2);
+          ctx.lineTo(600, canvas.height / 2);
+          ctx.stroke();
+
+          // Rule of thirds lines
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+          ctx.beginPath();
+          ctx.moveTo(200, 0); ctx.lineTo(200, canvas.height);
+          ctx.moveTo(400, 0); ctx.lineTo(400, canvas.height);
+          ctx.moveTo(0, canvas.height / 3); ctx.lineTo(600, canvas.height / 3);
+          ctx.moveTo(0, (canvas.height / 3) * 2); ctx.lineTo(600, (canvas.height / 3) * 2);
+          ctx.stroke();
+
+          ctx.setLineDash([]); // Reset
+        }
+
         ctx.restore();
         
         drawPosterDetails(ctx, canvas);
@@ -209,7 +236,7 @@ export default function BannerGenerator({ nominee }) {
 
   useEffect(() => {
     drawBanner();
-  }, [nominee, photoUrl, imgOffset, accent, bgStyle, photoFilter, borderWidth]);
+  }, [nominee, photoUrl, imgOffset, accent, bgStyle, photoFilter, borderWidth, isDragging]);
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -370,8 +397,20 @@ export default function BannerGenerator({ nominee }) {
         </div>
 
         {photoUrl && (
-          <div style={{ display: 'inline-block', border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', padding: '0.5rem 0.75rem', marginBottom: '1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            TIP: Click and drag inside the left half of the graphic below to center the photograph.
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            gap: '0.6rem',
+            border: '1px solid var(--border-color)', 
+            background: 'var(--bg-tertiary)', 
+            padding: '0.6rem 1rem', 
+            marginBottom: '1.5rem', 
+            fontSize: '0.75rem', 
+            color: 'var(--text-secondary)',
+            letterSpacing: '0.02em'
+          }}>
+            <span style={{ color: 'var(--accent)' }}>✦</span>
+            <span>DRAG WITHIN THE CANVAS LEFT AREA TO CROP // DOTTED ALIGNMENT GUIDES VISIBLE ON DRAG</span>
           </div>
         )}
 
@@ -388,9 +427,11 @@ export default function BannerGenerator({ nominee }) {
               width: '100%',
               maxWidth: '450px',
               height: 'auto',
-              border: '1px solid var(--border-color)',
+              border: '1px solid rgba(28, 28, 28, 0.08)',
               background: '#fff',
-              cursor: photoUrl ? (isDragging ? 'grabbing' : 'grab') : 'default'
+              cursor: photoUrl ? (isDragging ? 'grabbing' : 'grab') : 'default',
+              boxShadow: '0 25px 60px -15px rgba(28, 28, 28, 0.15), 0 0 0 1px rgba(28, 28, 28, 0.03)',
+              transition: 'transform 0.3s ease, box-shadow 0.3s ease'
             }}
           />
         </div>

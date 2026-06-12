@@ -78,10 +78,26 @@ export default function App() {
     setAccent(color);
     document.documentElement.style.setProperty('--accent', color);
     
+    let rgb = '184, 152, 108';
+    let lightColor = '#f5eedf';
     let darkColor = '#8e714b';
-    if (color === '#6a2e2e') darkColor = '#4a1d1d';
-    if (color === '#2a2b2d') darkColor = '#151515';
-    if (color === '#606f5c') darkColor = '#414f3e';
+    
+    if (color === '#6a2e2e') {
+      rgb = '106, 46, 46';
+      lightColor = '#f5ebeb';
+      darkColor = '#4a1d1d';
+    } else if (color === '#2a2b2d') {
+      rgb = '42, 43, 45';
+      lightColor = '#e8e9ea';
+      darkColor = '#151515';
+    } else if (color === '#606f5c') {
+      rgb = '96, 111, 92';
+      lightColor = '#eef2ed';
+      darkColor = '#414f3e';
+    }
+    
+    document.documentElement.style.setProperty('--accent-rgb', rgb);
+    document.documentElement.style.setProperty('--accent-light', lightColor);
     document.documentElement.style.setProperty('--accent-dark', darkColor);
   };
 
@@ -249,7 +265,11 @@ export default function App() {
   });
 
   return (
-    <div className="app-container">
+    <div className="app-container" style={{ position: 'relative' }}>
+      {/* Dynamic Ambient Blur Glows */}
+      <div className="ambient-glow-1" />
+      <div className="ambient-glow-2" />
+
       {/* Toast Alert System */}
       <div className={`luxury-toast ${toastMessage ? 'visible' : ''}`}>
         {toastMessage}
