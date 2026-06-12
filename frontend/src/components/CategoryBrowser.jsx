@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 
 /**
  * Browse / filter award categories without overwhelming small screens.
- * Progressive disclosure: compact summary → search + scrollable grid.
+ * Collapsed summary → search + scrollable list (or grid).
  */
 export default function CategoryBrowser({
   categories = [],
@@ -10,6 +10,10 @@ export default function CategoryBrowser({
   onSelectCategory,
   getCount,
   showCounts = false,
+  label = 'Award category',
+  allLabel = 'All categories',
+  layout = 'list',
+  collapseOnSelect = true,
 }) {
   const [expanded, setExpanded] = useState(false);
   const [search, setSearch] = useState('');
@@ -23,27 +27,56 @@ export default function CategoryBrowser({
   const selectedLabel = useMemo(() => {
     if (selectedCategory === 'all') {
       const total = showCounts && getCount ? getCount('all') : null;
-      return total != null ? `All categories (${total})` : 'All categories';
+      return total != null ? `${allLabel} (${total})` : allLabel;
     }
     const match = categories.find(
       (c) => String(c.id) === String(selectedCategory)
     );
-    if (!match) return 'All categories';
+    if (!match) return allLabel;
     const count = showCounts && getCount ? getCount(match.id) : null;
     return count != null ? `${match.name} (${count})` : match.name;
-  }, [categories, selectedCategory, showCounts, getCount]);
+  }, [categories, selectedCategory, showCounts, getCount, allLabel]);
 
   const handleSelect = (id) => {
     onSelectCategory(id);
     setSearch('');
+    if (collapseOnSelect) setExpanded(false);
   };
 
   if (categories.length === 0) return null;
 
+  const listClass =
+    layout === 'list' ? 'category-browser-list' : 'category-browser-grid';
+  const itemClass =
+    layout === 'list' ? 'category-browser-row' : 'category-browser-chip';
+  const nameClass =
+    layout === 'list' ? 'category-browser-row-name' : 'category-browser-chip-name';
+  const countClass =
+    layout === 'list' ? 'category-browser-row-count' : 'category-browser-chip-count';
+
+  const renderOption = (id, name, isActive, count, isEmpty = false) => (
+    <button
+      key={id}
+      type="button"
+      role="option"
+      aria-selected={isActive}
+      className={`${itemClass} ${isActive ? 'active' : ''} ${isEmpty ? 'empty' : ''}`}
+      onClick={() => handleSelect(id)}
+    >
+      <span className={nameClass}>{name}</span>
+      {showCounts && getCount && count != null && (
+        <span className={countClass}>{count}</span>
+      )}
+      {layout === 'list' && isActive && (
+        <span className="category-browser-row-check" aria-hidden="true">✓</span>
+      )}
+    </button>
+  );
+
   return (
     <div className="category-browser">
       <div className="category-browser-header">
-        <span className="category-browser-label">Award category</span>
+        <span className="category-browser-label">{label}</span>
         <button
           type="button"
           className="category-browser-summary"
@@ -94,43 +127,21 @@ export default function CategoryBrowser({
             )}
           </div>
 
-          <div className="category-browser-grid" role="listbox" aria-label="Award categories">
-            <button
-              type="button"
-              role="option"
-              aria-selected={selectedCategory === 'all'}
-              className={`category-browser-chip ${selectedCategory === 'all' ? 'active' : ''}`}
-              onClick={() => handleSelect('all')}
-            >
-              <span className="category-browser-chip-name">All categories</span>
-              {showCounts && getCount && (
-                <span className="category-browser-chip-count">{getCount('all')}</span>
-              )}
-            </button>
+          <div className={listClass} role="listbox" aria-label="Award categories">
+            {renderOption(
+              'all',
+              allLabel,
+              selectedCategory === 'all',
+              showCounts && getCount ? getCount('all') : null
+            )}
 
             {filtered.map((c) => {
               const count = showCounts && getCount ? getCount(c.id) : null;
               const isActive =
-                selectedCategory === 'all'
-                  ? false
-                  : String(selectedCategory) === String(c.id);
+                selectedCategory !== 'all' &&
+                String(selectedCategory) === String(c.id);
               const isEmpty = showCounts && count === 0;
-
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  role="option"
-                  aria-selected={isActive}
-                  className={`category-browser-chip ${isActive ? 'active' : ''} ${isEmpty ? 'empty' : ''}`}
-                  onClick={() => handleSelect(c.id)}
-                >
-                  <span className="category-browser-chip-name">{c.name}</span>
-                  {showCounts && getCount && (
-                    <span className="category-browser-chip-count">{count}</span>
-                  )}
-                </button>
-              );
+              return renderOption(c.id, c.name, isActive, count, isEmpty);
             })}
 
             {filtered.length === 0 && (
@@ -139,7 +150,7 @@ export default function CategoryBrowser({
           </div>
 
           <p className="category-browser-hint">
-            {categories.length} award categories · tap to filter
+            {categories.length} categories · tap one to filter
           </p>
         </div>
       )}

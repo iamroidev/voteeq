@@ -13,6 +13,8 @@ import PaymentPage from './pages/PaymentPage';
 import EventsTicketsPage from './pages/EventsTicketsPage';
 import AwaitingNomineesPanel from './components/AwaitingNomineesPanel';
 import CategoryBrowser from './components/CategoryBrowser';
+import LeaderboardPanel from './components/LeaderboardPanel';
+import PublicVoteFilters from './components/PublicVoteFilters';
 import PaymentStatusPage from './pages/PaymentStatusPage';
 import NotFoundPage from './pages/NotFoundPage';
 import { API_BASE_URL, WS_BASE_URL } from './config';
@@ -105,6 +107,13 @@ export default function App() {
 
   const navigateToTab = (tab) => {
     window.location.hash = buildPublicHash(tab, activeEventId ? { eventId: activeEventId } : {});
+  };
+
+  const handleEventChange = (nextEventId) => {
+    const nextEvent = events.find((event) => String(event.id) === String(nextEventId));
+    setActiveEventId(nextEventId);
+    setActiveEvent(nextEvent || null);
+    window.location.hash = buildPublicHash(activeTab, nextEventId ? { eventId: nextEventId } : {});
   };
 
   const navigateToPage = (page) => {
@@ -940,106 +949,27 @@ export default function App() {
 
           <div>
             {!loading && categories.length > 0 && (
-              <div style={{ marginBottom: '2rem' }}>
+              <div style={{ marginBottom: '1.5rem' }}>
                 <CategoryBrowser
                   categories={categories}
                   selectedCategory={selectedCategory}
                   onSelectCategory={setSelectedCategory}
                   getCount={getCategoryCount}
                   showCounts={hasPublishedNominees}
+                  layout="list"
                 />
               </div>
             )}
             {!loading && !hasPublishedNominees && (
               <AwaitingNomineesPanel compact selectedCategoryName={selectedCategoryName} onViewTickets={() => navigateToTab('tickets')} />
             )}
-            {hasPublishedNominees && categoriesWithNominees.map(cat => {
-              // Get nominees in this category and sort them by votes descending
-              const catNominees = eventScopedNominees
-                .filter(n => n.category_id === cat.id)
-                .sort((a, b) => b.votes_count - a.votes_count);
-
-              const totalCatVotes = catNominees.reduce((sum, n) => sum + n.votes_count, 0);
-
-              return (
-                <div key={cat.id} className="editorial-sheet leaderboard-category-sheet" style={{ marginBottom: '3rem', padding: '2.5rem' }}>
-                  <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.6rem', marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
-                    {cat.name.toUpperCase()}
-                  </h2>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '2rem' }}>
-                    {cat.description || 'Verified Live Standings'} — {totalCatVotes} Total Votes
-                  </p>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                    {catNominees.map((nom, idx) => {
-                      const percentage = totalCatVotes > 0
-                        ? Math.round((nom.votes_count / totalCatVotes) * 100)
-                        : 0;
-
-                      // Top 3 rankings styling
-                      let rankBadgeColor = 'var(--text-secondary)';
-                      let rankText = `${idx + 1}`;
-                      if (idx === 0) rankBadgeColor = 'var(--accent)'; // 1st Place (Gold Accent)
-                      if (idx === 1) rankBadgeColor = 'var(--text-primary)';
-
-                      return (
-                        <div key={nom.id} className="leaderboard-row" style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', padding: '0.6rem 0' }}>
-                          {/* Rank badge */}
-                          <div style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '50%',
-                            background: rankBadgeColor,
-                            color: idx === 0 || idx === 1 ? '#fff' : 'var(--text-primary)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontWeight: 700,
-                            fontSize: '1rem',
-                            lineHeight: 1
-                          }}>
-                            {rankText}
-                          </div>
-
-                          {/* Mini portrait */}
-                          <img src={nom.photo_url} alt={nom.name} loading="lazy" decoding="async" style={{
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '50%',
-                            objectFit: 'cover',
-                            border: idx === 0 ? '2px solid var(--accent)' : '1px solid var(--border-color)',
-                            boxShadow: idx === 0 ? '0 0 10px rgba(184, 152, 108, 0.3)' : 'none'
-                          }} />
-
-                          {/* Candidate details & Progress bar */}
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '0.95rem', fontWeight: 600 }}>
-                              <span style={{ color: 'var(--text-primary)' }}>{nom.name} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 400 }}>(REF. {nom.code})</span></span>
-                              <span style={{ color: 'var(--accent-dark)' }}>{nom.votes_count} votes ({percentage}%)</span>
-                            </div>
-
-                            {/* Animated Progress track */}
-                            <div style={{ height: '8px', background: 'var(--border-color)', overflow: 'hidden', borderRadius: '4px' }}>
-                              <div style={{
-                                height: '100%',
-                                background: idx === 0 ? 'var(--accent)' : 'var(--text-primary)',
-                                width: `${percentage}%`,
-                                transition: 'width 1.2s cubic-bezier(0.25, 1, 0.5, 1)'
-                              }} className="leaderboard-progress-fill"></div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {catNominees.length === 0 && (
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center', padding: '1.5rem 0' }}>
-                        No nominees registered under this category.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            {hasPublishedNominees && (
+              <LeaderboardPanel
+                categories={categoriesWithNominees}
+                nominees={eventScopedNominees}
+                selectedCategory={selectedCategory}
+              />
+            )}
           </div>
         </div>
       )}
@@ -1076,58 +1006,19 @@ export default function App() {
         </div>
 
         {categories.length > 0 && (
-        <div className="filter-panel">
-          <CategoryBrowser
+          <PublicVoteFilters
+            events={events}
+            activeEventId={activeEventId}
+            onEventChange={handleEventChange}
             categories={categories}
             selectedCategory={selectedCategory}
             onSelectCategory={setSelectedCategory}
             getCount={getCategoryCount}
             showCounts={hasPublishedNominees}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            showSearch={hasPublishedNominees}
           />
-
-          {hasPublishedNominees && (
-          <div className="filter-panel-search">
-            <div className="editorial-search-container">
-              <svg
-                className="editorial-search-icon"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                placeholder="SEARCH NOMINEE NAME OR CODE..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  padding: '0.4rem 0',
-                  fontSize: '0.75rem',
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  width: '100%',
-                  outline: 'none',
-                  color: 'var(--text-primary)'
-                }}
-              />
-              {searchQuery && (
-                <button
-                  className="clear-search-btn"
-                  onClick={() => setSearchQuery('')}
-                  title="Clear search"
-                  aria-label="Clear search"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          </div>
-          )}
-        </div>
         )}
 
         {/* Loading Indicator */}
