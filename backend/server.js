@@ -26,6 +26,14 @@ const {
   MAX_VOTES_PER_TRANSACTION,
   isProduction,
 } = require('./security');
+const {
+  runInBackground,
+  completeVotePayment,
+  completeTicketPayment,
+  completeRegistrationPayment,
+  checkInTicket,
+} = require('./payment-completion');
+const { createRateLimiter } = require('./rate-limiter');
 const { validateGhanaPhone } = require('./phone');
 const { initializePaystackTransaction } = require('./paystack');
 const { calculatePaystackCheckout } = require('./paystack-fees');
@@ -94,28 +102,7 @@ function verifyToken(token) {
 }
 
 // In-memory rate limiting middleware
-const rateLimits = new Map();
-function rateLimiter(limitWindowMs, maxRequests) {
-  return (req, res, next) => {
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const now = Date.now();
-
-    if (!rateLimits.has(ip)) {
-      rateLimits.set(ip, []);
-    }
-
-    let timestamps = rateLimits.get(ip);
-    timestamps = timestamps.filter(t => now - t < limitWindowMs);
-
-    if (timestamps.length >= maxRequests) {
-      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
-    }
-
-    timestamps.push(now);
-    rateLimits.set(ip, timestamps);
-    next();
-  };
-}
+const rateLimiter = createRateLimiter;
 
 // Email/SMS receipt logger
 const fs = require('fs');
@@ -631,36 +618,30 @@ app.post('/api/payment/mock-verify-ticket', rateLimiter(1 * 60 * 1000, 20), asyn
       return res.status(404).json({ error: 'Ticket reference not found' });
     }
 
-    if (ticketRecord.payment_status === 'pending') {
-      await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
-      await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
-      await sendTicketReceipt(ticketRecord.id);
+    const result = await completeTicketPayment(db, reference);
 
-      const ticketDetails = await db.get(`
-        SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
-        FROM tickets t
-        JOIN events e ON t.event_id = e.id
-        WHERE t.id = ?
-      `, [ticketRecord.id]);
-
-      return res.json({ 
-        success: true, 
-        message: 'Ticket payment verified successfully!', 
-        ticket: ticketDetails 
-      });
-    } else {
-      const ticketDetails = await db.get(`
-        SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
-        FROM tickets t
-        JOIN events e ON t.event_id = e.id
-        WHERE t.id = ?
-      `, [ticketRecord.id]);
-      return res.json({ 
-        success: true, 
-        message: 'Ticket payment already processed', 
-        ticket: ticketDetails 
-      });
+    if (result.outcome === 'not_found') {
+      return res.status(404).json({ error: 'Ticket reference not found' });
     }
+
+    if (result.outcome === 'completed') {
+      runInBackground(() => sendTicketReceipt(result.ticket.id));
+    }
+
+    const ticketDetails = await db.get(`
+      SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
+      FROM tickets t
+      JOIN events e ON t.event_id = e.id
+      WHERE t.payment_reference = ?
+    `, [reference]);
+
+    return res.json({
+      success: true,
+      message: result.outcome === 'completed'
+        ? 'Ticket payment verified successfully!'
+        : 'Ticket payment already processed',
+      ticket: ticketDetails,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Mock ticket validation error' });
@@ -1257,48 +1238,31 @@ app.post('/api/payment/webhook', rateLimiter(1 * 60 * 1000, 100), async (req, re
       const db = getDB();
 
       if (reference && reference.startsWith('tix_')) {
-        // Handle ticket payment
-        const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
-        if (ticketRecord && ticketRecord.payment_status === 'pending') {
-          await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
-          await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
+        const result = await completeTicketPayment(db, reference);
+        if (result.outcome === 'completed') {
           console.log(`Ticket payment confirmed for reference: ${reference}`);
-          await sendTicketReceipt(ticketRecord.id);
+          runInBackground(() => sendTicketReceipt(result.ticket.id));
         }
         return res.status(200).send('Webhook processed successfully');
       }
 
       if (reference && reference.startsWith('reg_')) {
-        // Handle nominee onboarding registration form payment
-        const regRecord = await db.get('SELECT * FROM nominee_registrations WHERE payment_reference = ?', [reference]);
-        if (regRecord && regRecord.payment_status === 'pending') {
-          await db.run("UPDATE nominee_registrations SET payment_status = 'completed' WHERE id = ?", [regRecord.id]);
+        const result = await completeRegistrationPayment(db, reference);
+        if (result.outcome === 'completed') {
           console.log(`Registration Form payment confirmed for reference: ${reference}`);
         }
         return res.status(200).send('Webhook processed successfully');
       }
 
-      const voteRecord = await db.get('SELECT * FROM votes WHERE payment_reference = ?', [reference]);
+      const voteResult = await completeVotePayment(db, reference);
 
-      if (voteRecord && voteRecord.status === 'pending') {
-        // Update vote status
-        await db.run('UPDATE votes SET status = ? WHERE id = ?', ['completed', voteRecord.id]);
-        
-        // Update nominee tally
-        await db.run(
-          'UPDATE nominees SET votes_count = votes_count + ? WHERE id = ?',
-          [voteRecord.vote_count, voteRecord.nominee_id]
-        );
-
-        console.log(`Payment confirmed! Added ${voteRecord.vote_count} votes for nominee ID ${voteRecord.nominee_id}`);
-
-        await sendVoteReceipt(voteRecord.id);
-
-        // Broadcast to WebSocket clients
+      if (voteResult.outcome === 'completed') {
+        console.log(`Payment confirmed! Added ${voteResult.votesAdded} votes for nominee ID ${voteResult.nomineeId}`);
+        runInBackground(() => sendVoteReceipt(voteResult.vote.id));
         broadcast({
           type: 'VOTE_COMPLETED',
-          nomineeId: voteRecord.nominee_id,
-          votesCount: voteRecord.vote_count
+          nomineeId: voteResult.nomineeId,
+          votesCount: voteResult.votesAdded,
         });
       }
       res.status(200).send('Webhook processed successfully');
@@ -1323,33 +1287,23 @@ app.post('/api/payment/mock-verify', rateLimiter(1 * 60 * 1000, 20), async (req,
 
   try {
     const db = getDB();
-    const voteRecord = await db.get('SELECT * FROM votes WHERE payment_reference = ?', [reference]);
+    const voteResult = await completeVotePayment(db, reference);
 
-    if (!voteRecord) {
+    if (voteResult.outcome === 'not_found') {
       return res.status(404).json({ error: 'Transaction reference not found' });
     }
 
-    if (voteRecord.status === 'pending') {
-      await db.run('UPDATE votes SET status = ? WHERE id = ?', ['completed', voteRecord.id]);
-      await db.run(
-        'UPDATE nominees SET votes_count = votes_count + ? WHERE id = ?',
-        [voteRecord.vote_count, voteRecord.nominee_id]
-      );
-
-      // Trigger Email/SMS receipt simulation
-      await sendVoteReceipt(voteRecord.id);
-
-      // Broadcast WebSocket real-time update
+    if (voteResult.outcome === 'completed') {
+      runInBackground(() => sendVoteReceipt(voteResult.vote.id));
       broadcast({
         type: 'VOTE_COMPLETED',
-        nomineeId: voteRecord.nominee_id,
-        votesCount: voteRecord.vote_count
+        nomineeId: voteResult.nomineeId,
+        votesCount: voteResult.votesAdded,
       });
-
       return res.json({ success: true, message: 'Mock payment verified successfully!' });
-    } else {
-      return res.json({ success: true, message: 'Transaction already processed' });
     }
+
+    return res.json({ success: true, message: 'Transaction already processed' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Mock validation error' });
@@ -1648,40 +1602,35 @@ app.post('/api/admin/tickets/scan', requireAdmin, async (req, res) => {
 
   try {
     const db = getDB();
-    const ticket = await db.get(`
-      SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue 
-      FROM tickets t
-      JOIN events e ON t.event_id = e.id
-      WHERE t.ticket_code = ?
-    `, [ticket_code.trim()]);
+    const result = await checkInTicket(db, ticket_code);
 
-    if (!ticket) {
+    if (result.outcome === 'invalid_code') {
+      return res.status(400).json({ error: 'Ticket code is required' });
+    }
+    if (result.outcome === 'not_found') {
       return res.status(404).json({ error: 'Ticket code is invalid or not found in system database' });
     }
-
-    if (ticket.payment_status !== 'paid') {
-      return res.status(400).json({ error: `Ticket status is ${ticket.payment_status.toUpperCase()}. Complete payment first.` });
+    if (result.outcome === 'unpaid') {
+      return res.status(400).json({
+        error: `Ticket status is ${result.ticket.payment_status.toUpperCase()}. Complete payment first.`,
+      });
     }
-
-    if (ticket.scanned === 1) {
-      return res.status(400).json({ 
-        error: `ACCESS DENIED: Ticket has already been checked in! Checked in at: ${new Date(ticket.scanned_at).toLocaleString()}` 
+    if (result.outcome === 'already_scanned') {
+      return res.status(400).json({
+        error: `ACCESS DENIED: Ticket has already been checked in! Checked in at: ${new Date(result.ticket.scanned_at).toLocaleString()}`,
       });
     }
 
-    const scannedAt = new Date().toISOString();
-    await db.run('UPDATE tickets SET scanned = 1, scanned_at = ? WHERE id = ?', [scannedAt, ticket.id]);
-    await logAdminAction(adminUsername(req), 'SCAN_TICKET', `Scanned ticket code: ${ticket_code.trim()}, Event: ${ticket.event_title}, Buyer: ${ticket.buyer_name}`);
+    await logAdminAction(
+      adminUsername(req),
+      'SCAN_TICKET',
+      `Scanned ticket code: ${ticket_code.trim()}, Event: ${result.ticket.event_title}, Buyer: ${result.ticket.buyer_name}`
+    );
 
     res.json({
       success: true,
       message: 'ACCESS GRANTED - Check-in successful',
-      ticket: {
-        buyer_name: ticket.buyer_name,
-        event_title: ticket.event_title,
-        quantity: ticket.quantity,
-        scanned_at: scannedAt
-      }
+      ticket: result.ticket,
     });
   } catch (err) {
     console.error(err);

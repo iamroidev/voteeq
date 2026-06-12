@@ -87,6 +87,17 @@ Set both on **Render** alongside Paystack keys, then redeploy the API.
 
 `GET /health` — returns `{ status: "ok" }` when the API and database are reachable.
 
+## EC2 deployment (always-on API, AWS credits)
+
+Use when Render Free cold starts are unacceptable. Instance **apex-server** has Elastic IP **54.153.93.87**.
+
+1. **DNS (Namecheap):** `api.voteeq.online` → **A** record `54.153.93.87` (remove Render CNAME).
+2. **On the EC2 instance** (Ubuntu), run `deploy/ec2-bootstrap.sh` from the repo, or see `deploy/ec2.env.example`.
+3. **SSL:** `sudo certbot --nginx -d api.voteeq.online`
+4. **Paystack webhook:** `https://api.voteeq.online/api/payment/webhook`
+
+Optional: EventBridge + Lambda pinging `/health` every 10 minutes can reduce Render Free sleep but is unreliable; EC2 avoids the problem entirely.
+
 ## Security notes
 
 - Mock payment endpoints and USSD auto-complete are **disabled in production**.
