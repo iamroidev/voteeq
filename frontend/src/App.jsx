@@ -3,7 +3,7 @@ import VoteModal from './components/VoteModal';
 import MockPaystack from './components/MockPaystack';
 import NomineeDashboard from './components/NomineeDashboard';
 import AdminDashboard from './components/AdminDashboard';
-import { API_BASE_URL } from './config';
+import { API_BASE_URL, WS_BASE_URL } from './config';
 
 export default function App() {
   // Navigation & Page State
@@ -47,6 +47,9 @@ export default function App() {
 
   // Mobile Menu Drawer State
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Active public view tab ('vote' or 'leaderboard')
+  const [activeTab, setActiveTab] = useState('vote');
 
   // Accent Color Theme state (Sophisticated antique gold default)
   const [accent, setAccent] = useState('#b8986c');
@@ -106,6 +109,37 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const ws = new WebSocket(WS_BASE_URL);
+
+    ws.onopen = () => {
+      console.log('Real-time sync connection established');
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === 'VOTE_COMPLETED') {
+          // Increment nominee votes count dynamically in state
+          setNominees(prev => prev.map(nom => {
+            if (nom.id === message.nomineeId) {
+              return { ...nom, votes_count: nom.votes_count + message.votesCount };
+            }
+            return nom;
+          }));
+        }
+      } catch (err) {
+        console.error('WS message parsing failed:', err);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log('Real-time sync connection closed');
+    };
+
+    return () => ws.close();
+  }, []);
+
   const changeAccent = (color) => {
     setAccent(color);
     document.documentElement.style.setProperty('--accent', color);
@@ -147,7 +181,7 @@ export default function App() {
 
   // Copy share link helper
   const copyShareLink = (nomineeCode, nomineeName) => {
-    const link = `${window.location.origin}/?nominee=${nomineeCode}`;
+    const link = `${API_BASE_URL}/share/${nomineeCode}`;
     navigator.clipboard.writeText(link).then(() => {
       triggerToast(`Share link copied for ${nomineeName.toUpperCase()}`);
     }).catch(err => {
@@ -287,7 +321,7 @@ export default function App() {
     const dialString = customDial || '*920*102#';
 
     try {
-      const response = await fetch('http://localhost:5000/api/ussd', {
+      const response = await fetch(`${API_BASE_URL}/api/ussd`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -315,7 +349,7 @@ export default function App() {
     setUssdLoading(true);
 
     try {
-      const response = await fetch('http://localhost:5000/api/ussd', {
+      const response = await fetch(`${API_BASE_URL}/api/ussd`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import BannerGenerator from './BannerGenerator';
+import { API_BASE_URL } from '../config';
 
 export default function NomineeDashboard({ code, token, onLogout, copyShareLink, dialUssdCode }) {
   const [data, setData] = useState(null);
@@ -8,7 +9,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
 
   const loadDashboardData = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/nominees/dashboard/${code}`, {
+      const response = await fetch(`${API_BASE_URL}/api/nominees/dashboard/${code}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -195,7 +196,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
       <div className="dashboard-main-grid">
         {/* Campaign Banner studio */}
         <div>
-          <BannerGenerator nominee={nominee} />
+          <BannerGenerator nominee={nominee} token={token} />
         </div>
 
         {/* Live Vote Log sheet */}

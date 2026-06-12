@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 export default function AdminDashboard({ token, onLogout, categories, nominees, refreshData }) {
   const [stats, setStats] = useState(null);
@@ -23,7 +24,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/admin/overview', {
+      const res = await fetch(`${API_BASE_URL}/api/admin/overview`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -46,7 +47,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
     setCatError('');
     setCatSuccess('');
     try {
-      const res = await fetch('http://localhost:5000/api/admin/categories', {
+      const res = await fetch(`${API_BASE_URL}/api/admin/categories`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -69,7 +70,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
   const handleDeleteCategory = async (id) => {
     if (!window.confirm('Are you sure you want to delete this category?')) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/categories/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/categories/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -90,7 +91,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       return;
     }
     try {
-      const res = await fetch('http://localhost:5000/api/admin/nominees', {
+      const res = await fetch(`${API_BASE_URL}/api/admin/nominees`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -120,7 +121,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
   const handleDeleteNominee = async (id) => {
     if (!window.confirm('Are you sure you want to delete this nominee? All their votes will also be deleted.')) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/nominees/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/nominees/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });

@@ -1,6 +1,38 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
-export default function BannerGenerator({ nominee }) {
+export default function BannerGenerator({ nominee, token }) {
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('');
+
+  const handleSaveBanner = async () => {
+    if (!token) return;
+    setSaving(true);
+    setSaveStatus('');
+    try {
+      const canvas = canvasRef.current;
+      const dataUrl = canvas.toDataURL('image/png');
+      const response = await fetch(`${API_BASE_URL}/api/nominees/save-banner`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ code: nominee.code, image: dataUrl })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save banner to server');
+      }
+      setSaveStatus('Campaign banner saved successfully! Social shares will preview this poster.');
+      setTimeout(() => setSaveStatus(''), 5000);
+    } catch (err) {
+      console.error(err);
+      setSaveStatus(`Error: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
   const canvasRef = useRef(null);
   const [photoUrl, setPhotoUrl] = useState(null);
   const [imgOffset, setImgOffset] = useState({ x: 0, y: 0, scale: 1 });
@@ -436,14 +468,37 @@ export default function BannerGenerator({ nominee }) {
           />
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
-          <button 
-            onClick={handleDownload} 
-            className="luxury-btn" 
-            style={{ padding: '1rem 3rem', width: '100%', maxWidth: '380px' }}
-          >
-            DOWNLOAD OFFICIAL POSTER
-          </button>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '2.5rem' }}>
+          <div style={{ display: 'flex', gap: '1rem', width: '100%', maxWidth: '450px', justifyContent: 'center' }}>
+            <button 
+              onClick={handleDownload} 
+              className="luxury-btn" 
+              style={{ padding: '1rem', flex: 1, fontSize: '0.75rem', letterSpacing: '0.05em' }}
+            >
+              DOWNLOAD POSTER
+            </button>
+            {token && (
+              <button 
+                onClick={handleSaveBanner} 
+                disabled={saving}
+                className="luxury-btn secondary" 
+                style={{ padding: '1rem', flex: 1, fontSize: '0.75rem', letterSpacing: '0.05em' }}
+              >
+                {saving ? 'SAVING...' : 'SAVE FOR SHARING'}
+              </button>
+            )}
+          </div>
+          {saveStatus && (
+            <div style={{
+              fontSize: '0.75rem',
+              color: saveStatus.startsWith('Error') ? '#c05a3e' : 'var(--accent-dark)',
+              fontWeight: 500,
+              textAlign: 'center',
+              animation: 'fadeIn 0.3s ease'
+            }}>
+              {saveStatus}
+            </div>
+          )}
         </div>
       </div>
     </div>

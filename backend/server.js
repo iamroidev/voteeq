@@ -260,7 +260,7 @@ app.post('/api/nominees/login', rateLimiter(15 * 60 * 1000, 10), async (req, res
 
 // 3a. Nominee PIN Registration / Activation
 app.post('/api/nominees/register', async (req, res) => {
-  const { code, newPin } = req.body;
+  const { code, activationCode, newPin } = req.body;
   if (!code || !newPin) {
     return res.status(400).json({ error: 'Nominee Code and new PIN are required' });
   }
@@ -277,8 +277,18 @@ app.post('/api/nominees/register', async (req, res) => {
       return res.status(404).json({ error: 'Nominee code not found in system' });
     }
 
-    if (nominee.passcode !== 'PENDING') {
+    // Check if passcode indicates a pending activation
+    const isPending = nominee.passcode === 'PENDING' || (nominee.passcode && nominee.passcode.startsWith('PENDING_ACT_'));
+    if (!isPending) {
       return res.status(400).json({ error: 'Account already activated. Use Nominee Login.' });
+    }
+
+    // If it's a secure activation flow (starts with PENDING_ACT_)
+    if (nominee.passcode && nominee.passcode.startsWith('PENDING_ACT_')) {
+      const expectedCode = nominee.passcode.replace('PENDING_ACT_', '');
+      if (!activationCode || activationCode.trim() !== expectedCode) {
+        return res.status(401).json({ error: 'Invalid or missing Temporary Activation Code' });
+      }
     }
 
     await db.run('UPDATE nominees SET passcode = ? WHERE code = ?', [newPin, code]);
@@ -420,6 +430,8 @@ app.post('/api/admin/nominees', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Nominee Code already exists in system' });
     }
 
+    const activationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
     await db.run(
       'INSERT INTO nominees (code, name, photo_url, category_id, passcode, votes_count) VALUES (?, ?, ?, ?, ?, 0)',
       [
@@ -427,10 +439,14 @@ app.post('/api/admin/nominees', requireAdmin, async (req, res) => {
         name,
         photo_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80',
         category_id,
-        'PENDING'
+        `PENDING_ACT_${activationCode}`
       ]
     );
-    res.json({ success: true, message: 'Nominee added in PENDING activation state!' });
+    res.json({ 
+      success: true, 
+      message: 'Nominee added in PENDING activation state!',
+      activationCode: activationCode
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error adding nominee' });
@@ -499,9 +515,12 @@ app.get('/api/nominees/dashboard/:code', async (req, res) => {
       GROUP BY channel
     `, [nominee.id]);
 
+    const hasCustomBanner = fs.existsSync(path.join(bannersDir, `${code}.png`));
+
     res.json({
       nominee,
       recentVotes: votes,
+      hasCustomBanner,
       channelStats: {
         web: channelStats.find(s => s.channel === 'web')?.total || 0,
         ussd: channelStats.find(s => s.channel === 'ussd')?.total || 0

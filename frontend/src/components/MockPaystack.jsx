@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE_URL } from '../config';
 
 export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
   const { reference, amount, nominee, votes } = checkoutData;
@@ -62,7 +63,7 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
   const triggerPaymentSuccess = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:5000/api/payment/mock-verify', {
+      const response = await fetch(`${API_BASE_URL}/api/payment/mock-verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
