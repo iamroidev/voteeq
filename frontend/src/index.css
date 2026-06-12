@@ -230,11 +230,11 @@ h1, h2, h3, h4 {
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: var(--border-width) solid rgba(255, 255, 255, 0.45);
   border-radius: 40px;
-  margin-top: 1.5rem;
+  margin-top: 0;
   margin-bottom: 4rem;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.015), inset 0 1px 0 rgba(255, 255, 255, 0.5);
   position: fixed;
-  top: 1.5rem;
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
   width: calc(100% - 4rem);

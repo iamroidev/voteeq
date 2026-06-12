@@ -18,12 +18,12 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // Modals & Action States
   const [activeVoteNominee, setActiveVoteNominee] = useState(null);
   const [checkoutData, setCheckoutData] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
-  
+
   // Nominee Login/Dashboard
   const [authNominee, setAuthNominee] = useState(() => {
     const saved = localStorage.getItem('voteeq_auth');
@@ -172,11 +172,11 @@ export default function App() {
   const changeAccent = (color) => {
     setAccent(color);
     document.documentElement.style.setProperty('--accent', color);
-    
+
     let rgb = '184, 152, 108';
     let lightColor = '#f5eedf';
     let darkColor = '#8e714b';
-    
+
     if (color === '#6a2e2e') {
       rgb = '106, 46, 46';
       lightColor = '#f5ebeb';
@@ -190,7 +190,7 @@ export default function App() {
       lightColor = '#eef2ed';
       darkColor = '#414f3e';
     }
-    
+
     document.documentElement.style.setProperty('--accent-rgb', rgb);
     document.documentElement.style.setProperty('--accent-light', lightColor);
     document.documentElement.style.setProperty('--accent-dark', darkColor);
@@ -316,10 +316,10 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/api/nominees/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          code: registerCode, 
+        body: JSON.stringify({
+          code: registerCode,
           activationCode: registerActivationCode,
-          newPin: registerPin 
+          newPin: registerPin
         }),
       });
       const data = await response.json();
@@ -332,7 +332,7 @@ export default function App() {
       setRegisterActivationCode('');
       triggerToast('Nominee PIN Activated!');
       loadData(); // refresh nominees list
-      
+
       // Auto redirect to login mode after 2 seconds
       setTimeout(() => {
         setRegisterMode(false);
@@ -351,7 +351,7 @@ export default function App() {
     setUssdLoading(true);
     const sId = `ussd_sim_${Date.now()}`;
     setUssdSessionId(sId);
-    
+
     const dialString = customDial || '*920*102#';
 
     try {
@@ -398,7 +398,7 @@ export default function App() {
       setUssdScreen(data.message);
       setUssdAction(data.action);
       setUssdInput('');
-      
+
       if (data.action === 'release') {
         setTimeout(loadData, 3500);
       }
@@ -425,8 +425,8 @@ export default function App() {
 
   const filteredNominees = nominees.filter(nom => {
     const matchesCategory = selectedCategory === 'all' || nom.category_id === parseInt(selectedCategory);
-    const matchesSearch = nom.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          nom.code.includes(searchQuery);
+    const matchesSearch = nom.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      nom.code.includes(searchQuery);
     return matchesCategory && matchesSearch;
   });
 
@@ -446,24 +446,24 @@ export default function App() {
         <a href="/" onClick={(e) => { e.preventDefault(); setActiveTab('vote'); }} className="luxury-logo">
           VOTEEQ
         </a>
-        
+
         {/* Mobile menu toggle */}
-        <button 
+        <button
           onClick={() => setMobileMenuOpen(true)}
           className="mobile-menu-toggle"
         >
           MENU
         </button>
-        
+
         <div className="luxury-nav-actions">
           {/* Main Public View Selector */}
           {!authAdmin && !authNominee && (
             <div style={{ display: 'flex', gap: '0.4rem', marginRight: '1.25rem', borderRight: '1px solid var(--border-color)', paddingRight: '1.25rem' }}>
-              <button 
+              <button
                 onClick={() => setActiveTab('vote')}
                 className={`luxury-btn text-link ${activeTab === 'vote' ? 'active' : ''}`}
-                style={{ 
-                  fontSize: '0.65rem', 
+                style={{
+                  fontSize: '0.65rem',
                   letterSpacing: '0.1em',
                   padding: '0.4rem 0.5rem',
                   borderBottom: activeTab === 'vote' ? '1px solid var(--accent)' : '1px solid transparent',
@@ -473,11 +473,11 @@ export default function App() {
               >
                 VOTE PORTAL
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab('leaderboard')}
                 className={`luxury-btn text-link ${activeTab === 'leaderboard' ? 'active' : ''}`}
-                style={{ 
-                  fontSize: '0.65rem', 
+                style={{
+                  fontSize: '0.65rem',
                   letterSpacing: '0.1em',
                   padding: '0.4rem 0.5rem',
                   borderBottom: activeTab === 'leaderboard' ? '1px solid var(--accent)' : '1px solid transparent',
@@ -507,8 +507,8 @@ export default function App() {
             ))}
           </div>
 
-          <button 
-            onClick={() => setUssdOpen(!ussdOpen)} 
+          <button
+            onClick={() => setUssdOpen(!ussdOpen)}
             className="luxury-btn secondary"
             style={{ padding: '0.5rem 1rem', fontSize: '0.65rem', letterSpacing: '0.1em' }}
           >
@@ -516,7 +516,7 @@ export default function App() {
           </button>
 
           {authAdmin ? (
-            <button 
+            <button
               onClick={handleAdminLogout}
               className="luxury-btn secondary"
               style={{ padding: '0.5rem 1rem', fontSize: '0.65rem', letterSpacing: '0.1em' }}
@@ -524,7 +524,7 @@ export default function App() {
               ADMIN LOGOUT
             </button>
           ) : authNominee ? (
-            <button 
+            <button
               onClick={handleLogout}
               className="luxury-btn secondary"
               style={{ padding: '0.5rem 1rem', fontSize: '0.65rem', letterSpacing: '0.1em' }}
@@ -532,7 +532,7 @@ export default function App() {
               LOGOUT ({authNominee.nominee.code})
             </button>
           ) : (
-            <button 
+            <button
               onClick={() => setLoginMode(true)}
               className="luxury-btn"
               style={{ padding: '0.5rem 1rem', fontSize: '0.65rem', letterSpacing: '0.1em' }}
@@ -556,23 +556,27 @@ export default function App() {
       )}
 
       {/* SECURE DASHBOARDS OR PUBLIC LIST */}
-      {!currentPage && authAdmin ? (
-        <AdminDashboard 
-          token={authAdmin.token} 
-          onLogout={handleAdminLogout} 
+      {!currentPage && authAdmin && (
+        <AdminDashboard
+          token={authAdmin.token}
+          onLogout={handleAdminLogout}
           categories={categories}
           nominees={nominees}
           refreshData={loadData}
         />
-      ) : authNominee ? (
-        <NomineeDashboard 
-          code={authNominee.nominee.code} 
-          token={authNominee.token} 
-          onLogout={handleLogout} 
+      )}
+
+      {!currentPage && authNominee && (
+        <NomineeDashboard
+          code={authNominee.nominee.code}
+          token={authNominee.token}
+          onLogout={handleLogout}
           copyShareLink={copyShareLink}
           dialUssdCode={dialUssdCode}
         />
-      ) : activeTab === 'leaderboard' ? (
+      )}
+
+      {!currentPage && !authAdmin && !authNominee && activeTab === 'leaderboard' && (
         /* PUBLIC LEADERBOARD PAGE */
         <div className="leaderboard-page-container" style={{ animation: 'fadeIn 0.6s ease' }}>
           <div className="editorial-header-section">
@@ -587,7 +591,7 @@ export default function App() {
               const catNominees = nominees
                 .filter(n => n.category_id === cat.id)
                 .sort((a, b) => b.votes_count - a.votes_count);
-              
+
               const totalCatVotes = catNominees.reduce((sum, n) => sum + n.votes_count, 0);
 
               return (
@@ -601,8 +605,8 @@ export default function App() {
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                     {catNominees.map((nom, idx) => {
-                      const percentage = totalCatVotes > 0 
-                        ? Math.round((nom.votes_count / totalCatVotes) * 100) 
+                      const percentage = totalCatVotes > 0
+                        ? Math.round((nom.votes_count / totalCatVotes) * 100)
                         : 0;
 
                       // Top 3 rankings styling
@@ -610,15 +614,15 @@ export default function App() {
                       let rankText = `${idx + 1}`;
                       if (idx === 0) rankBadgeColor = 'var(--accent)'; // 1st Place (Gold Accent)
                       if (idx === 1) rankBadgeColor = 'var(--text-primary)';
-                      
+
                       return (
                         <div key={nom.id} className="leaderboard-row" style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', padding: '0.6rem 0' }}>
                           {/* Rank badge */}
-                          <div style={{ 
-                            width: '36px', 
-                            height: '36px', 
-                            borderRadius: '50%', 
-                            background: rankBadgeColor, 
+                          <div style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            background: rankBadgeColor,
                             color: idx === 0 || idx === 1 ? '#fff' : 'var(--text-primary)',
                             display: 'flex',
                             alignItems: 'center',
@@ -646,14 +650,14 @@ export default function App() {
                               <span style={{ color: 'var(--text-primary)' }}>{nom.name} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 400 }}>(REF. {nom.code})</span></span>
                               <span style={{ color: 'var(--accent-dark)' }}>{nom.votes_count} votes ({percentage}%)</span>
                             </div>
-                            
+
                             {/* Animated Progress track */}
                             <div style={{ height: '8px', background: 'var(--border-color)', overflow: 'hidden', borderRadius: '4px' }}>
-                              <div style={{ 
-                                height: '100%', 
-                                background: idx === 0 ? 'var(--accent)' : 'var(--text-primary)', 
-                                width: `${percentage}%`, 
-                                transition: 'width 1.2s cubic-bezier(0.25, 1, 0.5, 1)' 
+                              <div style={{
+                                height: '100%',
+                                background: idx === 0 ? 'var(--accent)' : 'var(--text-primary)',
+                                width: `${percentage}%`,
+                                transition: 'width 1.2s cubic-bezier(0.25, 1, 0.5, 1)'
                               }} className="leaderboard-progress-fill"></div>
                             </div>
                           </div>
@@ -671,174 +675,176 @@ export default function App() {
             })}
           </div>
         </div>
-      ) : (
+      )}
+
+      {!currentPage && !authAdmin && !authNominee && activeTab !== 'leaderboard' && (
         /* PUBLIC VOTING LANDING PAGE */
-        <div>
-          {/* Hero Marquee Section */}
-          <div className="editorial-header-section">
-            <span className="editorial-tagline">OFFICIAL VOTING PORTAL</span>
-            <h1 className="editorial-title">VOTEEQ AWARDS</h1>
-            <div className="editorial-divider" />
-          </div>
+      <div>
+        {/* Hero Marquee Section */}
+        <div className="editorial-header-section">
+          <span className="editorial-tagline">OFFICIAL VOTING PORTAL</span>
+          <h1 className="editorial-title">VOTEEQ AWARDS</h1>
+          <div className="editorial-divider" />
+        </div>
 
-          {/* Clean Categorization Filter Tabs */}
-          <div className="filter-panel">
-            <div className="category-tabs">
-              <button 
-                className={`category-tab-btn ${selectedCategory === 'all' ? 'active' : ''}`}
-                onClick={() => setSelectedCategory('all')}
+        {/* Clean Categorization Filter Tabs */}
+        <div className="filter-panel">
+          <div className="category-tabs">
+            <button
+              className={`category-tab-btn ${selectedCategory === 'all' ? 'active' : ''}`}
+              onClick={() => setSelectedCategory('all')}
+            >
+              All Nominees ({getCategoryCount('all')})
+            </button>
+            {categories.map(c => (
+              <button
+                key={c.id}
+                className={`category-tab-btn ${selectedCategory === String(c.id) || selectedCategory === c.id ? 'active' : ''}`}
+                onClick={() => setSelectedCategory(c.id)}
               >
-                All Nominees ({getCategoryCount('all')})
+                {c.name} ({getCategoryCount(c.id)})
               </button>
-              {categories.map(c => (
-                <button 
-                  key={c.id}
-                  className={`category-tab-btn ${selectedCategory === String(c.id) || selectedCategory === c.id ? 'active' : ''}`}
-                  onClick={() => setSelectedCategory(c.id)}
-                >
-                  {c.name} ({getCategoryCount(c.id)})
-                </button>
-              ))}
-            </div>
-
-            <div style={{ minWidth: '280px' }}>
-              <div className="editorial-search-container">
-                <svg 
-                  className="editorial-search-icon" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24" 
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="SEARCH NOMINEE NAME OR CODE..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ 
-                    border: 'none',
-                    background: 'transparent', 
-                    padding: '0.4rem 0',
-                    fontSize: '0.75rem',
-                    letterSpacing: '0.1em',
-                    textTransform: 'uppercase',
-                    width: '100%',
-                    outline: 'none',
-                    color: 'var(--text-primary)'
-                  }}
-                />
-                {searchQuery && (
-                  <button 
-                    className="clear-search-btn" 
-                    onClick={() => setSearchQuery('')}
-                    title="Clear search"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            </div>
+            ))}
           </div>
 
-          {/* Loading Indicator */}
-          {loading && nominees.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '6rem 0' }}>
-              <h2 className="loading-copy" style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-secondary)', fontWeight: 300 }}>
-                Catalog Loading...
-              </h2>
-            </div>
-          ) : (
-            /* Nominees Editorial Column Grid */
-            <div className="editorial-grid">
-              {filteredNominees.length === 0 ? (
-                <div className="editorial-sheet no-results-copy" style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem 2rem' }}>
-                  <h3 style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-                    No results found
-                  </h3>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    Try adjusting your criteria or category tabs.
-                  </p>
-                </div>
-              ) : (
-                filteredNominees.map(nom => (
-                  <div key={nom.id} className="editorial-card">
-                    {/* Visual Portrait */}
-                    <div className="editorial-image-wrapper">
-                      <img src={nom.photo_url} alt={nom.name} />
-                      <div style={{
-                        position: 'absolute',
-                        top: '1rem',
-                        left: '1rem',
-                        zIndex: 10
-                      }}>
-                        <span className="ref-badge" style={{ background: 'var(--bg-secondary)' }}>
-                          REF. {nom.code}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Meta category details */}
-                    <div className="editorial-card-meta">
-                      {nom.category_name}
-                    </div>
-
-                    {/* Portrait Title */}
-                    <h3 className="editorial-card-title">{nom.name}</h3>
-                    
-                    {/* Vote count tally */}
-                    <div className="editorial-card-votes">
-                      <span className="votes-number">{nom.votes_count}</span>
-                      <span className="votes-label">votes verified</span>
-                    </div>
-
-                    {/* Actions container */}
-                    <div className="editorial-card-actions">
-                      <button 
-                        onClick={() => setActiveVoteNominee(nom)}
-                        className="luxury-btn"
-                        style={{ width: '100%' }}
-                      >
-                        VOTE ONLINE
-                      </button>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
-                        <button 
-                          onClick={() => dialUssdCode(`*920*102*${nom.code}#`)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            fontFamily: 'monospace',
-                            fontSize: '0.7rem',
-                            color: 'var(--accent-dark)',
-                            cursor: 'pointer',
-                            padding: 0,
-                            letterSpacing: '0.05em',
-                            textDecoration: 'underline',
-                            transition: 'var(--transition-fast)'
-                          }}
-                          title="Dial USSD code automatically"
-                          onMouseEnter={(e) => e.target.style.color = 'var(--text-primary)'}
-                          onMouseLeave={(e) => e.target.style.color = 'var(--accent-dark)'}
-                        >
-                          DIAL *920*102*{nom.code}#
-                        </button>
-                        
-                        <button 
-                          onClick={() => copyShareLink(nom.code, nom.name)} 
-                          className="luxury-btn text-link"
-                        >
-                          [ Copy link ]
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
+          <div style={{ minWidth: '280px' }}>
+            <div className="editorial-search-container">
+              <svg
+                className="editorial-search-icon"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="SEARCH NOMINEE NAME OR CODE..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  padding: '0.4rem 0',
+                  fontSize: '0.75rem',
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  width: '100%',
+                  outline: 'none',
+                  color: 'var(--text-primary)'
+                }}
+              />
+              {searchQuery && (
+                <button
+                  className="clear-search-btn"
+                  onClick={() => setSearchQuery('')}
+                  title="Clear search"
+                >
+                  ✕
+                </button>
               )}
             </div>
-          )}
+          </div>
         </div>
+
+        {/* Loading Indicator */}
+        {loading && nominees.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '6rem 0' }}>
+            <h2 className="loading-copy" style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-secondary)', fontWeight: 300 }}>
+              Catalog Loading...
+            </h2>
+          </div>
+        ) : (
+          /* Nominees Editorial Column Grid */
+          <div className="editorial-grid">
+            {filteredNominees.length === 0 ? (
+              <div className="editorial-sheet no-results-copy" style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem 2rem' }}>
+                <h3 style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                  No results found
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Try adjusting your criteria or category tabs.
+                </p>
+              </div>
+            ) : (
+              filteredNominees.map(nom => (
+                <div key={nom.id} className="editorial-card">
+                  {/* Visual Portrait */}
+                  <div className="editorial-image-wrapper">
+                    <img src={nom.photo_url} alt={nom.name} />
+                    <div style={{
+                      position: 'absolute',
+                      top: '1rem',
+                      left: '1rem',
+                      zIndex: 10
+                    }}>
+                      <span className="ref-badge" style={{ background: 'var(--bg-secondary)' }}>
+                        REF. {nom.code}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Meta category details */}
+                  <div className="editorial-card-meta">
+                    {nom.category_name}
+                  </div>
+
+                  {/* Portrait Title */}
+                  <h3 className="editorial-card-title">{nom.name}</h3>
+
+                  {/* Vote count tally */}
+                  <div className="editorial-card-votes">
+                    <span className="votes-number">{nom.votes_count}</span>
+                    <span className="votes-label">votes verified</span>
+                  </div>
+
+                  {/* Actions container */}
+                  <div className="editorial-card-actions">
+                    <button
+                      onClick={() => setActiveVoteNominee(nom)}
+                      className="luxury-btn"
+                      style={{ width: '100%' }}
+                    >
+                      VOTE ONLINE
+                    </button>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+                      <button
+                        onClick={() => dialUssdCode(`*920*102*${nom.code}#`)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          fontFamily: 'monospace',
+                          fontSize: '0.7rem',
+                          color: 'var(--accent-dark)',
+                          cursor: 'pointer',
+                          padding: 0,
+                          letterSpacing: '0.05em',
+                          textDecoration: 'underline',
+                          transition: 'var(--transition-fast)'
+                        }}
+                        title="Dial USSD code automatically"
+                        onMouseEnter={(e) => e.target.style.color = 'var(--text-primary)'}
+                        onMouseLeave={(e) => e.target.style.color = 'var(--accent-dark)'}
+                      >
+                        DIAL *920*102*{nom.code}#
+                      </button>
+
+                      <button
+                        onClick={() => copyShareLink(nom.code, nom.name)}
+                        className="luxury-btn text-link"
+                      >
+                        [ Copy link ]
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
       )}
 
       {/* Editorial Luxury Footer */}
@@ -866,7 +872,7 @@ export default function App() {
               A premium recognition platform dedicated to honoring excellence and creative achievements in the contemporary musical arts. Powered by secure mobile money channels.
             </p>
           </div>
-          
+
           <div style={{ display: 'flex', gap: '4rem', flexWrap: 'wrap' }}>
             <div>
               <h4 style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '1rem' }}>
@@ -878,7 +884,7 @@ export default function App() {
                 <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('guidelines'); window.scrollTo(0, 0); }}>Nominee Guidelines</a></li>
               </ul>
             </div>
-            
+
             <div>
               <h4 style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '1rem' }}>
                 Legal & Security
@@ -919,8 +925,8 @@ export default function App() {
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">
               <h2 style={{ fontSize: '1.25rem' }}>Nominee Access</h2>
-              <button 
-                onClick={() => { setLoginMode(false); setLoginError(''); }} 
+              <button
+                onClick={() => { setLoginMode(false); setLoginError(''); }}
                 className="modal-close-btn"
               >
                 ✕
@@ -928,11 +934,11 @@ export default function App() {
             </div>
             <div className="luxury-modal-body">
               {loginError && (
-                <div style={{ 
-                  background: 'var(--accent-light)', 
-                  borderLeft: '3px solid var(--accent)', 
-                  padding: '0.75rem 1rem', 
-                  fontSize: '0.8rem', 
+                <div style={{
+                  background: 'var(--accent-light)',
+                  borderLeft: '3px solid var(--accent)',
+                  padding: '0.75rem 1rem',
+                  fontSize: '0.8rem',
                   color: 'var(--accent-dark)',
                   marginBottom: '1.5rem',
                   fontWeight: 500
@@ -974,7 +980,7 @@ export default function App() {
               </form>
               <div style={{ marginTop: '1.5rem', textAlign: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>First time logging in? </span>
-                <button 
+                <button
                   onClick={() => { setLoginMode(false); setRegisterMode(true); }}
                   style={{ background: 'none', border: 'none', color: 'var(--accent-dark)', textDecoration: 'underline', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
                 >
@@ -992,8 +998,8 @@ export default function App() {
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">
               <h2 style={{ fontSize: '1.25rem' }}>Activate Nominee PIN</h2>
-              <button 
-                onClick={() => { setRegisterMode(false); setRegisterError(''); setRegisterSuccess(''); }} 
+              <button
+                onClick={() => { setRegisterMode(false); setRegisterError(''); setRegisterSuccess(''); }}
                 className="modal-close-btn"
               >
                 ✕
@@ -1001,11 +1007,11 @@ export default function App() {
             </div>
             <div className="luxury-modal-body">
               {registerError && (
-                <div style={{ 
-                  background: 'var(--accent-light)', 
-                  borderLeft: '3px solid var(--accent)', 
-                  padding: '0.75rem 1rem', 
-                  fontSize: '0.8rem', 
+                <div style={{
+                  background: 'var(--accent-light)',
+                  borderLeft: '3px solid var(--accent)',
+                  padding: '0.75rem 1rem',
+                  fontSize: '0.8rem',
                   color: 'var(--accent-dark)',
                   marginBottom: '1.5rem',
                   fontWeight: 500
@@ -1014,11 +1020,11 @@ export default function App() {
                 </div>
               )}
               {registerSuccess && (
-                <div style={{ 
-                  background: '#e2f9eb', 
-                  borderLeft: '3px solid #2ecc71', 
-                  padding: '0.75rem 1rem', 
-                  fontSize: '0.8rem', 
+                <div style={{
+                  background: '#e2f9eb',
+                  borderLeft: '3px solid #2ecc71',
+                  padding: '0.75rem 1rem',
+                  fontSize: '0.8rem',
                   color: '#27ae60',
                   marginBottom: '1.5rem',
                   fontWeight: 500
@@ -1079,7 +1085,7 @@ export default function App() {
               </form>
               <div style={{ marginTop: '1.5rem', textAlign: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Already activated? </span>
-                <button 
+                <button
                   onClick={() => { setRegisterMode(false); setLoginMode(true); }}
                   style={{ background: 'none', border: 'none', color: 'var(--accent-dark)', textDecoration: 'underline', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
                 >
@@ -1097,8 +1103,8 @@ export default function App() {
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">
               <h2 style={{ fontSize: '1.25rem' }}>Admin Authentication</h2>
-              <button 
-                onClick={() => { setAdminLoginMode(false); setAdminLoginError(''); }} 
+              <button
+                onClick={() => { setAdminLoginMode(false); setAdminLoginError(''); }}
                 className="modal-close-btn"
               >
                 ✕
@@ -1106,11 +1112,11 @@ export default function App() {
             </div>
             <div className="luxury-modal-body">
               {adminLoginError && (
-                <div style={{ 
-                  background: 'var(--accent-light)', 
-                  borderLeft: '3px solid var(--accent)', 
-                  padding: '0.75rem 1rem', 
-                  fontSize: '0.8rem', 
+                <div style={{
+                  background: 'var(--accent-light)',
+                  borderLeft: '3px solid var(--accent)',
+                  padding: '0.75rem 1rem',
+                  fontSize: '0.8rem',
                   color: 'var(--accent-dark)',
                   marginBottom: '1.5rem',
                   fontWeight: 500
@@ -1164,27 +1170,27 @@ export default function App() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
             </div>
-            
+
             <div className="control-center-body">
               {/* Mobile Navigation Tabs */}
               {!authAdmin && !authNominee && (
                 <div className="control-center-section" style={{ marginBottom: '1.5rem' }}>
                   <span className="section-label">Navigation</span>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.5rem' }}>
-                    <button 
+                    <button
                       onClick={() => { setActiveTab('vote'); setMobileMenuOpen(false); }}
                       className={`control-theme-btn ${activeTab === 'vote' ? 'active' : ''}`}
                       style={{ padding: '0.8rem 0.5rem', justifyContent: 'center', gap: '0.5rem', fontSize: '0.75rem', fontWeight: 600 }}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
                       <span>VOTE PORTAL</span>
                     </button>
-                    <button 
+                    <button
                       onClick={() => { setActiveTab('leaderboard'); setMobileMenuOpen(false); }}
                       className={`control-theme-btn ${activeTab === 'leaderboard' ? 'active' : ''}`}
                       style={{ padding: '0.8rem 0.5rem', justifyContent: 'center', gap: '0.5rem', fontSize: '0.75rem', fontWeight: 600 }}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"/><path d="M12 2a6 6 0 0 1 6 6v5a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8a6 6 0 0 1 6-6z"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34" /><path d="M12 2a6 6 0 0 1 6 6v5a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8a6 6 0 0 1 6-6z" /></svg>
                       <span>LEADERBOARD</span>
                     </button>
                   </div>
@@ -1218,46 +1224,46 @@ export default function App() {
                 <span className="section-label">System Operations</span>
                 <div className="control-actions-grid">
                   {authAdmin ? (
-                    <button 
+                    <button
                       onClick={() => { setMobileMenuOpen(false); handleAdminLogout(); }}
                       className="control-action-card active"
                     >
                       <span className="card-icon" style={{ color: 'var(--accent)' }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
                       </span>
                       <span className="card-title">Admin Logout</span>
                       <span className="card-desc">Console Session</span>
                     </button>
                   ) : authNominee ? (
-                    <button 
+                    <button
                       onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
                       className="control-action-card active"
                     >
                       <span className="card-icon" style={{ color: 'var(--accent)' }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
                       </span>
                       <span className="card-title">Nominee Logout</span>
                       <span className="card-desc">Code: {authNominee.nominee.code}</span>
                     </button>
                   ) : (
                     <>
-                      <button 
+                      <button
                         onClick={() => { setMobileMenuOpen(false); setLoginMode(true); }}
                         className="control-action-card"
                       >
                         <span className="card-icon" style={{ color: 'var(--accent)' }}>
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                         </span>
                         <span className="card-title">Nominee Login</span>
                         <span className="card-desc">Dashboard Access</span>
                       </button>
-                      
-                      <button 
+
+                      <button
                         onClick={() => { setMobileMenuOpen(false); setRegisterMode(true); }}
                         className="control-action-card"
                       >
                         <span className="card-icon" style={{ color: 'var(--accent)' }}>
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
                         </span>
                         <span className="card-title">Register PIN</span>
                         <span className="card-desc">Activate Nominee Code</span>
@@ -1273,18 +1279,18 @@ export default function App() {
 
       {/* Web Vote Modal Checkout */}
       {activeVoteNominee && (
-        <VoteModal 
-          nominee={activeVoteNominee} 
-          onClose={() => setActiveVoteNominee(null)} 
+        <VoteModal
+          nominee={activeVoteNominee}
+          onClose={() => setActiveVoteNominee(null)}
           onPaymentRedirect={handlePaymentRedirect}
         />
       )}
 
       {/* Paystack Payment Checkout Sandbox Screen */}
       {checkoutData && (
-        <MockPaystack 
-          checkoutData={checkoutData} 
-          onComplete={handlePaymentSuccess} 
+        <MockPaystack
+          checkoutData={checkoutData}
+          onComplete={handlePaymentSuccess}
           onCancel={() => setCheckoutData(null)}
         />
       )}
@@ -1294,33 +1300,33 @@ export default function App() {
         <div className="ussd-device-frame">
           <div className="ussd-device-header">
             <span>SHORTCODE DIALER</span>
-            <button 
-              onClick={() => setUssdOpen(false)} 
+            <button
+              onClick={() => setUssdOpen(false)}
               style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '0.9rem' }}
             >
               ✕
             </button>
           </div>
-          
+
           <div style={{ padding: '0.75rem' }}>
             <div style={{ marginBottom: '0.75rem' }}>
               <label style={{ display: 'block', fontSize: '0.6rem', textTransform: 'uppercase', color: '#888', marginBottom: '0.25rem', fontWeight: 700 }}>
                 Phone Number
               </label>
-              <input 
-                type="text" 
-                value={ussdPhone} 
+              <input
+                type="text"
+                value={ussdPhone}
                 onChange={(e) => setUssdPhone(e.target.value)}
-                style={{ 
-                  width: '100%', 
-                  background: '#1c1c1c', 
-                  color: '#fff', 
-                  border: '1px solid #333', 
-                  padding: '0.4rem', 
+                style={{
+                  width: '100%',
+                  background: '#1c1c1c',
+                  color: '#fff',
+                  border: '1px solid #333',
+                  padding: '0.4rem',
                   fontFamily: 'monospace',
                   outline: 'none',
                   fontSize: '0.75rem'
-                }} 
+                }}
               />
             </div>
 
@@ -1334,9 +1340,9 @@ export default function App() {
                 <div>{ussdScreen}</div>
               ) : (
                 <div style={{ color: '#666', textAlign: 'center', fontSize: '0.75rem', marginTop: '0.5rem' }}>
-                  ENTER SHORTCODE:<br/><br/>
-                  • *920*102# (Main Menu)<br/>
-                  • *920*102*101# (Vote for Stonebwoy)<br/>
+                  ENTER SHORTCODE:<br /><br />
+                  • *920*102# (Main Menu)<br />
+                  • *920*102*101# (Vote for Stonebwoy)<br />
                   • *920*102*201# (Vote for Black Sherif)
                 </div>
               )}
@@ -1353,8 +1359,8 @@ export default function App() {
                   className="ussd-device-input"
                   autoFocus
                 />
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   style={{
                     background: 'var(--accent)',
                     color: '#000',
