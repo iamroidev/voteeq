@@ -9,8 +9,8 @@
   "outputDirectory": "frontend/dist",
   "installCommand": "cd frontend && npm install",
   "env": {
-    "VITE_API_URL": "https://voteeq-api.onrender.com",
-    "VITE_WS_URL": "wss://voteeq-api.onrender.com"
+    "VITE_API_URL": "https://api.voteeq.online",
+    "VITE_WS_URL": "wss://api.voteeq.online"
   },
   "rewrites": [
     {

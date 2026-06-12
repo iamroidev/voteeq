@@ -12,9 +12,9 @@ services:
       - key: PORT
         value: 5000
       - key: CORS_ORIGIN
-        value: https://voteeq.vercel.app,https://voteeq-roi-dev.vercel.app
+        value: https://voteeq.online,https://www.voteeq.online,https://voteeq.vercel.app,https://voteeq-roi-dev.vercel.app
       - key: FRONTEND_URL
-        value: https://voteeq.vercel.app
+        value: https://www.voteeq.online
       - key: JWT_SECRET
         generateValue: true
       - key: TURSO_DATABASE_URL

@@ -11,7 +11,7 @@ async function initializePaystackTransaction({
     throw new Error('Paystack secret key is not configured');
   }
 
-  const normalizedEmail = String(email || '').trim() || 'customer@voteeq.com';
+  const normalizedEmail = String(email || '').trim() || 'customer@voteeq.online';
   const amount = Math.round(Number(amountMinor));
   if (!Number.isFinite(amount) || amount < 100) {
     throw new Error('Payment amount must be at least GH₵ 1.00');

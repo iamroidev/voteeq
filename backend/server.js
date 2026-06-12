@@ -240,6 +240,8 @@ const allowedOrigins = process.env.CORS_ORIGIN
   : [
     'http://localhost:5173',
     'http://localhost:4173',
+    'https://voteeq.online',
+    'https://www.voteeq.online',
     'https://voteeq.vercel.app',
     'https://voteeq-roi-dev.vercel.app',
     'https://frontend-roi-dev.vercel.app',
@@ -1972,7 +1974,7 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
             }
             await tx.run(`
               INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
-              VALUES (?, ?, 'USSD Buyer', 'ussd@voteeq.com', ?, ?, ?, ?, 'pending')
+              VALUES (?, ?, 'USSD Buyer', 'ussd@voteeq.online', ?, ?, ?, ?, 'pending')
             `, [session.eventId, ticketCode, session.phone, session.quantity, totalPrice, reference]);
           });
         } catch (txErr) {

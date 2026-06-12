@@ -1,3 +1,5 @@
+import { BRANDING } from '../branding';
+
 export default function PrivacyPage({ onBack }) {
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '2rem 0' }}>
@@ -47,10 +49,10 @@ export default function PrivacyPage({ onBack }) {
           <p style={{ marginBottom: '1rem' }}>We retain vote records and transaction data for as long as necessary to fulfill the purposes outlined in this policy, or as required by law. You may request deletion of your personal data by contacting us.</p>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>6. Your Rights</h2>
-          <p style={{ marginBottom: '1rem' }}>You have the right to access, correct, or delete your personal data. You may also opt out of non-essential communications. To exercise these rights, contact us at privacy@voteeq.com.</p>
+          <p style={{ marginBottom: '1rem' }}>You have the right to access, correct, or delete your personal data. You may also opt out of non-essential communications. To exercise these rights, contact us at {BRANDING.privacyEmail}.</p>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>7. Contact Us</h2>
-          <p>For questions about this Privacy Policy, contact us at <strong style={{ color: 'var(--accent-dark)' }}>privacy@voteeq.com</strong>.</p>
+          <p>For questions about this Privacy Policy, contact us at <strong style={{ color: 'var(--accent-dark)' }}>{BRANDING.privacyEmail}</strong>.</p>
         </div>
       </div>
     </div>

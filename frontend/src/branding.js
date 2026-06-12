@@ -56,7 +56,8 @@ export const BRANDING = {
   /** Paystack fee gross-up (backend only — not shown as a separate line in checkout UI) */
   paystackFeePercent: 1.95,
   passPaystackFeeToCustomer: true,
-  supportEmail: 'support@voteeq.com',
+  supportEmail: 'support@voteeq.online',
+  privacyEmail: 'privacy@voteeq.online',
   documentTitle: "ASCES AWARDS '26 | VoteEQ",
 };
 
