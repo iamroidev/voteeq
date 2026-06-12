@@ -150,7 +150,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
         return val - Math.floor(val);
       };
 
-      const cellSize = 3.5;
+      const cellSize = 7;
       ctx.fillStyle = '#000000';
       for (let px = x + 3; px < x + size - 3; px += cellSize) {
         for (let py = y + 3; py < y + size - 3; py += cellSize) {
@@ -639,33 +639,6 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
 
         ctx.drawImage(img, cx - drawW / 2, cy - drawH / 2, drawW, drawH);
         ctx.filter = 'none';
-
-        // Draw crosshair guidelines if actively dragging (Rules of Thirds Overlay)
-        if (isDragging) {
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-          ctx.lineWidth = 1;
-          ctx.setLineDash([5, 5]);
-
-          // Center guides
-          ctx.beginPath();
-          ctx.moveTo(targetW / 2, 0);
-          ctx.lineTo(targetW / 2, canvas.height);
-          ctx.moveTo(0, canvas.height / 2);
-          ctx.lineTo(targetW, canvas.height / 2);
-          ctx.stroke();
-
-          // Rule of thirds lines
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-          ctx.beginPath();
-          ctx.moveTo(targetW / 3, 0); ctx.lineTo(targetW / 3, canvas.height);
-          ctx.moveTo((targetW / 3) * 2, 0); ctx.lineTo((targetW / 3) * 2, canvas.height);
-          ctx.moveTo(0, canvas.height / 3); ctx.lineTo(targetW, canvas.height / 3);
-          ctx.moveTo(0, (canvas.height / 3) * 2); ctx.lineTo(targetW, (canvas.height / 3) * 2);
-          ctx.stroke();
-
-          ctx.setLineDash([]); // Reset
-        }
-
         ctx.restore();
         
         drawPosterDetails(ctx, canvas);
@@ -684,11 +657,40 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
 
       drawPosterDetails(ctx, canvas);
     }
-  }, [template, photoUrl, imgOffset, photoFilter, isDragging, drawPosterDetails]);
+  }, [template, photoUrl, imgOffset, photoFilter, drawPosterDetails]);
+
+  const drawRafRef = useRef(null);
 
   useEffect(() => {
-    drawBanner();
-  }, [drawBanner]);
+    if (drawRafRef.current) {
+      cancelAnimationFrame(drawRafRef.current);
+    }
+    drawRafRef.current = requestAnimationFrame(() => {
+      drawBanner();
+      if (isDragging) {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const targetW = template === 'aura' || template === 'glass' ? canvas.width : 600;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(targetW / 2, 0);
+        ctx.lineTo(targetW / 2, canvas.height);
+        ctx.moveTo(0, canvas.height / 2);
+        ctx.lineTo(targetW, canvas.height / 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+    return () => {
+      if (drawRafRef.current) {
+        cancelAnimationFrame(drawRafRef.current);
+      }
+    };
+  }, [drawBanner, isDragging, template]);
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];

@@ -240,67 +240,115 @@ async function initDB() {
   const allowCampusSeed = !isProduction() || process.env.SEED_CAMPUS_DEMO === 'true';
 
   if (allowCampusSeed && process.env.FORCE_CAMPUS_RESEED === 'true') {
-    console.warn('FORCE_CAMPUS_RESEED: clearing demo events, categories, nominees, votes, and tickets...');
-    await dbWrapper.run('DELETE FROM votes');
-    await dbWrapper.run('DELETE FROM tickets');
-    await dbWrapper.run('DELETE FROM nominees');
-    await dbWrapper.run('DELETE FROM nominee_registrations');
-    await dbWrapper.run('DELETE FROM categories');
-    await dbWrapper.run('DELETE FROM events');
-  }
-
-  if (allowCampusSeed) {
-    let eventCount = await dbWrapper.get('SELECT COUNT(*) as count FROM events');
-    if (eventCount.count === 0) {
-      console.log('Seeding campus demo events...');
-      for (const event of CAMPUS_EVENTS) {
-        await dbWrapper.run(
-          `INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-          [
-            event.title,
-            event.description,
-            event.date,
-            event.venue,
-            event.ticket_price,
-            event.privacy,
-            event.access_code,
-            event.total_tickets,
-          ]
-        );
-      }
-      eventCount = { count: CAMPUS_EVENTS.length };
-    }
-
-    let categoryCount = await dbWrapper.get('SELECT COUNT(*) as count FROM categories');
-    if (categoryCount.count === 0) {
-      console.log('Seeding campus demo categories...');
-      for (const [name, description] of CAMPUS_CATEGORIES) {
-        await dbWrapper.run(
-          'INSERT INTO categories (name, description) VALUES (?, ?)',
-          [name, description]
-        );
-      }
-      categoryCount = { count: CAMPUS_CATEGORIES.length };
-    }
-
-    const nomineeCount = await dbWrapper.get('SELECT COUNT(*) as count FROM nominees');
-    if (nomineeCount.count === 0 && categoryCount.count > 0 && eventCount.count > 0) {
-      console.log('Seeding campus demo nominees (hashed PINs)...');
-      for (const [code, name, photo, catId, eventId, pin, votes] of CAMPUS_NOMINEES) {
-        const hashedPin = await hashPin(pin);
-        await dbWrapper.run(
-          'INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [code, name, photo, catId, eventId, hashedPin, votes]
-        );
-      }
-    }
+    console.warn('FORCE_CAMPUS_RESEED: replacing demo catalog with campus data...');
+    await reseedCampusDemo(dbWrapper);
+  } else if (allowCampusSeed) {
+    await seedCampusDemoIfEmpty(dbWrapper);
   }
 
   return dbWrapper;
 }
 
+async function clearCampusDemoData(db) {
+  await db.run('DELETE FROM votes');
+  await db.run('DELETE FROM tickets');
+  await db.run('DELETE FROM nominees');
+  await db.run('DELETE FROM nominee_registrations');
+  await db.run('DELETE FROM categories');
+  await db.run('DELETE FROM events');
+}
+
+async function insertCampusDemoData(db) {
+  for (const event of CAMPUS_EVENTS) {
+    await db.run(
+      `INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      [
+        event.title,
+        event.description,
+        event.date,
+        event.venue,
+        event.ticket_price,
+        event.privacy,
+        event.access_code,
+        event.total_tickets,
+      ]
+    );
+  }
+
+  for (const [name, description] of CAMPUS_CATEGORIES) {
+    await db.run(
+      'INSERT INTO categories (name, description) VALUES (?, ?)',
+      [name, description]
+    );
+  }
+
+  for (const [code, name, photo, catId, eventId, pin, votes] of CAMPUS_NOMINEES) {
+    const hashedPin = await hashPin(pin);
+    await db.run(
+      'INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [code, name, photo, catId, eventId, hashedPin, votes]
+    );
+  }
+}
+
+async function seedCampusDemoIfEmpty(db) {
+  let eventCount = await db.get('SELECT COUNT(*) as count FROM events');
+  if (eventCount.count === 0) {
+    console.log('Seeding campus demo events...');
+    for (const event of CAMPUS_EVENTS) {
+      await db.run(
+        `INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        [
+          event.title,
+          event.description,
+          event.date,
+          event.venue,
+          event.ticket_price,
+          event.privacy,
+          event.access_code,
+          event.total_tickets,
+        ]
+      );
+    }
+    eventCount = { count: CAMPUS_EVENTS.length };
+  }
+
+  let categoryCount = await db.get('SELECT COUNT(*) as count FROM categories');
+  if (categoryCount.count === 0) {
+    console.log('Seeding campus demo categories...');
+    for (const [name, description] of CAMPUS_CATEGORIES) {
+      await db.run(
+        'INSERT INTO categories (name, description) VALUES (?, ?)',
+        [name, description]
+      );
+    }
+    categoryCount = { count: CAMPUS_CATEGORIES.length };
+  }
+
+  const nomineeCount = await db.get('SELECT COUNT(*) as count FROM nominees');
+  if (nomineeCount.count === 0 && categoryCount.count > 0 && eventCount.count > 0) {
+    console.log('Seeding campus demo nominees (hashed PINs)...');
+    for (const [code, name, photo, catId, eventId, pin, votes] of CAMPUS_NOMINEES) {
+      const hashedPin = await hashPin(pin);
+      await db.run(
+        'INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [code, name, photo, catId, eventId, hashedPin, votes]
+      );
+    }
+  }
+}
+
+async function reseedCampusDemo(db) {
+  await db.transaction(async (tx) => {
+    await clearCampusDemoData(tx);
+    await insertCampusDemoData(tx);
+  });
+}
+
 module.exports = {
   initDB,
-  getDB: () => dbWrapper
+  getDB: () => dbWrapper,
+  reseedCampusDemo,
 };

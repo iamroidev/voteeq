@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const http = require('http');
-const { initDB, getDB } = require('./database');
+const { initDB, getDB, reseedCampusDemo } = require('./database');
 const {
   hashPin,
   verifyPin,
@@ -252,11 +252,16 @@ function adminUsername(req) {
 // API ROUTES
 // ----------------------------------------------------
 
+function setShortPublicCache(res) {
+  res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+}
+
 // 1. Get Categories
 app.get('/api/categories', async (req, res) => {
   try {
     const db = getDB();
     const categories = await db.all('SELECT * FROM categories ORDER BY name ASC');
+    setShortPublicCache(res);
     res.json(categories);
   } catch (err) {
     console.error(err);
@@ -276,6 +281,7 @@ app.get('/api/nominees', async (req, res) => {
       ${eventId ? 'WHERE n.event_id = ? OR n.event_id IS NULL' : ''}
       ORDER BY n.votes_count DESC
     `, eventId ? [eventId] : []);
+    setShortPublicCache(res);
     res.json(nominees);
   } catch (err) {
     console.error(err);
@@ -416,6 +422,9 @@ app.get('/api/events', async (req, res) => {
           SELECT id, title, description, date, venue, ticket_price, privacy, total_tickets, tickets_sold, created_at
           FROM events ORDER BY date ASC
         `);
+    if (!isAdmin) {
+      setShortPublicCache(res);
+    }
     res.json(events);
   } catch (err) {
     console.error(err);
@@ -2168,6 +2177,22 @@ app.put('/api/admin/events/:id', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update event' });
+  }
+});
+
+// Replace legacy demo catalog with campus demo data (admin only)
+app.post('/api/admin/demo/reseed-campus', requireAdmin, async (req, res) => {
+  try {
+    const db = getDB();
+    await reseedCampusDemo(db);
+    await logAdminAction(adminUsername(req), 'RESEED_CAMPUS_DEMO', 'Replaced catalog with campus demo events, categories, and nominees');
+    res.json({
+      success: true,
+      message: 'Campus demo data loaded. Nominee login: code 101, PIN 1234 (and 102/4321, 103/9999).',
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load campus demo data' });
   }
 });
 

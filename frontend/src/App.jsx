@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import VoteModal from './components/VoteModal';
 import MockPaystack from './components/MockPaystack';
-import NomineeDashboard from './components/NomineeDashboard';
-import AdminDashboard from './components/AdminDashboard';
+
+const NomineeDashboard = lazy(() => import('./components/NomineeDashboard'));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 import AboutPage from './pages/AboutPage';
 import HelpSupportPage from './pages/HelpSupportPage';
 import GuidelinesPage from './pages/GuidelinesPage';
@@ -124,16 +125,20 @@ export default function App() {
   const loadData = async () => {
     setLoadError('');
     try {
-      const catRes = await fetch(`${API_BASE_URL}/api/categories`);
-      const nomRes = await fetch(`${API_BASE_URL}/api/nominees`);
-      const eventRes = await fetch(`${API_BASE_URL}/api/events`);
+      const [catRes, nomRes, eventRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/categories`),
+        fetch(`${API_BASE_URL}/api/nominees`),
+        fetch(`${API_BASE_URL}/api/events`),
+      ]);
       if (!catRes.ok || !nomRes.ok || !eventRes.ok) {
         throw new Error('Could not load catalog data from the API. Check your connection or try again later.');
       }
-      if (catRes.ok && nomRes.ok && eventRes.ok) {
-        const catData = await catRes.json();
-        const nomData = await nomRes.json();
-        const eventData = await eventRes.json();
+      const [catData, nomData, eventData] = await Promise.all([
+        catRes.json(),
+        nomRes.json(),
+        eventRes.json(),
+      ]);
+      {
         setCategories(catData);
         setNominees(nomData);
         if (eventData && eventData.length > 0) {
@@ -231,11 +236,20 @@ export default function App() {
       }
     }, 0);
 
-    // Poll nominees votes tallies every 7 seconds
-    const interval = setInterval(loadData, 7000);
+    const pollIfVisible = () => {
+      if (!document.hidden && !authAdmin) {
+        loadData();
+      }
+    };
+    const interval = setInterval(pollIfVisible, 30000);
+    const onVisibility = () => {
+      if (!document.hidden) pollIfVisible();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       clearTimeout(timeoutId);
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [authAdmin]);
 
@@ -276,11 +290,13 @@ export default function App() {
             setAdminLoginMode(true);
             window.location.hash = buildPublicHash('vote');
           }
-        } else if (path === 'nominee') {
+        } else if (path === 'nominee' || path === 'nomine') {
           setCurrentPage(null);
           if (!authNominee) {
             setLoginMode(true);
             window.location.hash = buildPublicHash('vote');
+          } else {
+            syncDashboardHash('nominee');
           }
         } else {
           setCurrentPage('not-found');
@@ -357,9 +373,10 @@ export default function App() {
       }
     }
 
-    connect();
+    const connectDelay = setTimeout(connect, 2500);
 
     return () => {
+      clearTimeout(connectDelay);
       cleanup();
       if (socket) {
         socket.close();
@@ -683,6 +700,15 @@ export default function App() {
     return matchesCategory && matchesSearch;
   });
 
+  const isOverlayOpen = Boolean(
+    activeVoteNominee ||
+    checkoutData ||
+    loginMode ||
+    registerMode ||
+    adminLoginMode ||
+    mobileMenuOpen
+  );
+
   return (
     <div className="app-container" style={{ position: 'relative' }}>
       {/* Dynamic Ambient Blur Glows */}
@@ -704,7 +730,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Luxury Navigation Bar */}
+      {/* Main Luxury Navigation Bar — hidden while modals/drawers are open */}
+      {!isOverlayOpen && (
       <nav className="luxury-nav">
         <a href="#/vote" onClick={(e) => { e.preventDefault(); navigateToTab('vote'); }} className="luxury-logo">
           VOTEEQ
@@ -825,8 +852,9 @@ export default function App() {
           )}
         </div>
       </nav>
+      )}
 
-      <div style={{ paddingTop: '8.5rem' }}>
+      <div style={{ paddingTop: isOverlayOpen ? '2rem' : '8.5rem' }}>
         {/* FOOTER PAGES */}
         {currentPage && !authAdmin && !authNominee && (
         <>
@@ -844,25 +872,29 @@ export default function App() {
 
       {/* SECURE DASHBOARDS OR PUBLIC LIST */}
       {!currentPage && authAdmin && (
-        <AdminDashboard
-          token={authAdmin.token}
-          onLogout={handleAdminLogout}
-          categories={categories}
-          nominees={nominees}
-          refreshData={loadData}
-          wsTrigger={wsTrigger}
-        />
+        <Suspense fallback={<div className="loading-copy" style={{ textAlign: 'center', padding: '6rem 0', color: 'var(--text-secondary)' }}>Loading admin console...</div>}>
+          <AdminDashboard
+            token={authAdmin.token}
+            onLogout={handleAdminLogout}
+            categories={categories}
+            nominees={nominees}
+            refreshData={loadData}
+            wsTrigger={wsTrigger}
+          />
+        </Suspense>
       )}
 
       {!currentPage && authNominee?.nominee?.code && authNominee?.token && (
-        <NomineeDashboard
-          code={authNominee.nominee.code}
-          token={authNominee.token}
-          onLogout={handleLogout}
-          copyShareLink={copyShareLink}
-          dialUssdCode={dialUssdCode}
-          wsTrigger={wsTrigger}
-        />
+        <Suspense fallback={<div className="loading-copy" style={{ textAlign: 'center', padding: '6rem 0', color: 'var(--text-secondary)' }}>Loading dashboard...</div>}>
+          <NomineeDashboard
+            code={authNominee.nominee.code}
+            token={authNominee.token}
+            onLogout={handleLogout}
+            copyShareLink={copyShareLink}
+            dialUssdCode={dialUssdCode}
+            wsTrigger={wsTrigger}
+          />
+        </Suspense>
       )}
 
       {!currentPage && !authAdmin && !authNominee && activeTab === 'leaderboard' && (
@@ -934,7 +966,7 @@ export default function App() {
                           </div>
 
                           {/* Mini portrait */}
-                          <img src={nom.photo_url} alt={nom.name} style={{
+                          <img src={nom.photo_url} alt={nom.name} loading="lazy" decoding="async" style={{
                             width: '48px',
                             height: '48px',
                             borderRadius: '50%',
@@ -1122,7 +1154,7 @@ export default function App() {
                 <div key={nom.id} className="editorial-card">
                   {/* Visual Portrait */}
                   <div className="editorial-image-wrapper">
-                    <img src={nom.photo_url} alt={nom.name} />
+                    <img src={nom.photo_url} alt={nom.name} loading="lazy" decoding="async" />
                     <div style={{
                       position: 'absolute',
                       top: '1rem',

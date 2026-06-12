@@ -56,6 +56,8 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
   // Audit Logs States
   const [auditLogs, setAuditLogs] = useState([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
+  const [reseedLoading, setReseedLoading] = useState(false);
+  const [reseedMessage, setReseedMessage] = useState('');
 
   const fetchStats = useCallback(async () => {
     try {
@@ -429,6 +431,50 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       {/* 1. OVERVIEW */}
       {activeSubTab === 'overview' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+          <div className="editorial-sheet" style={{ margin: 0, padding: '1.5rem 2rem' }}>
+            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', marginBottom: '0.5rem' }}>Campus demo catalog</h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '1rem' }}>
+              Replace legacy demo data (music awards) with campus events, categories, and nominees. This clears votes, tickets, registrations, and the current catalog.
+            </p>
+            {reseedMessage && (
+              <p style={{ fontSize: '0.8rem', color: 'var(--accent-dark)', marginBottom: '1rem', fontWeight: 500 }}>{reseedMessage}</p>
+            )}
+            <button
+              type="button"
+              disabled={reseedLoading}
+              className={`luxury-btn secondary ${reseedLoading ? 'disabled' : ''}`}
+              style={{ fontSize: '0.7rem' }}
+              onClick={() => {
+                setConfirmDialog({
+                  message: 'Load campus demo data? All current events, nominees, votes, tickets, and pending applications will be removed.',
+                  onConfirm: async () => {
+                    setReseedLoading(true);
+                    setReseedMessage('');
+                    try {
+                      const res = await fetch(`${API_BASE_URL}/api/admin/demo/reseed-campus`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error || 'Reseed failed');
+                      setReseedMessage(data.message || 'Campus demo loaded.');
+                      fetchStats();
+                      fetchRegistrations();
+                      fetchTicketsData();
+                      refreshData();
+                    } catch (err) {
+                      setReseedMessage(err.message || 'Failed to load campus demo.');
+                    } finally {
+                      setReseedLoading(false);
+                    }
+                  },
+                });
+              }}
+            >
+              {reseedLoading ? 'Loading campus demo...' : 'Load campus demo data'}
+            </button>
+          </div>
+
           {/* Metric Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>
             <div className="metric-box-glow" style={{ padding: '1.75rem', background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.5)', borderRadius: '16px', position: 'relative', overflow: 'hidden' }}>

@@ -779,7 +779,7 @@ h1, h2, h3, h4 {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 900;
+  z-index: 1100;
   padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
   animation: overlay-fade-in 0.25s ease both;
 }
@@ -853,7 +853,7 @@ h1, h2, h3, h4 {
   bottom: 0;
   background: rgba(26, 25, 24, 0.35);
   backdrop-filter: blur(6px);
-  z-index: 900;
+  z-index: 1100;
   display: flex;
   justify-content: flex-end; /* Align right on desktop */
   align-items: stretch;     /* Full height on desktop */

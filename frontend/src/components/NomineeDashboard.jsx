@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import BannerGenerator from './BannerGenerator';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { API_BASE_URL } from '../config';
+
+const BannerGenerator = lazy(() => import('./BannerGenerator'));
 
 export default function NomineeDashboard({ code, token, onLogout, copyShareLink, dialUssdCode, wsTrigger }) {
   const [data, setData] = useState(null);
@@ -8,6 +9,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [bannerVersion, setBannerVersion] = useState(() => Date.now());
+  const [showBannerStudio, setShowBannerStudio] = useState(false);
   const abortRef = useRef(null);
 
   const loadDashboardData = useCallback(async ({ isInitial = false } = {}) => {
@@ -62,7 +64,11 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
 
   useEffect(() => {
     loadDashboardData({ isInitial: true });
-    const interval = setInterval(() => loadDashboardData(), 15000);
+    const interval = setInterval(() => {
+      if (!document.hidden) {
+        loadDashboardData();
+      }
+    }, 30000);
     return () => {
       clearInterval(interval);
       if (abortRef.current) {
@@ -275,11 +281,25 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
               </div>
             </div>
           )}
-          <BannerGenerator 
-            nominee={nominee} 
-            token={token} 
-            onSaveSuccess={() => setData(prev => ({ ...prev, hasCustomBanner: true }))}
-          />
+          {showBannerStudio ? (
+            <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Loading poster studio...</div>}>
+              <BannerGenerator
+                nominee={nominee}
+                token={token}
+                onSaveSuccess={() => setData(prev => ({ ...prev, hasCustomBanner: true }))}
+              />
+            </Suspense>
+          ) : (
+            <div className="editorial-sheet" style={{ padding: '2rem', textAlign: 'center' }}>
+              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', marginBottom: '0.75rem' }}>Campaign Poster Studio</h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: 1.6 }}>
+                Build and download shareable posters. Opens on demand so your dashboard stays fast.
+              </p>
+              <button type="button" onClick={() => setShowBannerStudio(true)} className="luxury-btn" style={{ padding: '0.75rem 1.5rem', fontSize: '0.7rem' }}>
+                Open Poster Studio
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Live Vote Log sheet */}
