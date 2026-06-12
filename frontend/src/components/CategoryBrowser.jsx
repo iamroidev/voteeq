@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * Browse / filter award categories without overwhelming small screens.
@@ -14,9 +14,28 @@ export default function CategoryBrowser({
   allLabel = 'All categories',
   layout = 'list',
   collapseOnSelect = true,
+  onAfterSelect,
 }) {
+  const rootRef = useRef(null);
   const [expanded, setExpanded] = useState(false);
   const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    if (!collapseOnSelect) return;
+    setExpanded(false);
+    setSearch('');
+  }, [selectedCategory, collapseOnSelect]);
+
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const close = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) {
+        setExpanded(false);
+      }
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [expanded]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -37,10 +56,14 @@ export default function CategoryBrowser({
     return count != null ? `${match.name} (${count})` : match.name;
   }, [categories, selectedCategory, showCounts, getCount, allLabel]);
 
+  const normalizeId = (id) => (id === 'all' ? 'all' : String(id));
+
   const handleSelect = (id) => {
-    onSelectCategory(id);
+    const nextId = normalizeId(id);
+    onSelectCategory(nextId);
     setSearch('');
-    if (collapseOnSelect) setExpanded(false);
+    setExpanded(false);
+    onAfterSelect?.(nextId);
   };
 
   if (categories.length === 0) return null;
@@ -61,6 +84,7 @@ export default function CategoryBrowser({
       role="option"
       aria-selected={isActive}
       className={`${itemClass} ${isActive ? 'active' : ''} ${isEmpty ? 'empty' : ''}`}
+      onMouseDown={(e) => e.preventDefault()}
       onClick={() => handleSelect(id)}
     >
       <span className={nameClass}>{name}</span>
@@ -74,7 +98,7 @@ export default function CategoryBrowser({
   );
 
   return (
-    <div className="category-browser">
+    <div className="category-browser" ref={rootRef}>
       <div className="category-browser-header">
         <span className="category-browser-label">{label}</span>
         <button

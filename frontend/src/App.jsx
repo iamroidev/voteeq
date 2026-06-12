@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import VoteModal from './components/VoteModal';
 import MockPaystack from './components/MockPaystack';
 
@@ -42,6 +42,8 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const voteResultsRef = useRef(null);
+  const leaderboardResultsRef = useRef(null);
 
   // Modals & Action States
   const [activeVoteNominee, setActiveVoteNominee] = useState(null);
@@ -114,6 +116,24 @@ export default function App() {
     setActiveEventId(nextEventId);
     setActiveEvent(nextEvent || null);
     window.location.hash = buildPublicHash(activeTab, nextEventId ? { eventId: nextEventId } : {});
+  };
+
+  const scrollToVoteResults = () => {
+    requestAnimationFrame(() => {
+      voteResultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const scrollToLeaderboardResults = () => {
+    requestAnimationFrame(() => {
+      leaderboardResultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const handleCategorySelect = (categoryId) => {
+    setSelectedCategory(categoryId === 'all' ? 'all' : String(categoryId));
+    if (activeTab === 'vote') scrollToVoteResults();
+    if (activeTab === 'leaderboard') scrollToLeaderboardResults();
   };
 
   const navigateToPage = (page) => {
@@ -720,7 +740,7 @@ export default function App() {
   };
 
   const filteredNominees = eventScopedNominees.filter(nom => {
-    const matchesCategory = selectedCategory === 'all' || nom.category_id === parseInt(selectedCategory);
+    const matchesCategory = selectedCategory === 'all' || String(nom.category_id) === String(selectedCategory);
     const matchesSearch = nom.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       nom.code.includes(searchQuery);
     return matchesCategory && matchesSearch;
@@ -953,7 +973,7 @@ export default function App() {
                 <CategoryBrowser
                   categories={categories}
                   selectedCategory={selectedCategory}
-                  onSelectCategory={setSelectedCategory}
+                  onSelectCategory={handleCategorySelect}
                   getCount={getCategoryCount}
                   showCounts={hasPublishedNominees}
                   layout="list"
@@ -963,6 +983,7 @@ export default function App() {
             {!loading && !hasPublishedNominees && (
               <AwaitingNomineesPanel compact selectedCategoryName={selectedCategoryName} onViewTickets={() => navigateToTab('tickets')} />
             )}
+            <div ref={leaderboardResultsRef} className="vote-results-anchor" aria-live="polite" />
             {hasPublishedNominees && (
               <LeaderboardPanel
                 categories={categoriesWithNominees}
@@ -1012,7 +1033,7 @@ export default function App() {
             onEventChange={handleEventChange}
             categories={categories}
             selectedCategory={selectedCategory}
-            onSelectCategory={setSelectedCategory}
+            onSelectCategory={handleCategorySelect}
             getCount={getCategoryCount}
             showCounts={hasPublishedNominees}
             searchQuery={searchQuery}
@@ -1020,6 +1041,8 @@ export default function App() {
             showSearch={hasPublishedNominees}
           />
         )}
+
+        <div ref={voteResultsRef} className="vote-results-anchor" aria-live="polite" />
 
         {/* Loading Indicator */}
         {loadError && (

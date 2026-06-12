@@ -948,6 +948,10 @@ h1, h2, h3, h4 {
   flex: 1 1 auto;
 }
 
+.vote-results-anchor {
+  scroll-margin-top: 7.5rem;
+}
+
 .nav-status-pill {
   display: inline-block;
   font-size: 0.5rem;
