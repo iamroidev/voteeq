@@ -483,10 +483,10 @@ export default function App() {
           {/* Custom Luxury Colorway Selector */}
           <div className="theme-picker-container">
             {[
-              { name: 'Gold', value: '#b8986c' },
-              { name: 'Burgundy', value: '#6a2e2e' },
-              { name: 'Midnight', value: '#2a2b2d' },
-              { name: 'Sage', value: '#606f5c' }
+              { name: 'Antique Gold', value: '#b8986c' },
+              { name: 'Royal Burgundy', value: '#6a2e2e' },
+              { name: 'Midnight Dark', value: '#2a2b2d' },
+              { name: 'Sage Green', value: '#606f5c' }
             ].map(theme => (
               <button
                 key={theme.value}
@@ -1152,15 +1152,15 @@ export default function App() {
                     <button 
                       onClick={() => { setActiveTab('vote'); setMobileMenuOpen(false); }}
                       className={`control-theme-btn ${activeTab === 'vote' ? 'active' : ''}`}
-                      style={{ padding: '0.8rem 0.5rem', justifyContent: 'center', gap: '0.5rem' }}
+                      style={{ padding: '0.8rem 0.5rem', justifyContent: 'center', gap: '0.5rem', fontSize: '0.75rem', fontWeight: 600 }}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                       <span>VOTE PORTAL</span>
                     </button>
                     <button 
                       onClick={() => { setActiveTab('leaderboard'); setMobileMenuOpen(false); }}
                       className={`control-theme-btn ${activeTab === 'leaderboard' ? 'active' : ''}`}
-                      style={{ padding: '0.8rem 0.5rem', justifyContent: 'center', gap: '0.5rem' }}
+                      style={{ padding: '0.8rem 0.5rem', justifyContent: 'center', gap: '0.5rem', fontSize: '0.75rem', fontWeight: 600 }}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"/><path d="M12 2a6 6 0 0 1 6 6v5a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8a6 6 0 0 1 6-6z"/></svg>
                       <span>LEADERBOARD</span>
