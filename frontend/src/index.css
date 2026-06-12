@@ -160,7 +160,7 @@ h1, h2, h3, h4 {
 }
 
 .editorial-title {
-  font-size: 4rem;
+  font-size: clamp(2.2rem, 8vw, 4rem);
   line-height: 1.1;
   letter-spacing: 0.05em;
   margin-bottom: 1rem;
@@ -210,6 +210,7 @@ h1, h2, h3, h4 {
 @media (max-width: 768px) {
   .app-container {
     padding: 0 1rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -797,14 +798,17 @@ h1, h2, h3, h4 {
 
 .luxury-modal-header {
   border-bottom: var(--border-width) solid var(--border-color);
-  padding: 1.5rem 2.5rem;
+  padding: 1.25rem 1.5rem;
+  padding-top: calc(1.25rem + env(safe-area-inset-top));
   display: flex;
   justify-content: space-between;
   align-items: center;
+  min-height: 64px;
 }
 
 .luxury-modal-body {
-  padding: 2.5rem;
+  padding: 1.5rem;
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom));
 }
 
 .modal-close-btn {
@@ -1248,6 +1252,7 @@ h1, h2, h3, h4 {
     padding-right: 1rem;
     margin-left: -1rem;
     margin-right: -1rem;
+    top: max(6.5rem, env(safe-area-inset-top));
   }
 
   /* Horizontal scrolling category pills for frictionless mobile swiping */
@@ -1580,6 +1585,7 @@ h1, h2, h3, h4 {
 .dashboard-share-card,
 .dashboard-analytics-grid > div,
 .dashboard-main-grid > div {
+  min-width: 0;
   animation: dashboard-panel 0.65s cubic-bezier(0.25, 1, 0.5, 1) both;
 }
 
@@ -1590,6 +1596,11 @@ h1, h2, h3, h4 {
 @keyframes dashboard-panel {
   from { opacity: 0; transform: translateY(18px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.dashboard-profile-card > div,
+.dashboard-share-card > div {
+  min-width: 0;
 }
 
 .dashboard-profile-card {
@@ -1653,6 +1664,11 @@ h1, h2, h3, h4 {
 }
 
 @media (max-width: 768px) {
+  .dashboard-profile-card > div,
+  .dashboard-share-card > div {
+    min-width: 0;
+  }
+
   .dashboard-profile-card {
     padding: 1.5rem;
     gap: 1.5rem;
@@ -1664,6 +1680,7 @@ h1, h2, h3, h4 {
   .dashboard-profile-card > div:first-child {
     flex-direction: column;
     align-items: center;
+    min-height: 64px;
   }
 
   .dashboard-profile-card .luxury-btn {

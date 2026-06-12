@@ -1,5 +1,3 @@
-import React from 'react';
-
 export default function GuidelinesPage({ onBack }) {
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '2rem 0' }}>

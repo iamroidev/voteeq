@@ -1,5 +1,3 @@
-import React from 'react';
-
 export default function HelpSupportPage({ onBack }) {
   const faqs = [
     { q: 'How do I vote for my favorite nominee?', a: 'Click the "VOTE ONLINE" button on any nominee card, choose your vote count, enter your mobile money number, and complete the payment. You can also dial *920*102# from your phone.' },
