@@ -9,6 +9,10 @@ import GuidelinesPage from './pages/GuidelinesPage';
 import TermsPage from './pages/TermsPage';
 import PrivacyPage from './pages/PrivacyPage';
 import PaymentPage from './pages/PaymentPage';
+import NomineeApplyPage from './pages/NomineeApplyPage';
+import EventsTicketsPage from './pages/EventsTicketsPage';
+import PaymentStatusPage from './pages/PaymentStatusPage';
+import NotFoundPage from './pages/NotFoundPage';
 import { API_BASE_URL, WS_BASE_URL } from './config';
 
 export default function App() {
@@ -57,12 +61,46 @@ export default function App() {
 
   // Active public view tab ('vote' or 'leaderboard')
   const [activeTab, setActiveTab] = useState('vote');
+  const [events, setEvents] = useState([]);
+  const [activeEvent, setActiveEvent] = useState(null);
+  const [activeEventId, setActiveEventId] = useState(null);
 
   // Footer page navigation state
   const [currentPage, setCurrentPage] = useState(null);
+  const [previousTab, setPreviousTab] = useState('vote');
 
   // Accent Color Theme state (Sophisticated antique gold default)
   const [accent, setAccent] = useState('#b8986c');
+
+  // WebSocket updates state trigger
+  const [wsTrigger, setWsTrigger] = useState(0);
+
+  const parseHashRoute = () => {
+    const rawHash = window.location.hash || '#/vote';
+    if (!rawHash.startsWith('#/')) {
+      return { path: 'vote', params: new URLSearchParams() };
+    }
+
+    const [path, query = ''] = rawHash.substring(2).split('?');
+    return { path, params: new URLSearchParams(query) };
+  };
+
+  const buildPublicHash = (path, params = {}) => {
+    const search = new URLSearchParams(params);
+    return `#/${path}${search.toString() ? `?${search.toString()}` : ''}`;
+  };
+
+  const navigateToTab = (tab) => {
+    window.location.hash = buildPublicHash(tab, activeEventId ? { eventId: activeEventId } : {});
+  };
+
+  const navigateToPage = (page) => {
+    window.location.hash = buildPublicHash(page);
+  };
+
+  const handleBackToPortal = () => {
+    window.location.hash = buildPublicHash(previousTab, activeEventId ? { eventId: activeEventId } : {});
+  };
 
   // USSD Simulator State (Device Widget)
   const [ussdOpen, setUssdOpen] = useState(false);
@@ -77,21 +115,39 @@ export default function App() {
     try {
       const catRes = await fetch(`${API_BASE_URL}/api/categories`);
       const nomRes = await fetch(`${API_BASE_URL}/api/nominees`);
-      if (catRes.ok && nomRes.ok) {
+      const eventRes = await fetch(`${API_BASE_URL}/api/events`);
+      if (catRes.ok && nomRes.ok && eventRes.ok) {
         const catData = await catRes.json();
         const nomData = await nomRes.json();
+        const eventData = await eventRes.json();
         setCategories(catData);
         setNominees(nomData);
+        if (eventData && eventData.length > 0) {
+          const hashRoute = parseHashRoute();
+          const requestedEventId = hashRoute.params.get('eventId');
+          const requestedEvent = requestedEventId ? eventData.find(e => String(e.id) === String(requestedEventId)) : null;
+          const nextEvent = requestedEvent || eventData.find(e => String(e.id) === String(activeEventId)) || eventData[0];
+          setActiveEventId(String(nextEvent.id));
+          setActiveEvent(nextEvent);
+          setEvents(eventData);
+        } else {
+          setEvents([]);
+          setActiveEvent(null);
+          setActiveEventId(null);
+        }
 
         // Check for shareable direct nominee link parameter (e.g. ?nominee=101)
-        const params = new URLSearchParams(window.location.search);
-        const nomineeCode = params.get('nominee');
+        const hashRoute = parseHashRoute();
+        const nomineeCode = hashRoute.params.get('nominee') || new URLSearchParams(window.location.search).get('nominee');
         if (nomineeCode) {
           const match = nomData.find(n => n.code === nomineeCode);
           if (match) {
             setActiveVoteNominee(match);
+            setActiveTab('vote');
+            setCurrentPage(null);
+            window.location.hash = buildPublicHash('vote', hashRoute.params.get('eventId') ? { eventId: hashRoute.params.get('eventId') } : {});
             // Clean URL query parameters quietly after capturing, keeping URL clean
-            window.history.replaceState({}, document.title, window.location.pathname);
+            window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
           }
         }
       }
@@ -117,6 +173,24 @@ export default function App() {
   }, [mobileMenuOpen]);
 
   useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setMobileMenuOpen(false);
+        setLoginMode(false);
+        setRegisterMode(false);
+        setAdminLoginMode(false);
+        setActiveVoteNominee(null);
+        setCheckoutData(null);
+        setUssdOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
     const timeoutId = setTimeout(() => {
       loadData();
 
@@ -127,6 +201,10 @@ export default function App() {
           setAdminLoginMode(true);
         }
         window.history.replaceState({}, document.title, '/');
+      } else if (cleanPath === '/payment-status') {
+        const query = window.location.search;
+        window.location.hash = `#/payment-status${query}`;
+        window.history.replaceState({}, document.title, '/');
       }
     }, 0);
 
@@ -136,37 +214,138 @@ export default function App() {
       clearTimeout(timeoutId);
       clearInterval(interval);
     };
-  }, []);
+  }, [authAdmin]);
 
+  // Sync state with URL Hash for proper routing/navigation
   useEffect(() => {
-    const ws = new WebSocket(WS_BASE_URL);
-
-    ws.onopen = () => {
-      console.log('Real-time sync connection established');
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        if (message.type === 'VOTE_COMPLETED') {
-          // Increment nominee votes count dynamically in state
-          setNominees(prev => prev.map(nom => {
-            if (nom.id === message.nomineeId) {
-              return { ...nom, votes_count: nom.votes_count + message.votesCount };
-            }
-            return nom;
-          }));
+    const handleHashChange = () => {
+      if (authAdmin) {
+        setCurrentPage(null);
+        if (window.location.hash !== '#/admin') {
+          window.location.hash = '#/admin';
         }
-      } catch (err) {
-        console.error('WS message parsing failed:', err);
+        return;
+      }
+      if (authNominee) {
+        setCurrentPage(null);
+        if (window.location.hash !== '#/nominee') {
+          window.location.hash = '#/nominee';
+        }
+        return;
+      }
+
+      const { path, params } = parseHashRoute();
+      const eventId = params.get('eventId');
+      if (eventId) {
+        setActiveEventId(eventId);
+      }
+
+      const footerPages = ['about', 'help', 'guidelines', 'terms', 'privacy', 'payment', 'apply'];
+      if (path) {
+        if (footerPages.includes(path)) {
+          setPreviousTab(activeTab || previousTab);
+          setCurrentPage(path);
+        } else if (path === 'tickets' || path === 'leaderboard' || path === 'vote') {
+          setCurrentPage(null);
+          setActiveTab(path);
+          setPreviousTab(path);
+        } else if (path === 'payment-status') {
+          setCurrentPage('payment-status');
+        } else if (path === 'admin') {
+          setCurrentPage(null);
+          if (!authAdmin) {
+            setAdminLoginMode(true);
+            window.location.hash = buildPublicHash('vote');
+          }
+        } else if (path === 'nominee') {
+          setCurrentPage(null);
+          if (!authNominee) {
+            setLoginMode(true);
+            window.location.hash = buildPublicHash('vote');
+          }
+        } else {
+          setCurrentPage('not-found');
+        }
+      } else if (!window.location.hash || window.location.hash === '#') {
+        setCurrentPage(null);
+        setActiveTab('vote');
+        setPreviousTab('vote');
       }
     };
-
-    ws.onclose = () => {
-      console.log('Real-time sync connection closed');
+    window.addEventListener('hashchange', handleHashChange);
+    handleHashChange();
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
     };
+  }, [authAdmin, authNominee]);
 
-    return () => ws.close();
+  useEffect(() => {
+    let socket = null;
+    let reconnectTimeout = null;
+    let delay = 1000;
+    const maxDelay = 16000;
+
+    function connect() {
+      console.log('Attempting WebSocket connection...');
+      socket = new WebSocket(WS_BASE_URL);
+
+      socket.onopen = () => {
+        console.log('Real-time sync connection established');
+        delay = 1000;
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'VOTE_COMPLETED') {
+            setNominees(prev => prev.map(nom => {
+              if (nom.id === message.nomineeId) {
+                return { ...nom, votes_count: nom.votes_count + message.votesCount };
+              }
+              return nom;
+            }));
+            setWsTrigger(prev => prev + 1);
+          }
+        } catch (err) {
+          console.error('WS message parsing failed:', err);
+        }
+      };
+
+      socket.onclose = (e) => {
+        console.log(`Real-time sync connection closed (code: ${e.code}). Attempting reconnect...`);
+        cleanup();
+        reconnectTimeout = setTimeout(() => {
+          delay = Math.min(delay * 2, maxDelay);
+          connect();
+        }, delay);
+      };
+
+      socket.onerror = (err) => {
+        console.error('WebSocket connection error:', err);
+        socket.close();
+      };
+    }
+
+    function cleanup() {
+      if (socket) {
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onclose = null;
+        socket.onerror = null;
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+    }
+
+    connect();
+
+    return () => {
+      cleanup();
+      if (socket) {
+        socket.close();
+      }
+    };
   }, []);
 
   const changeAccent = (color) => {
@@ -210,11 +389,17 @@ export default function App() {
 
   // Copy share link helper
   const copyShareLink = (nomineeCode, nomineeName) => {
-    const link = `${API_BASE_URL}/share/${nomineeCode}`;
+    const params = new URLSearchParams(window.location.search);
+    params.set('nominee', nomineeCode);
+    if (activeEventId) {
+      params.set('eventId', activeEventId);
+    }
+    const link = `${window.location.origin}/?${params.toString()}`;
     navigator.clipboard.writeText(link).then(() => {
       triggerToast(`Share link copied for ${nomineeName.toUpperCase()}`);
     }).catch(err => {
       console.error('Copy failed', err);
+      triggerToast('Could not copy link to clipboard');
     });
   };
 
@@ -230,7 +415,32 @@ export default function App() {
 
   const handlePaymentSuccess = (success, details) => {
     setCheckoutData(null);
-    triggerToast('Thank you! Your votes have been registered.');
+    if (details?.isTicket) {
+      const ticketQty = details.quantity || (details.ticket ? details.ticket.quantity : 1);
+      const title = details.eventTitle || (details.ticket ? details.ticket.event_title : 'Event');
+      triggerToast(`Thank you! Reserved ${ticketQty} ticket(s) for ${title}.`);
+      
+      if (details.ticket) {
+        try {
+          const saved = localStorage.getItem('voteeq_purchased_tickets');
+          const ticketsList = saved ? JSON.parse(saved) : [];
+          // Avoid duplicate entries if processed twice
+          if (!ticketsList.some(t => t.id === details.ticket.id || t.ticket_code === details.ticket.ticket_code)) {
+            ticketsList.push(details.ticket);
+            localStorage.setItem('voteeq_purchased_tickets', JSON.stringify(ticketsList));
+            // Trigger local update events
+            window.dispatchEvent(new Event('storage'));
+            window.dispatchEvent(new CustomEvent('ticket-purchased'));
+          }
+        } catch (e) {
+          console.error('Failed to save ticket locally:', e);
+        }
+      }
+    } else if (details?.isForm) {
+      triggerToast('Application fee paid successfully. Submitted for review.');
+    } else {
+      triggerToast('Thank you! Your votes have been registered.');
+    }
     loadData();
 
     if (details && details.voteAgain && details.nomineeId) {
@@ -273,6 +483,7 @@ export default function App() {
     setAuthNominee(null);
     localStorage.removeItem('voteeq_auth');
     triggerToast('Logged out successfully');
+    window.location.hash = buildPublicHash('vote');
   };
 
   // Admin Login Flow
@@ -305,6 +516,7 @@ export default function App() {
     setAuthAdmin(null);
     localStorage.removeItem('voteeq_admin_auth');
     triggerToast('Logged out from Admin Console');
+    window.location.hash = buildPublicHash('vote');
   };
 
   // Nominee PIN Registration Flow
@@ -352,7 +564,7 @@ export default function App() {
     const sId = `ussd_sim_${Date.now()}`;
     setUssdSessionId(sId);
 
-    const dialString = customDial || '*920*102#';
+    const dialString = customDial || '*920*566#';
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/ussd`, {
@@ -416,14 +628,18 @@ export default function App() {
     triggerToast(`Dialing shortcode: ${code}`);
   };
 
+  const eventScopedNominees = activeEventId
+    ? nominees.filter(nom => !nom.event_id || String(nom.event_id) === String(activeEventId))
+    : nominees;
+
   const getCategoryCount = (categoryId) => {
     if (categoryId === 'all') {
-      return nominees.length;
+      return eventScopedNominees.length;
     }
-    return nominees.filter(n => n.category_id === parseInt(categoryId) || n.category_id === categoryId).length;
+    return eventScopedNominees.filter(n => n.category_id === parseInt(categoryId) || n.category_id === categoryId).length;
   };
 
-  const filteredNominees = nominees.filter(nom => {
+  const filteredNominees = eventScopedNominees.filter(nom => {
     const matchesCategory = selectedCategory === 'all' || nom.category_id === parseInt(selectedCategory);
     const matchesSearch = nom.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       nom.code.includes(searchQuery);
@@ -437,13 +653,13 @@ export default function App() {
       <div className="ambient-glow-2" />
 
       {/* Toast Alert System */}
-      <div className={`luxury-toast ${toastMessage ? 'visible' : ''}`}>
+      <div className={`luxury-toast ${toastMessage ? 'visible' : ''}`} aria-live="polite">
         {toastMessage}
       </div>
 
       {/* Main Luxury Navigation Bar */}
       <nav className="luxury-nav">
-        <a href="/" onClick={(e) => { e.preventDefault(); setActiveTab('vote'); }} className="luxury-logo">
+        <a href="#/vote" onClick={(e) => { e.preventDefault(); navigateToTab('vote'); }} className="luxury-logo">
           VOTEEQ
         </a>
 
@@ -451,6 +667,8 @@ export default function App() {
         <button
           onClick={() => setMobileMenuOpen(true)}
           className="mobile-menu-toggle"
+          type="button"
+          aria-label="Open navigation menu"
         >
           MENU
         </button>
@@ -458,15 +676,17 @@ export default function App() {
         <div className="luxury-nav-actions">
           {/* Main Public View Selector */}
           {!authAdmin && !authNominee && (
-            <div style={{ display: 'flex', gap: '0.4rem', marginRight: '1.25rem', borderRight: '1px solid var(--border-color)', paddingRight: '1.25rem' }}>
+            <div role="tablist" style={{ display: 'flex', gap: '0.4rem', marginRight: '1.25rem', borderRight: '1px solid var(--border-color)', paddingRight: '1.25rem' }}>
               <button
-                onClick={() => setActiveTab('vote')}
-                className={`luxury-btn text-link ${activeTab === 'vote' ? 'active' : ''}`}
+                role="tab"
+                aria-selected={activeTab === 'vote' && !currentPage}
+                onClick={() => { navigateToTab('vote'); }}
+                className={`luxury-btn text-link ${activeTab === 'vote' && !currentPage ? 'active' : ''}`}
                 style={{
                   fontSize: '0.65rem',
                   letterSpacing: '0.1em',
                   padding: '0.4rem 0.5rem',
-                  borderBottom: activeTab === 'vote' ? '1px solid var(--accent)' : '1px solid transparent',
+                  borderBottom: activeTab === 'vote' && !currentPage ? '1px solid var(--accent)' : '1px solid transparent',
                   borderRadius: 0,
                   fontWeight: 600
                 }}
@@ -474,18 +694,36 @@ export default function App() {
                 VOTE PORTAL
               </button>
               <button
-                onClick={() => setActiveTab('leaderboard')}
-                className={`luxury-btn text-link ${activeTab === 'leaderboard' ? 'active' : ''}`}
+                role="tab"
+                aria-selected={activeTab === 'leaderboard' && !currentPage}
+                onClick={() => { navigateToTab('leaderboard'); }}
+                className={`luxury-btn text-link ${activeTab === 'leaderboard' && !currentPage ? 'active' : ''}`}
                 style={{
                   fontSize: '0.65rem',
                   letterSpacing: '0.1em',
                   padding: '0.4rem 0.5rem',
-                  borderBottom: activeTab === 'leaderboard' ? '1px solid var(--accent)' : '1px solid transparent',
+                  borderBottom: activeTab === 'leaderboard' && !currentPage ? '1px solid var(--accent)' : '1px solid transparent',
                   borderRadius: 0,
                   fontWeight: 600
                 }}
               >
                 LEADERBOARD
+              </button>
+              <button
+                role="tab"
+                aria-selected={activeTab === 'tickets' && !currentPage}
+                onClick={() => { navigateToTab('tickets'); }}
+                className={`luxury-btn text-link ${activeTab === 'tickets' && !currentPage ? 'active' : ''}`}
+                style={{
+                  fontSize: '0.65rem',
+                  letterSpacing: '0.1em',
+                  padding: '0.4rem 0.5rem',
+                  borderBottom: activeTab === 'tickets' && !currentPage ? '1px solid var(--accent)' : '1px solid transparent',
+                  borderRadius: 0,
+                  fontWeight: 600
+                }}
+              >
+                BUY TICKETS
               </button>
             </div>
           )}
@@ -503,6 +741,7 @@ export default function App() {
                 className={`theme-picker-btn ${accent === theme.value ? 'active' : ''}`}
                 style={{ backgroundColor: theme.value }}
                 title={`${theme.name} Theme`}
+                aria-label={`${theme.name} Theme`}
               />
             ))}
           </div>
@@ -543,15 +782,19 @@ export default function App() {
         </div>
       </nav>
 
-      {/* FOOTER PAGES */}
-      {currentPage && !authAdmin && !authNominee && (
+      <div style={{ paddingTop: '8.5rem' }}>
+        {/* FOOTER PAGES */}
+        {currentPage && !authAdmin && !authNominee && (
         <>
-          {currentPage === 'about' && <AboutPage onBack={() => setCurrentPage(null)} />}
-          {currentPage === 'help' && <HelpSupportPage onBack={() => setCurrentPage(null)} />}
-          {currentPage === 'guidelines' && <GuidelinesPage onBack={() => setCurrentPage(null)} />}
-          {currentPage === 'terms' && <TermsPage onBack={() => setCurrentPage(null)} />}
-          {currentPage === 'privacy' && <PrivacyPage onBack={() => setCurrentPage(null)} />}
-          {currentPage === 'payment' && <PaymentPage onBack={() => setCurrentPage(null)} />}
+          {currentPage === 'about' && <AboutPage onBack={handleBackToPortal} />}
+          {currentPage === 'help' && <HelpSupportPage onBack={handleBackToPortal} />}
+          {currentPage === 'guidelines' && <GuidelinesPage onBack={handleBackToPortal} />}
+          {currentPage === 'terms' && <TermsPage onBack={handleBackToPortal} />}
+          {currentPage === 'privacy' && <PrivacyPage onBack={handleBackToPortal} />}
+          {currentPage === 'payment' && <PaymentPage onBack={handleBackToPortal} />}
+          {currentPage === 'apply' && <NomineeApplyPage onBack={handleBackToPortal} categories={categories} onPaymentRedirect={handlePaymentRedirect} />}
+          {currentPage === 'payment-status' && <PaymentStatusPage onBack={handleBackToPortal} onGoToVote={() => navigateToTab('vote')} onGoToTickets={() => navigateToTab('tickets')} />}
+          {currentPage === 'not-found' && <NotFoundPage />}
         </>
       )}
 
@@ -563,6 +806,7 @@ export default function App() {
           categories={categories}
           nominees={nominees}
           refreshData={loadData}
+          wsTrigger={wsTrigger}
         />
       )}
 
@@ -573,22 +817,33 @@ export default function App() {
           onLogout={handleLogout}
           copyShareLink={copyShareLink}
           dialUssdCode={dialUssdCode}
+          wsTrigger={wsTrigger}
         />
       )}
 
       {!currentPage && !authAdmin && !authNominee && activeTab === 'leaderboard' && (
         /* PUBLIC LEADERBOARD PAGE */
-        <div className="leaderboard-page-container" style={{ animation: 'fadeIn 0.6s ease' }}>
+        <div className="leaderboard-page-container" style={{ animation: 'fadeIn 0.6s ease', maxWidth: '800px', margin: '0 auto', padding: '0 1.5rem 4rem 1.5rem' }}>
+          <button onClick={handleBackToPortal} className="luxury-btn secondary" style={{ marginBottom: '2.5rem', padding: '0.5rem 1.5rem', fontSize: '0.7rem' }}>
+            ← Back to Vote Portal
+          </button>
           <div className="editorial-header-section">
-            <span className="editorial-tagline">LIVE STANDINGS</span>
+            <span className="editorial-tagline">
+              {activeEvent ? `${activeEvent.title.toUpperCase()} LIVE STANDINGS` : 'LIVE STANDINGS'}
+            </span>
             <h1 className="editorial-title">LEADERBOARD</h1>
+            {activeEvent && (
+              <p style={{ fontSize: '0.75rem', letterSpacing: '0.12em', color: 'var(--accent)', marginTop: '0.50rem', fontWeight: 600 }}>
+                {activeEvent.venue.toUpperCase()} // {activeEvent.date}
+              </p>
+            )}
             <div className="editorial-divider" />
           </div>
 
-          <div style={{ maxWidth: '800px', margin: '0 auto', padding: '0 1.5rem 4rem 1.5rem' }}>
+          <div>
             {categories.map(cat => {
               // Get nominees in this category and sort them by votes descending
-              const catNominees = nominees
+              const catNominees = eventScopedNominees
                 .filter(n => n.category_id === cat.id)
                 .sort((a, b) => b.votes_count - a.votes_count);
 
@@ -677,15 +932,57 @@ export default function App() {
         </div>
       )}
 
-      {!currentPage && !authAdmin && !authNominee && activeTab !== 'leaderboard' && (
+      {!currentPage && !authAdmin && !authNominee && activeTab === 'tickets' && (
+        <EventsTicketsPage 
+          isTab={true} 
+          activeEventId={activeEventId}
+          onBack={handleBackToPortal} 
+          onPaymentRedirect={handlePaymentRedirect} 
+        />
+      )}
+
+      {!currentPage && !authAdmin && !authNominee && activeTab === 'vote' && (
         /* PUBLIC VOTING LANDING PAGE */
       <div>
         {/* Hero Marquee Section */}
         <div className="editorial-header-section">
-          <span className="editorial-tagline">OFFICIAL VOTING PORTAL</span>
-          <h1 className="editorial-title">VOTEEQ AWARDS</h1>
+          <span className="editorial-tagline">
+            {activeEvent ? `OFFICIAL PORTAL FOR ${activeEvent.title.toUpperCase()}` : 'OFFICIAL VOTING PORTAL'}
+          </span>
+          <h1 className="editorial-title">
+            {activeEvent ? activeEvent.title.toUpperCase() : 'VOTEEQ AWARDS'}
+          </h1>
+          {activeEvent && (
+            <p style={{ fontSize: '0.75rem', letterSpacing: '0.12em', color: 'var(--accent)', marginTop: '0.50rem', fontWeight: 600 }}>
+              {activeEvent.venue.toUpperCase()} // {activeEvent.date}
+            </p>
+          )}
           <div className="editorial-divider" />
         </div>
+
+        {events.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginTop: '2rem' }}>
+            <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.12em', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+              Active Event Context
+            </span>
+            <select
+              value={activeEventId || ''}
+              onChange={(e) => {
+                const nextEventId = e.target.value;
+                const nextEvent = events.find(event => String(event.id) === String(nextEventId));
+                setActiveEventId(nextEventId);
+                setActiveEvent(nextEvent || null);
+                window.location.hash = buildPublicHash(activeTab, nextEventId ? { eventId: nextEventId } : {});
+              }}
+              className="luxury-select"
+              style={{ minWidth: '220px', padding: '0.55rem 0.75rem', fontSize: '0.7rem' }}
+            >
+              {events.map(event => (
+                <option key={event.id} value={event.id}>{event.title}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Clean Categorization Filter Tabs */}
         <div className="filter-panel">
@@ -740,6 +1037,7 @@ export default function App() {
                   className="clear-search-btn"
                   onClick={() => setSearchQuery('')}
                   title="Clear search"
+                  aria-label="Clear search"
                 >
                   ✕
                 </button>
@@ -811,7 +1109,7 @@ export default function App() {
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
                       <button
-                        onClick={() => dialUssdCode(`*920*102*${nom.code}#`)}
+                        onClick={() => dialUssdCode(`*920*566*${nom.code}#`)}
                         style={{
                           background: 'none',
                           border: 'none',
@@ -828,7 +1126,7 @@ export default function App() {
                         onMouseEnter={(e) => e.target.style.color = 'var(--text-primary)'}
                         onMouseLeave={(e) => e.target.style.color = 'var(--accent-dark)'}
                       >
-                        DIAL *920*102*{nom.code}#
+                        DIAL *920*566*{nom.code}#
                       </button>
 
                       <button
@@ -846,74 +1144,81 @@ export default function App() {
         )}
       </div>
       )}
+      </div>
 
       {/* Editorial Luxury Footer */}
-      <footer style={{
-        marginTop: '8rem',
-        paddingTop: '4rem',
-        paddingBottom: '4rem',
-        borderTop: '1px solid var(--border-color)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '3rem',
-        fontSize: '0.85rem'
-      }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '2.5rem'
-        }}>
-          <div style={{ flex: '1', minWidth: '280px', maxWidth: '400px' }}>
-            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
-              VOTEEQ AWARDS
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6', fontSize: '0.75rem' }}>
-              A premium recognition platform dedicated to honoring excellence and creative achievements in the contemporary musical arts. Powered by secure mobile money channels.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '4rem', flexWrap: 'wrap' }}>
-            <div>
-              <h4 style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '1rem' }}>
-                Quick Links
-              </h4>
-              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: 0 }}>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('about'); window.scrollTo(0, 0); }}>About the Awards</a></li>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('help'); window.scrollTo(0, 0); }}>Help & Support</a></li>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('guidelines'); window.scrollTo(0, 0); }}>Nominee Guidelines</a></li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '1rem' }}>
-                Legal & Security
-              </h4>
-              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: 0 }}>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('terms'); window.scrollTo(0, 0); }}>Terms & Conditions</a></li>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('privacy'); window.scrollTo(0, 0); }}>Privacy Policy</a></li>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('payment'); window.scrollTo(0, 0); }}>Payment Protection</a></li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '1.5rem',
+      {!authAdmin && !authNominee && (
+        <footer style={{
+          marginTop: '8rem',
+          paddingTop: '4rem',
+          paddingBottom: '4rem',
           borderTop: '1px solid var(--border-color)',
-          paddingTop: '2rem',
-          fontSize: '0.7rem',
-          color: 'var(--text-secondary)',
-          letterSpacing: '0.05em',
-          textTransform: 'uppercase'
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '3rem',
+          fontSize: '0.85rem'
         }}>
-          <span>&copy; {new Date().getFullYear()} VOTEEQ. All rights reserved.</span>
-        </div>
-      </footer>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '2.5rem'
+          }}>
+            <div style={{ flex: '1', minWidth: '280px', maxWidth: '400px' }}>
+              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
+                VOTEEQ AWARDS
+              </h3>
+              <p style={{ color: 'var(--text-secondary)', lineHeight: '1.6', fontSize: '0.75rem' }}>
+                A premium recognition platform dedicated to honoring excellence and creative achievements in the contemporary musical arts. Powered by secure mobile money channels.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '4rem', flexWrap: 'wrap' }}>
+              <div>
+                <h4 style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '1rem' }}>
+                  Quick Links
+                </h4>
+                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: 0 }}>
+                  <li><a href="#/about" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); navigateToPage('about'); window.scrollTo(0, 0); }}>About the Awards</a></li>
+                  <li><a href="#/help" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); navigateToPage('help'); window.scrollTo(0, 0); }}>Help & Support</a></li>
+                  <li><a href="#/guidelines" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); navigateToPage('guidelines'); window.scrollTo(0, 0); }}>Nominee Guidelines</a></li>
+                  <li><a href="#/apply" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); navigateToPage('apply'); window.scrollTo(0, 0); }}>Apply as Nominee</a></li>
+                  <li><a href="#/tickets" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); navigateToTab('tickets'); window.scrollTo(0, 0); }}>Buy Tickets</a></li>
+                  <li><a href="#/payment-status" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); navigateToPage('payment-status'); window.scrollTo(0, 0); }}>Payment Status</a></li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '1rem' }}>
+                  Legal & Security
+                </h4>
+                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: 0 }}>
+                  <li><a href="#/terms" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); navigateToPage('terms'); window.scrollTo(0, 0); }}>Terms & Conditions</a></li>
+                  <li><a href="#/privacy" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); navigateToPage('privacy'); window.scrollTo(0, 0); }}>Privacy Policy</a></li>
+                  <li><a href="#/payment" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); navigateToPage('payment'); window.scrollTo(0, 0); }}>Payment Protection</a></li>
+                  <li><button type="button" onClick={() => setAdminLoginMode(true)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem', padding: 0, cursor: 'pointer' }}>Admin Console</button></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '1.5rem',
+            borderTop: '1px solid var(--border-color)',
+            paddingTop: '2rem',
+            fontSize: '0.7rem',
+            color: 'var(--text-secondary)',
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase'
+          }}>
+            <span>&copy; {new Date().getFullYear()} VOTEEQ. All rights reserved.</span>
+          </div>
+        </footer>
+      )}
 
       {/* ---------------------------------------------------- */}
       {/* MODALS REGISTRY */}
@@ -921,13 +1226,14 @@ export default function App() {
 
       {/* Nominee Login Modal */}
       {loginMode && (
-        <div className="luxury-modal-overlay">
+        <div className="luxury-modal-overlay" role="dialog" aria-modal="true">
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">
               <h2 style={{ fontSize: '1.25rem' }}>Nominee Access</h2>
               <button
                 onClick={() => { setLoginMode(false); setLoginError(''); }}
                 className="modal-close-btn"
+                aria-label="Close"
               >
                 ✕
               </button>
@@ -987,6 +1293,16 @@ export default function App() {
                   Activate Nominee PIN
                 </button>
               </div>
+              <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Want to join? </span>
+                <button
+                        onClick={() => { setLoginMode(false); navigateToPage('apply'); }}
+                  style={{ background: 'none', border: 'none', color: 'var(--accent-dark)', textDecoration: 'underline', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
+                  type="button"
+                >
+                  Apply as Nominee
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -994,13 +1310,14 @@ export default function App() {
 
       {/* Nominee Registration / PIN Activation Modal */}
       {registerMode && (
-        <div className="luxury-modal-overlay">
+        <div className="luxury-modal-overlay" role="dialog" aria-modal="true">
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">
               <h2 style={{ fontSize: '1.25rem' }}>Activate Nominee PIN</h2>
               <button
                 onClick={() => { setRegisterMode(false); setRegisterError(''); setRegisterSuccess(''); }}
                 className="modal-close-btn"
+                aria-label="Close"
               >
                 ✕
               </button>
@@ -1051,7 +1368,7 @@ export default function App() {
                 </div>
                 <div style={{ marginBottom: '1.25rem' }}>
                   <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
-                    Temporary Activation Code
+                    Temporary Activation PIN
                   </label>
                   <input
                     type="text"
@@ -1062,12 +1379,12 @@ export default function App() {
                     className="luxury-input"
                   />
                   <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
-                    Enter the 6-digit activation code provided by your system admin.
+                    Enter the 6-digit activation PIN provided by your system admin.
                   </span>
                 </div>
                 <div style={{ marginBottom: '2rem' }}>
                   <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
-                    Choose a 4 to 6 digit PIN passcode
+                    Choose a 4 to 6 digit Personal Login PIN
                   </label>
                   <input
                     type="password"
@@ -1080,7 +1397,7 @@ export default function App() {
                   />
                 </div>
                 <button type="submit" className="luxury-btn" style={{ width: '100%' }}>
-                  Register and Set PIN
+                  Activate and Set Personal PIN
                 </button>
               </form>
               <div style={{ marginTop: '1.5rem', textAlign: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
@@ -1099,13 +1416,14 @@ export default function App() {
 
       {/* Admin Login Modal */}
       {adminLoginMode && (
-        <div className="luxury-modal-overlay">
+        <div className="luxury-modal-overlay" role="dialog" aria-modal="true">
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">
               <h2 style={{ fontSize: '1.25rem' }}>Admin Authentication</h2>
               <button
                 onClick={() => { setAdminLoginMode(false); setAdminLoginError(''); }}
                 className="modal-close-btn"
+                aria-label="Close"
               >
                 ✕
               </button>
@@ -1162,11 +1480,11 @@ export default function App() {
 
       {/* Mobile Control Center Drawer overlay */}
       {mobileMenuOpen && (
-        <div className="control-center-overlay" onClick={() => setMobileMenuOpen(false)}>
+        <div className="control-center-overlay" onClick={() => setMobileMenuOpen(false)} role="dialog" aria-modal="true">
           <div className="control-center-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="control-center-header">
               <h3 style={{ fontSize: '1.1rem', letterSpacing: '0.05em' }}>Control Panel</h3>
-              <button className="control-center-close" onClick={() => setMobileMenuOpen(false)}>
+              <button className="control-center-close" onClick={() => setMobileMenuOpen(false)} aria-label="Close mobile menu" type="button">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
             </div>
@@ -1176,23 +1494,63 @@ export default function App() {
               {!authAdmin && !authNominee && (
                 <div className="control-center-section" style={{ marginBottom: '1.5rem' }}>
                   <span className="section-label">Navigation</span>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.5rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
                     <button
-                      onClick={() => { setActiveTab('vote'); setMobileMenuOpen(false); }}
-                      className={`control-theme-btn ${activeTab === 'vote' ? 'active' : ''}`}
-                      style={{ padding: '0.8rem 0.5rem', justifyContent: 'center', gap: '0.5rem', fontSize: '0.75rem', fontWeight: 600 }}
+                      onClick={() => { navigateToTab('vote'); setMobileMenuOpen(false); }}
+                      className={`control-theme-btn ${activeTab === 'vote' && !currentPage ? 'active' : ''}`}
+                      style={{ padding: '0.8rem 0.25rem', justifyContent: 'center', gap: '0.4rem', fontSize: '0.65rem', fontWeight: 600 }}
+                      type="button"
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2V5a2 2 0 0 1 2-2h11" /></svg>
                       <span>VOTE PORTAL</span>
                     </button>
                     <button
-                      onClick={() => { setActiveTab('leaderboard'); setMobileMenuOpen(false); }}
-                      className={`control-theme-btn ${activeTab === 'leaderboard' ? 'active' : ''}`}
-                      style={{ padding: '0.8rem 0.5rem', justifyContent: 'center', gap: '0.5rem', fontSize: '0.75rem', fontWeight: 600 }}
+                      onClick={() => { navigateToTab('leaderboard'); setMobileMenuOpen(false); }}
+                      className={`control-theme-btn ${activeTab === 'leaderboard' && !currentPage ? 'active' : ''}`}
+                      style={{ padding: '0.8rem 0.25rem', justifyContent: 'center', gap: '0.4rem', fontSize: '0.65rem', fontWeight: 600 }}
+                      type="button"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34" /><path d="M12 2a6 6 0 0 1 6 6v5a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8a6 6 0 0 1 6-6z" /></svg>
                       <span>LEADERBOARD</span>
                     </button>
+                    <button
+                      onClick={() => { navigateToTab('tickets'); setMobileMenuOpen(false); }}
+                      className={`control-theme-btn ${activeTab === 'tickets' && !currentPage ? 'active' : ''}`}
+                      style={{ padding: '0.8rem 0.25rem', justifyContent: 'center', gap: '0.4rem', fontSize: '0.65rem', fontWeight: 600 }}
+                      type="button"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="3" y1="10" x2="21" y2="10" /><line x1="8" y1="14" x2="8" y2="14.01" /><line x1="12" y1="14" x2="12" y2="14.01" /><line x1="16" y1="14" x2="16" y2="14.01" /></svg>
+                      <span>BUY TICKETS</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Mobile Resources/Pages Section */}
+              {!authAdmin && !authNominee && (
+                <div className="control-center-section" style={{ marginBottom: '1.5rem' }}>
+                  <span className="section-label">Resources & Pages</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    {[
+                      { id: 'about', label: 'ABOUT THE AWARDS' },
+                      { id: 'help', label: 'HELP & SUPPORT' },
+                      { id: 'guidelines', label: 'NOMINEE GUIDELINES' },
+                      { id: 'apply', label: 'APPLY AS NOMINEE' },
+                      { id: 'terms', label: 'TERMS & CONDITIONS' },
+                      { id: 'privacy', label: 'PRIVACY POLICY' },
+                      { id: 'payment', label: 'PAYMENT PROTECTION' },
+                      { id: 'payment-status', label: 'PAYMENT STATUS' }
+                    ].map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => { navigateToPage(p.id); setMobileMenuOpen(false); }}
+                        className={`control-theme-btn ${currentPage === p.id ? 'active' : ''}`}
+                        style={{ padding: '0.6rem 0.5rem', fontSize: '0.6rem', fontWeight: 600, justifyContent: 'center' }}
+                        type="button"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
@@ -1211,6 +1569,8 @@ export default function App() {
                       key={theme.value}
                       onClick={() => { changeAccent(theme.value); }}
                       className={`control-theme-btn ${accent === theme.value ? 'active' : ''}`}
+                      aria-label={`${theme.name} Theme`}
+                      type="button"
                     >
                       <span className="color-dot" style={{ backgroundColor: theme.value }} />
                       <span className="color-name">{theme.name}</span>
@@ -1227,6 +1587,7 @@ export default function App() {
                     <button
                       onClick={() => { setMobileMenuOpen(false); handleAdminLogout(); }}
                       className="control-action-card active"
+                      type="button"
                     >
                       <span className="card-icon" style={{ color: 'var(--accent)' }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
@@ -1238,6 +1599,7 @@ export default function App() {
                     <button
                       onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
                       className="control-action-card active"
+                      type="button"
                     >
                       <span className="card-icon" style={{ color: 'var(--accent)' }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
@@ -1250,6 +1612,7 @@ export default function App() {
                       <button
                         onClick={() => { setMobileMenuOpen(false); setLoginMode(true); }}
                         className="control-action-card"
+                        type="button"
                       >
                         <span className="card-icon" style={{ color: 'var(--accent)' }}>
                           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
@@ -1259,14 +1622,39 @@ export default function App() {
                       </button>
 
                       <button
+                        onClick={() => { setMobileMenuOpen(false); setAdminLoginMode(true); }}
+                        className="control-action-card"
+                        type="button"
+                      >
+                        <span className="card-icon" style={{ color: 'var(--accent)' }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                        </span>
+                        <span className="card-title">Admin Login</span>
+                        <span className="card-desc">Console Access</span>
+                      </button>
+
+                      <button
                         onClick={() => { setMobileMenuOpen(false); setRegisterMode(true); }}
                         className="control-action-card"
+                        type="button"
                       >
                         <span className="card-icon" style={{ color: 'var(--accent)' }}>
                           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
                         </span>
                         <span className="card-title">Register PIN</span>
                         <span className="card-desc">Activate Nominee Code</span>
+                      </button>
+
+                      <button
+                        onClick={() => { setMobileMenuOpen(false); navigateToPage('apply'); }}
+                        className="control-action-card"
+                        type="button"
+                      >
+                        <span className="card-icon" style={{ color: 'var(--accent)' }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><line x1="20" y1="8" x2="20" y2="14" /><line x1="23" y1="11" x2="17" y2="11" /></svg>
+                        </span>
+                        <span className="card-title">Apply as Nominee</span>
+                        <span className="card-desc">Submit Nomination Form</span>
                       </button>
                     </>
                   )}
@@ -1286,7 +1674,7 @@ export default function App() {
         />
       )}
 
-      {/* Paystack Payment Checkout Sandbox Screen */}
+      {/* Secure Payment Checkout Screen */}
       {checkoutData && (
         <MockPaystack
           checkoutData={checkoutData}
@@ -1303,6 +1691,7 @@ export default function App() {
             <button
               onClick={() => setUssdOpen(false)}
               style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '0.9rem' }}
+              aria-label="Close"
             >
               ✕
             </button>
@@ -1339,11 +1728,18 @@ export default function App() {
               ) : ussdScreen ? (
                 <div>{ussdScreen}</div>
               ) : (
-                <div style={{ color: '#666', textAlign: 'center', fontSize: '0.75rem', marginTop: '0.5rem' }}>
-                  ENTER SHORTCODE:<br /><br />
-                  • *920*102# (Main Menu)<br />
-                  • *920*102*101# (Vote for Stonebwoy)<br />
-                  • *920*102*201# (Vote for Black Sherif)
+                <div style={{ color: '#aaa', textAlign: 'center', fontSize: '0.75rem', marginTop: '0.5rem' }}>
+                  Dial the official shortcode to begin:<br /><br />
+                  • <strong>*920*566#</strong> (Voteeq Portal)<br />
+                  {nominees.length > 0 ? (
+                    nominees.slice(0, 3).map(nom => (
+                      <div key={nom.id} style={{ marginTop: '0.25rem' }}>
+                        • <strong>*920*566*{nom.code}#</strong> (Vote for {nom.name})
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ marginTop: '0.25rem' }}>Loading nominee codes...</div>
+                  )}
                 </div>
               )}
             </div>
@@ -1378,7 +1774,7 @@ export default function App() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
                 <button
-                  onClick={() => initUssdSession('*920*102#')}
+                  onClick={() => initUssdSession('*920*566#')}
                   style={{
                     background: '#222',
                     color: '#fff',
@@ -1393,7 +1789,7 @@ export default function App() {
                   DIAL MENU
                 </button>
                 <button
-                  onClick={() => initUssdSession('*920*102*101#')}
+                  onClick={() => initUssdSession(`*920*566*${nominees[0]?.code || '101'}#`)}
                   style={{
                     background: '#222',
                     color: '#fff',
@@ -1405,7 +1801,7 @@ export default function App() {
                     textTransform: 'uppercase'
                   }}
                 >
-                  DIAL *101#
+                  DIAL *{nominees[0]?.code || '101'}#
                 </button>
               </div>
             )}

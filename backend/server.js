@@ -164,7 +164,12 @@ app.use(cors({
     }
   }
 }));
-app.use(bodyParser.json({ limit: '10mb' })); // support large canvas uploads
+app.use(bodyParser.json({ 
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+})); // support large canvas uploads
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
 // Ensure banners folder exists
@@ -203,12 +208,14 @@ app.get('/api/categories', async (req, res) => {
 app.get('/api/nominees', async (req, res) => {
   try {
     const db = getDB();
+    const eventId = req.query.event_id ? String(req.query.event_id) : null;
     const nominees = await db.all(`
       SELECT n.*, c.name as category_name 
       FROM nominees n 
       JOIN categories c ON n.category_id = c.id
+      ${eventId ? 'WHERE n.event_id = ? OR n.event_id IS NULL' : ''}
       ORDER BY n.votes_count DESC
-    `);
+    `, eventId ? [eventId] : []);
     res.json(nominees);
   } catch (err) {
     console.error(err);
@@ -259,7 +266,7 @@ app.post('/api/nominees/login', rateLimiter(15 * 60 * 1000, 10), async (req, res
 });
 
 // 3a. Nominee PIN Registration / Activation
-app.post('/api/nominees/register', async (req, res) => {
+app.post('/api/nominees/register', rateLimiter(15 * 60 * 1000, 10), async (req, res) => {
   const { code, activationCode, newPin } = req.body;
   if (!code || !newPin) {
     return res.status(400).json({ error: 'Nominee Code and new PIN are required' });
@@ -320,6 +327,168 @@ app.post('/api/admin/login', rateLimiter(15 * 60 * 1000, 10), async (req, res) =
     res.status(401).json({ error: 'Invalid admin credentials' });
   }
 });
+
+// 1b. Get all events
+app.get('/api/events', async (req, res) => {
+  try {
+    const db = getDB();
+    const events = await db.all('SELECT * FROM events ORDER BY date ASC');
+    res.json(events);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error fetching events' });
+  }
+});
+
+// 1c. Purchase event ticket (initialize payment reference)
+app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, res) => {
+  const { event_id, buyer_name, buyer_email, buyer_phone, quantity, access_code } = req.body;
+
+  if (!event_id || !buyer_name || !buyer_email || !buyer_phone || !quantity) {
+    return res.status(400).json({ error: 'Missing required fields for ticket purchase' });
+  }
+
+  const qty = parseInt(quantity, 10);
+  if (isNaN(qty) || qty <= 0 || qty > 5) {
+    return res.status(400).json({ error: 'Invalid quantity. A maximum of 5 tickets can be bought at once.' });
+  }
+
+  try {
+    const db = getDB();
+    await cleanupStaleTickets(db);
+    const event = await db.get('SELECT * FROM events WHERE id = ?', [event_id]);
+    if (!event) {
+      return res.status(404).json({ error: 'Selected event not found' });
+    }
+
+    if (event.privacy === 'private') {
+      if (!access_code || access_code.trim() !== event.access_code) {
+        return res.status(400).json({ error: 'Invalid access code for this private event' });
+      }
+    }
+
+    if (event.tickets_sold + qty > event.total_tickets) {
+      return res.status(400).json({ error: 'Ticket booking failed: Sold out or insufficient tickets remaining.' });
+    }
+
+    // Generate secure 8-character uppercase alphanumeric code
+    const ticketCode = `TIX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    const totalPrice = event.ticket_price * qty;
+    const reference = `tix_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+
+    await db.run(`
+      INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    `, [event_id, ticketCode, buyer_name, buyer_email, buyer_phone, qty, totalPrice, reference]);
+
+    res.json({
+      reference,
+      authorization_url: `/mock-paystack-checkout?reference=${reference}&amount=${totalPrice}&event=${encodeURIComponent(event.title)}&quantity=${qty}&isTicket=true`,
+      isMock: true
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to initialize ticket purchase' });
+  }
+});
+
+// Mock Paystack Ticket Success Trigger
+app.post('/api/payment/mock-verify-ticket', rateLimiter(1 * 60 * 1000, 20), async (req, res) => {
+  const { reference } = req.body;
+  if (!reference) {
+    return res.status(400).json({ error: 'Reference code is required' });
+  }
+
+  try {
+    const db = getDB();
+    const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
+
+    if (!ticketRecord) {
+      return res.status(404).json({ error: 'Ticket reference not found' });
+    }
+
+    if (ticketRecord.payment_status === 'pending') {
+      await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
+      await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
+      
+      // Write receipt log to receipts.log
+      const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
+      const logMsg = `
+========================================
+SMS/EMAIL TICKET RECEIPT (MOCK)
+Ticket ID: TIX_${ticketRecord.id}_${ticketRecord.ticket_code}
+Event: ${event ? event.title : 'Event'}
+Venue: ${event ? event.venue : 'TBA'}
+Date: ${event ? event.date : 'TBA'}
+Buyer: ${ticketRecord.buyer_name} (${ticketRecord.buyer_phone})
+Quantity: ${ticketRecord.quantity}
+Price Paid: GHS ${ticketRecord.price_paid.toFixed(2)}
+Verification Ticket Code: ${ticketRecord.ticket_code}
+Payment Reference: ${ticketRecord.payment_reference}
+Status: Completed
+Date/Time: ${new Date().toISOString()}
+========================================
+\n`;
+      fs.appendFileSync(receiptsLogPath, logMsg);
+
+      const ticketDetails = await db.get(`
+        SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
+        FROM tickets t
+        JOIN events e ON t.event_id = e.id
+        WHERE t.id = ?
+      `, [ticketRecord.id]);
+
+      return res.json({ 
+        success: true, 
+        message: 'Ticket payment verified successfully!', 
+        ticket: ticketDetails 
+      });
+    } else {
+      const ticketDetails = await db.get(`
+        SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
+        FROM tickets t
+        JOIN events e ON t.event_id = e.id
+        WHERE t.id = ?
+      `, [ticketRecord.id]);
+      return res.json({ 
+        success: true, 
+        message: 'Ticket payment already processed', 
+        ticket: ticketDetails 
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Mock ticket validation error' });
+  }
+});
+
+async function logAdminAction(adminUsername, action, details) {
+  try {
+    const db = getDB();
+    await db.run(`
+      INSERT INTO admin_audit_logs (admin_username, action, details)
+      VALUES (?, ?, ?)
+    `, [adminUsername || 'system', action, details]);
+  } catch (err) {
+    console.error('Failed to log admin action:', err);
+  }
+}
+
+async function cleanupStaleTickets(db) {
+  try {
+    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const result = await db.run(`
+      DELETE FROM tickets 
+      WHERE payment_status = 'pending' 
+        AND created_at < ?
+    `, [thirtyMinsAgo]);
+    if (result.changes > 0) {
+      console.log(`Cleaned up ${result.changes} stale pending ticket(s)`);
+    }
+  } catch (err) {
+    console.error('Failed to cleanup stale pending tickets:', err);
+  }
+}
 
 // Helper: Verify Admin Token Middleware
 function requireAdmin(req, res, next) {
@@ -634,7 +803,7 @@ app.get('/api/nominees/share-image/:code', async (req, res) => {
     <rect x="0" y="380" width="550" height="170" rx="12" fill="#14110e" stroke="url(#goldGrad)" stroke-width="1.5" />
     <text x="30" y="425" font-family="'Inter', sans-serif" font-size="16" font-weight="bold" fill="#b8986c" letter-spacing="2">HOW TO VOTE FOR ME</text>
     <text x="30" y="470" font-family="'Inter', sans-serif" font-size="14" fill="#8c8273">Dial shortcode on your mobile phone to support:</text>
-    <text x="30" y="522" font-family="'Courier New', monospace" font-size="38" font-weight="bold" fill="#ffffff" letter-spacing="1">*920*102*${nominee.code}#</text>
+    <text x="30" y="522" font-family="'Courier New', monospace" font-size="38" font-weight="bold" fill="#ffffff" letter-spacing="1">*920*566*${nominee.code}#</text>
   </g>
 </svg>`;
 
@@ -673,7 +842,7 @@ app.get('/share/:code', async (req, res) => {
       ? `${serverUrl}/banners/${code}.png`
       : `${serverUrl}/api/nominees/share-image/${code}`;
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = process.env.FRONTEND_URL || (process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')[0].trim() : 'http://localhost:5173');
 
     res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -685,7 +854,7 @@ app.get('/share/:code', async (req, res) => {
   <meta property="og:type" content="website">
   <meta property="og:url" content="${frontendUrl}/?nominee=${nominee.code}">
   <meta property="og:title" content="Vote for ${nominee.name} - Voteeq Awards">
-  <meta property="og:description" content="Support ${nominee.name} in the ${nominee.category_name} category. Dial *920*102*${nominee.code}# or vote online!">
+  <meta property="og:description" content="Support ${nominee.name} in the ${nominee.category_name} category. Dial *920*566*${nominee.code}# or vote online!">
   <meta property="og:image" content="${bannerUrl}">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
@@ -695,7 +864,7 @@ app.get('/share/:code', async (req, res) => {
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:url" content="${frontendUrl}/?nominee=${nominee.code}">
   <meta name="twitter:title" content="Vote for ${nominee.name} - Voteeq Awards">
-  <meta name="twitter:description" content="Support ${nominee.name} in the ${nominee.category_name} category. Dial *920*102*${nominee.code}# or vote online!">
+  <meta name="twitter:description" content="Support ${nominee.name} in the ${nominee.category_name} category. Dial *920*566*${nominee.code}# or vote online!">
   <meta name="twitter:image" content="${bannerUrl}">
 
   <!-- Redirect to the React App -->
@@ -718,7 +887,7 @@ app.get('/share/:code', async (req, res) => {
 });
 
 // 5. Initialize Paystack Payment / Vote Purchase
-app.post('/api/payment/initialize', async (req, res) => {
+app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, res) => {
   const { nomineeId, email, phone, voteCount } = req.body;
 
   if (!nomineeId || !voteCount || voteCount <= 0) {
@@ -820,7 +989,19 @@ app.post('/api/payment/initialize', async (req, res) => {
 
 // 6. Paystack Webhook (Verify/Complete Payment)
 app.post('/api/payment/webhook', async (req, res) => {
-  // Paystack signature check can go here if header exists, but for ease, check the request body
+  const secretKey = process.env.PAYSTACK_SECRET_KEY;
+  if (secretKey) {
+    const signature = req.headers['x-paystack-signature'];
+    if (!signature) {
+      return res.status(401).send('Missing Paystack signature header');
+    }
+    const hash = crypto.createHmac('sha512', secretKey).update(req.rawBody || '').digest('hex');
+    if (hash !== signature) {
+      console.warn('Invalid webhook signature attempt');
+      return res.status(401).send('Invalid Paystack signature');
+    }
+  }
+
   const event = req.body;
   if (!event || !event.event) {
     return res.status(400).send('Invalid webhook payload');
@@ -833,6 +1014,48 @@ app.post('/api/payment/webhook', async (req, res) => {
 
     try {
       const db = getDB();
+
+      if (reference && reference.startsWith('tix_')) {
+        // Handle ticket payment
+        const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
+        if (ticketRecord && ticketRecord.payment_status === 'pending') {
+          await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
+          await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
+          console.log(`Ticket payment confirmed for reference: ${reference}`);
+          
+          // Write receipt log to receipts.log
+          const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
+          const logMsg = `
+========================================
+SMS/EMAIL TICKET RECEIPT
+Ticket ID: TIX_${ticketRecord.id}_${ticketRecord.ticket_code}
+Event: ${event ? event.title : 'Event'}
+Venue: ${event ? event.venue : 'TBA'}
+Date: ${event ? event.date : 'TBA'}
+Buyer: ${ticketRecord.buyer_name} (${ticketRecord.buyer_phone})
+Quantity: ${ticketRecord.quantity}
+Price Paid: GHS ${ticketRecord.price_paid.toFixed(2)}
+Verification Ticket Code: ${ticketRecord.ticket_code}
+Payment Reference: ${ticketRecord.payment_reference}
+Status: Completed
+Date/Time: ${new Date().toISOString()}
+========================================
+\n`;
+          fs.appendFileSync(receiptsLogPath, logMsg);
+        }
+        return res.status(200).send('Webhook processed successfully');
+      }
+
+      if (reference && reference.startsWith('reg_')) {
+        // Handle nominee onboarding registration form payment
+        const regRecord = await db.get('SELECT * FROM nominee_registrations WHERE payment_reference = ?', [reference]);
+        if (regRecord && regRecord.payment_status === 'pending') {
+          await db.run("UPDATE nominee_registrations SET payment_status = 'completed' WHERE id = ?", [regRecord.id]);
+          console.log(`Registration Form payment confirmed for reference: ${reference}`);
+        }
+        return res.status(200).send('Webhook processed successfully');
+      }
+
       const voteRecord = await db.get('SELECT * FROM votes WHERE payment_reference = ?', [reference]);
 
       if (voteRecord && voteRecord.status === 'pending') {
@@ -909,6 +1132,348 @@ app.post('/api/payment/mock-verify', rateLimiter(1 * 60 * 1000, 20), async (req,
   }
 });
 
+// Mock Paystack Registration Form Success Trigger
+app.post('/api/payment/mock-verify-registration', rateLimiter(1 * 60 * 1000, 20), async (req, res) => {
+  const { reference } = req.body;
+  if (!reference) {
+    return res.status(400).json({ error: 'Reference code is required' });
+  }
+
+  try {
+    const db = getDB();
+    const regRecord = await db.get('SELECT * FROM nominee_registrations WHERE payment_reference = ?', [reference]);
+
+    if (!regRecord) {
+      return res.status(404).json({ error: 'Registration reference not found' });
+    }
+
+    if (regRecord.payment_status === 'pending') {
+      await db.run("UPDATE nominee_registrations SET payment_status = 'completed' WHERE id = ?", [regRecord.id]);
+      return res.json({ success: true, message: 'Form payment verified successfully!' });
+    } else {
+      return res.json({ success: true, message: 'Registration payment already processed' });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Mock registration validation error' });
+  }
+});
+
+// Nominee Self-Service Application
+app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res) => {
+  const { name, email, phone, bio, photo_url, category_id, custom_category } = req.body;
+
+  if (!name || !email || !phone) {
+    return res.status(400).json({ error: 'Name, Email and Phone are required' });
+  }
+
+  const formFee = 10.00; // GHS 10.00 registration form fee
+  const reference = `reg_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+
+  try {
+    const db = getDB();
+    
+    // Save pending registration
+    await db.run(`
+      INSERT INTO nominee_registrations (name, email, phone, photo_url, category_id, custom_category, bio, payment_reference, payment_status, form_fee, approval_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'pending')
+    `, [
+      name, 
+      email, 
+      phone, 
+      photo_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80',
+      category_id ? parseInt(category_id) : null,
+      custom_category || null,
+      bio || '',
+      reference,
+      formFee
+    ]);
+
+    const secretKey = process.env.PAYSTACK_SECRET_KEY;
+
+    if (secretKey) {
+      // Real Paystack charge initialization for GHS 10.00
+      const paystackPayload = JSON.stringify({
+        email: email,
+        amount: formFee * 100, // minor units
+        currency: 'GHS',
+        reference: reference,
+        callback_url: `${req.headers.origin || 'http://localhost:5173'}/payment-status`,
+        metadata: {
+          type: 'nominee_form',
+          name,
+          phone
+        }
+      });
+
+      const options = {
+        hostname: 'api.paystack.co',
+        path: '/transaction/initialize',
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(paystackPayload)
+        }
+      };
+
+      const paystackReq = http.request(options, (paystackRes) => {
+        let data = '';
+        paystackRes.on('data', (chunk) => { data += chunk; });
+        paystackRes.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.status && parsed.data) {
+              res.json({
+                reference,
+                authorization_url: parsed.data.authorization_url,
+                access_code: parsed.data.access_code,
+                isMock: false
+              });
+            } else {
+              res.status(400).json({ error: parsed.message || 'Form purchase failed to initialize' });
+            }
+          } catch (e) {
+            res.status(500).json({ error: 'Failed to parse Paystack response' });
+          }
+        });
+      });
+
+      paystackReq.on('error', (err) => {
+        console.error('Paystack error:', err);
+        res.status(500).json({ error: 'Paystack connection error' });
+      });
+
+      paystackReq.write(paystackPayload);
+      paystackReq.end();
+    } else {
+      // MOCK Paystack Flow for offline sandbox testing
+      res.json({
+        reference,
+        authorization_url: `/mock-paystack-checkout?reference=${reference}&amount=${formFee}&nominee=${encodeURIComponent('Nominee Form Purchase: ' + name)}&votes=1&isForm=true`,
+        isMock: true
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to initialize nominee form purchase' });
+  }
+});
+
+// Admin overview of nominee registrations
+app.get('/api/admin/registrations', requireAdmin, async (req, res) => {
+  try {
+    const db = getDB();
+    const registrations = await db.all(`
+      SELECT r.*, c.name as category_name
+      FROM nominee_registrations r
+      LEFT JOIN categories c ON r.category_id = c.id
+      ORDER BY r.created_at DESC
+    `);
+    res.json(registrations);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch nominee registrations list' });
+  }
+});
+
+// Admin Approve registration
+app.post('/api/admin/registrations/:id/approve', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = getDB();
+    const reg = await db.get('SELECT * FROM nominee_registrations WHERE id = ?', [id]);
+    if (!reg) {
+      return res.status(404).json({ error: 'Registration not found' });
+    }
+
+    if (reg.payment_status !== 'completed') {
+      return res.status(400).json({ error: 'Form fee payment is not completed yet' });
+    }
+
+    if (reg.approval_status !== 'pending') {
+      return res.status(400).json({ error: 'Registration is already processed' });
+    }
+
+    // Assign nominee category
+    let finalCategoryId = reg.category_id;
+    if (!finalCategoryId && reg.custom_category) {
+      // Create custom category automatically if requested and approved
+      const customCatName = reg.custom_category.trim();
+      let existingCat = await db.get('SELECT id FROM categories WHERE name = ?', [customCatName]);
+      if (!existingCat) {
+        const createResult = await db.run('INSERT INTO categories (name, description) VALUES (?, ?)', [customCatName, 'Approved Custom Category']);
+        finalCategoryId = createResult.lastID;
+      } else {
+        finalCategoryId = existingCat.id;
+      }
+    }
+
+    if (!finalCategoryId) {
+      return res.status(400).json({ error: 'Category selection or request is missing' });
+    }
+
+    // Generate unique 3-digit candidate code
+    let assignedCode = '';
+    while (true) {
+      const candidateCode = Math.floor(100 + Math.random() * 900).toString();
+      const duplicate = await db.get('SELECT id FROM nominees WHERE code = ?', [candidateCode]);
+      if (!duplicate) {
+        assignedCode = candidateCode;
+        break;
+      }
+    }
+
+    // Generate 6-digit random Temporary PIN
+    const tempPin = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Create nominee in database in pending state
+    await db.run(`
+      INSERT INTO nominees (code, name, photo_url, category_id, passcode, votes_count)
+      VALUES (?, ?, ?, ?, ?, 0)
+    `, [
+      assignedCode,
+      reg.name,
+      reg.photo_url,
+      finalCategoryId,
+      `PENDING_ACT_${tempPin}`
+    ]);
+
+    // Update registration status
+    await db.run(`
+      UPDATE nominee_registrations 
+      SET approval_status = 'approved', nominee_code = ?, activation_pin = ?
+      WHERE id = ?
+    `, [assignedCode, tempPin, id]);
+
+    await logAdminAction('admin', 'APPROVE_REGISTRATION', `Approved registration ID: ${id}, Nominee Name: ${reg.name}, Assigned Code: ${assignedCode}`);
+
+    // Simulate SMS notification receipt log
+    const timestamp = new Date().toLocaleString();
+    const activationMessage = `
+========================================
+VOTEEQ ONBOARDING COMMITTEE ACTIVATION
+========================================
+Approved Date: ${timestamp}
+Registration ID: REG_${reg.id}_${reg.payment_reference}
+Nominee Name: ${reg.name.toUpperCase()}
+Category Assigned ID: ${finalCategoryId}
+----------------------------------------
+Congratulations! Your nomination interest has been approved.
+Your assigned details are:
+Nominee Code: ${assignedCode}
+Temporary PIN: ${tempPin}
+
+Please visit the voting portal, select "Register PIN" from the Menu, 
+and input your Nominee Code and Temporary PIN to set up your personal login PIN.
+========================================\n\n`;
+
+    fs.appendFileSync(receiptsLogPath, activationMessage, 'utf8');
+    console.log(`Nominee onboarding approved! Activation letter printed to receipts.log for Nominee Code: ${assignedCode}`);
+
+    res.json({ 
+      success: true, 
+      message: 'Onboarding approved! Activation PIN issued.',
+      assignedCode,
+      activationPin: tempPin
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to approve nominee registration' });
+  }
+});
+
+// Admin Reject registration
+app.post('/api/admin/registrations/:id/reject', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = getDB();
+    const reg = await db.get('SELECT id, approval_status FROM nominee_registrations WHERE id = ?', [id]);
+    if (!reg) {
+      return res.status(404).json({ error: 'Registration not found' });
+    }
+
+    if (reg.approval_status !== 'pending') {
+      return res.status(400).json({ error: 'Registration is already processed' });
+    }
+
+    await db.run("UPDATE nominee_registrations SET approval_status = 'rejected' WHERE id = ?", [id]);
+    await logAdminAction('admin', 'REJECT_REGISTRATION', `Rejected registration ID: ${id}`);
+    res.json({ success: true, message: 'Nominee registration rejected.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to reject registration' });
+  }
+});
+
+// 3k. Get all tickets purchased
+app.get('/api/admin/tickets', requireAdmin, async (req, res) => {
+  try {
+    const db = getDB();
+    const tickets = await db.all(`
+      SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
+      FROM tickets t 
+      JOIN events e ON t.event_id = e.id 
+      ORDER BY t.created_at DESC
+    `);
+    res.json(tickets);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load tickets logs' });
+  }
+});
+
+// 3l. Scan / Validate a ticket
+app.post('/api/admin/tickets/scan', requireAdmin, async (req, res) => {
+  const { ticket_code } = req.body;
+  if (!ticket_code) {
+    return res.status(400).json({ error: 'Ticket code is required' });
+  }
+
+  try {
+    const db = getDB();
+    const ticket = await db.get(`
+      SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue 
+      FROM tickets t
+      JOIN events e ON t.event_id = e.id
+      WHERE t.ticket_code = ?
+    `, [ticket_code.trim()]);
+
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket code is invalid or not found in system database' });
+    }
+
+    if (ticket.payment_status !== 'paid') {
+      return res.status(400).json({ error: `Ticket status is ${ticket.payment_status.toUpperCase()}. Complete payment first.` });
+    }
+
+    if (ticket.scanned === 1) {
+      return res.status(400).json({ 
+        error: `ACCESS DENIED: Ticket has already been checked in! Checked in at: ${new Date(ticket.scanned_at).toLocaleString()}` 
+      });
+    }
+
+    const scannedAt = new Date().toISOString();
+    await db.run('UPDATE tickets SET scanned = 1, scanned_at = ? WHERE id = ?', [scannedAt, ticket.id]);
+    await logAdminAction('admin', 'SCAN_TICKET', `Scanned ticket code: ${ticket_code.trim()}, Event: ${ticket.event_title}, Buyer: ${ticket.buyer_name}`);
+
+    res.json({
+      success: true,
+      message: 'ACCESS GRANTED - Check-in successful',
+      ticket: {
+        buyer_name: ticket.buyer_name,
+        event_title: ticket.event_title,
+        quantity: ticket.quantity,
+        scanned_at: scannedAt
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Check-in validation error occurred' });
+  }
+});
+
 // ----------------------------------------------------
 // USSD GATEWAY WEBHOOK (Arkesel / Hubtel style)
 // ----------------------------------------------------
@@ -919,7 +1484,7 @@ app.post('/api/payment/mock-verify', rateLimiter(1 * 60 * 1000, 20), async (req,
  *   "userID": "233543210987",
  *   "msisdn": "233543210987",
  *   "newSession": "1", // "1" for new, "0" for response
- *   "userData": "*920*102#", // dial string or user entry
+ *   "userData": "*920*566#", // dial string or user entry
  *   "network": "MTN"
  * }
  * 
@@ -943,11 +1508,11 @@ app.post('/api/ussd', async (req, res) => {
   try {
     // If it's a completely new session
     if (newSession === '1' || newSession === 1 || !ussdSessions.has(sessionID)) {
-      // Parse initial dial code: *920*102# or *920*102*101#
+      // Parse initial dial code: *920*566# or *920*566*101#
       const cleanDial = input.replace(/#/g, '');
-      const parts = cleanDial.split('*'); // ["", "920", "102", "101"] or ["", "920", "102"]
+      const parts = cleanDial.split('*'); // ["", "920", "566", "101"] or similar
 
-      // If nominee code is dialled directly, e.g. *920*102*101#
+      // Direct nominee vote shortcut: e.g. *920*566*101#
       if (parts.length >= 4) {
         const nomineeCode = parts[3];
         const nominee = await findNomineeByCode(nomineeCode);
@@ -955,11 +1520,10 @@ app.post('/api/ussd', async (req, res) => {
         if (!nominee) {
           return res.json({
             action: 'release',
-            message: `Nominee not found for code ${nomineeCode}. Please dial *920*102# to try again.`
+            message: `Nominee not found for code ${nomineeCode}. Please dial shortcode menu again.`
           });
         }
 
-        // Save session state
         ussdSessions.set(sessionID, {
           state: 'AWAITING_VOTES',
           nomineeId: nominee.id,
@@ -970,25 +1534,67 @@ app.post('/api/ussd', async (req, res) => {
 
         return res.json({
           action: 'prompt',
-          message: `Vote for ${nominee.name} (${nominee.code}).\nEnter number of votes (1 vote = 0.50 GHS):`
+          message: `Vote for ${nominee.name} (${nominee.code}).\nEnter number of votes (1 vote = GH₵ 0.50):`
         });
       }
 
-      // Normal generic dial: *920*102#
+      // Show Main Menu: Choice 1 = Vote, Choice 2 = Buy Ticket
       ussdSessions.set(sessionID, {
-        state: 'AWAITING_NOMINEE_CODE',
+        state: 'MAIN_MENU',
         phone
       });
 
       return res.json({
         action: 'prompt',
-        message: 'Welcome to Voteeq.\nEnter Nominee Code (e.g. 101):'
+        message: 'Welcome to Voteeq.\n1. Vote Awards\n2. Buy Event Tickets'
       });
     }
 
-    // Retrieve session
+    // Retrieve active session
     const session = ussdSessions.get(sessionID);
 
+    // 1. Main Menu handling
+    if (session.state === 'MAIN_MENU') {
+      if (input === '1') {
+        session.state = 'AWAITING_NOMINEE_CODE';
+        ussdSessions.set(sessionID, session);
+        return res.json({
+          action: 'prompt',
+          message: 'Enter Nominee Code (e.g. 101):'
+        });
+      } else if (input === '2') {
+        const db = getDB();
+        const events = await db.all("SELECT * FROM events WHERE privacy = 'public' ORDER BY date ASC");
+        
+        if (events.length === 0) {
+          ussdSessions.delete(sessionID);
+          return res.json({
+            action: 'release',
+            message: 'No public events currently available for ticketing.'
+          });
+        }
+
+        session.state = 'AWAITING_EVENT_SELECTION';
+        session.events = events.map(e => ({ id: e.id, title: e.title, price: e.ticket_price }));
+        ussdSessions.set(sessionID, session);
+
+        let menuMsg = 'Select Event:\n';
+        events.forEach((ev, idx) => {
+          menuMsg += `${idx + 1}. ${ev.title} (GH₵ ${ev.ticket_price})\n`;
+        });
+        return res.json({
+          action: 'prompt',
+          message: menuMsg.trim()
+        });
+      } else {
+        return res.json({
+          action: 'prompt',
+          message: 'Invalid option.\nWelcome to Voteeq.\n1. Vote Awards\n2. Buy Event Tickets'
+        });
+      }
+    }
+
+    // 2. Awaiting nominee code (for voting)
     if (session.state === 'AWAITING_NOMINEE_CODE') {
       const nomineeCode = input;
       const nominee = await findNomineeByCode(nomineeCode);
@@ -1009,16 +1615,17 @@ app.post('/api/ussd', async (req, res) => {
 
       return res.json({
         action: 'prompt',
-        message: `Vote for ${nominee.name} (${nominee.code}).\nEnter number of votes (1 vote = 0.50 GHS):`
+        message: `Vote for ${nominee.name} (${nominee.code}).\nEnter number of votes (1 vote = GH₵ 0.50):`
       });
     }
 
+    // 3. Awaiting voting count
     if (session.state === 'AWAITING_VOTES') {
       const voteCount = parseInt(input, 10);
       if (isNaN(voteCount) || voteCount <= 0) {
         return res.json({
           action: 'prompt',
-          message: `Invalid number of votes.\nEnter number of votes (1 vote = 0.50 GHS):`
+          message: `Invalid number of votes.\nEnter number of votes (1 vote = GH₵ 0.50):`
         });
       }
 
@@ -1026,30 +1633,26 @@ app.post('/api/ussd', async (req, res) => {
       session.voteCount = voteCount;
       ussdSessions.set(sessionID, session);
 
-      const totalCost = voteCount * 0.5; // Custom promo USSD rate: 0.50 GHS/vote
+      const totalCost = voteCount * 0.5;
       return res.json({
         action: 'prompt',
-        message: `Confirm ${voteCount} votes for ${session.nomineeName} costing GHS ${totalCost.toFixed(2)}?\n1. Confirm & Pay\n2. Cancel`
+        message: `Confirm ${voteCount} votes for ${session.nomineeName} costing GH₵ ${totalCost.toFixed(2)}?\n1. Confirm & Pay\n2. Cancel`
       });
     }
 
+    // 4. Awaiting vote confirmation
     if (session.state === 'AWAITING_CONFIRMATION') {
       if (input === '1') {
         const db = getDB();
         const reference = `u_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
-        // Save a pending USSD payment/vote record
         await db.run(`
           INSERT INTO votes (nominee_id, voter_phone, vote_count, channel, payment_reference, status)
           VALUES (?, ?, ?, 'ussd', ?, 'pending')
         `, [session.nomineeId, session.phone, session.voteCount, reference]);
 
-        // Clean session
         ussdSessions.delete(sessionID);
 
-        // In a real production setup, we trigger Paystack's Mobile Money Charge API
-        // E.g., charging session.phone via MTN MoMo / Telecel Cash.
-        // We will trigger a mock completion call in 2 seconds to simulate standard sandbox flow
         setTimeout(async () => {
           try {
             const voteRecord = await db.get('SELECT * FROM votes WHERE payment_reference = ?', [reference]);
@@ -1060,11 +1663,7 @@ app.post('/api/ussd', async (req, res) => {
                 [voteRecord.vote_count, voteRecord.nominee_id]
               );
               console.log(`USSD payment simulation completed for ref: ${reference}`);
-
-              // Trigger SMS receipt simulation
               await sendReceipt(voteRecord.id);
-
-              // Broadcast real-time WebSocket update
               broadcast({
                 type: 'VOTE_COMPLETED',
                 nomineeId: voteRecord.nominee_id,
@@ -1089,6 +1688,116 @@ app.post('/api/ussd', async (req, res) => {
       }
     }
 
+    // 5. Awaiting Event selection (for tickets)
+    if (session.state === 'AWAITING_EVENT_SELECTION') {
+      const idx = parseInt(input, 10) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= session.events.length) {
+        let menuMsg = 'Invalid selection. Select Event:\n';
+        session.events.forEach((ev, i) => {
+          menuMsg += `${i + 1}. ${ev.title} (GH₵ ${ev.price})\n`;
+        });
+        return res.json({
+          action: 'prompt',
+          message: menuMsg.trim()
+        });
+      }
+
+      const selectedEvent = session.events[idx];
+      session.state = 'AWAITING_TICKET_QUANTITY';
+      session.eventId = selectedEvent.id;
+      session.eventTitle = selectedEvent.title;
+      session.eventPrice = selectedEvent.price;
+      ussdSessions.set(sessionID, session);
+
+      return res.json({
+        action: 'prompt',
+        message: `Buy tickets for ${selectedEvent.title} (GH₵ ${selectedEvent.price}/each).\nEnter quantity (1-5):`
+      });
+    }
+
+    // 6. Awaiting ticket quantity
+    if (session.state === 'AWAITING_TICKET_QUANTITY') {
+      const qty = parseInt(input, 10);
+      if (isNaN(qty) || qty <= 0 || qty > 5) {
+        return res.json({
+          action: 'prompt',
+          message: 'Invalid quantity. Enter quantity of tickets (1-5):'
+        });
+      }
+
+      session.state = 'AWAITING_TICKET_CONFIRMATION';
+      session.quantity = qty;
+      ussdSessions.set(sessionID, session);
+
+      const totalCost = qty * session.eventPrice;
+      return res.json({
+        action: 'prompt',
+        message: `Confirm ${qty} tickets for ${session.eventTitle} costing GH₵ ${totalCost.toFixed(2)}?\n1. Confirm & Pay\n2. Cancel`
+      });
+    }
+
+    // 7. Awaiting ticket confirmation
+    if (session.state === 'AWAITING_TICKET_CONFIRMATION') {
+      if (input === '1') {
+        const db = getDB();
+        const ticketCode = `TIX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const totalPrice = session.quantity * session.eventPrice;
+        const reference = `tix_ussd_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+
+        await db.run(`
+          INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
+          VALUES (?, ?, 'USSD Buyer', 'ussd@voteeq.com', ?, ?, ?, ?, 'pending')
+        `, [session.eventId, ticketCode, session.phone, session.quantity, totalPrice, reference]);
+
+        ussdSessions.delete(sessionID);
+
+        // Simulate payment completion
+        setTimeout(async () => {
+          try {
+            const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
+            if (ticketRecord && ticketRecord.payment_status === 'pending') {
+              await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
+              await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
+              console.log(`USSD ticket payment simulation completed for ref: ${reference}`);
+              
+              // Write receipt log to receipts.log
+              const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
+              const logMsg = `
+========================================
+SMS/EMAIL TICKET RECEIPT (USSD MOCK)
+Ticket ID: TIX_${ticketRecord.id}_${ticketRecord.ticket_code}
+Event: ${event ? event.title : 'Event'}
+Venue: ${event ? event.venue : 'TBA'}
+Date: ${event ? event.date : 'TBA'}
+Buyer: ${ticketRecord.buyer_name} (${ticketRecord.buyer_phone})
+Quantity: ${ticketRecord.quantity}
+Price Paid: GH₵ ${ticketRecord.price_paid.toFixed(2)}
+Verification Ticket Code: ${ticketRecord.ticket_code}
+Payment Reference: ${ticketRecord.payment_reference}
+Status: Completed
+Date/Time: ${new Date().toISOString()}
+========================================
+\n`;
+              fs.appendFileSync(receiptsLogPath, logMsg);
+            }
+          } catch (err) {
+            console.error('USSD ticket timeout mock error:', err);
+          }
+        }, 3000);
+
+        return res.json({
+          action: 'release',
+          message: 'Payment prompt sent. Approve MoMo transaction on your phone to complete purchase. Thank you!'
+        });
+      } else {
+        ussdSessions.delete(sessionID);
+        return res.json({
+          action: 'release',
+          message: 'Ticket purchase cancelled. Thank you.'
+        });
+      }
+    }
+
     // Default catch-all
     ussdSessions.delete(sessionID);
     return res.json({
@@ -1107,9 +1816,191 @@ app.post('/api/ussd', async (req, res) => {
 });
 
 
+// GET payment transaction status
+app.get('/api/payment/status/:reference', async (req, res) => {
+  const { reference } = req.params;
+  if (!reference) {
+    return res.status(400).json({ error: 'Reference parameter is required' });
+  }
+  try {
+    const db = getDB();
+    let status = 'pending';
+    let details = null;
+    let type = 'vote';
+
+    const vote = await db.get(`
+      SELECT v.*, n.name as nominee_name 
+      FROM votes v 
+      JOIN nominees n ON v.nominee_id = n.id 
+      WHERE v.payment_reference = ?
+    `, [reference]);
+
+    if (vote) {
+      status = vote.status;
+      type = 'vote';
+      details = {
+        nominee_name: vote.nominee_name,
+        vote_count: vote.vote_count,
+        amount: vote.channel === 'web' ? vote.vote_count * 1.0 : vote.vote_count * 0.5,
+        timestamp: vote.created_at
+      };
+    } else {
+      const reg = await db.get('SELECT * FROM nominee_registrations WHERE payment_reference = ?', [reference]);
+      if (reg) {
+        status = reg.payment_status;
+        type = 'nominee_registration';
+        details = {
+          name: reg.name,
+          email: reg.email,
+          amount: reg.form_fee,
+          timestamp: reg.created_at
+        };
+      } else {
+        const ticket = await db.get(`
+          SELECT t.*, e.title as event_title 
+          FROM tickets t
+          JOIN events e ON t.event_id = e.id
+          WHERE t.payment_reference = ?
+        `, [reference]);
+        if (ticket) {
+          status = ticket.payment_status === 'paid' ? 'completed' : ticket.payment_status;
+          type = 'ticket';
+          details = {
+            event_title: ticket.event_title,
+            buyer_name: ticket.buyer_name,
+            quantity: ticket.quantity,
+            amount: ticket.price_paid,
+            timestamp: ticket.created_at,
+            ticket_code: ticket.ticket_code
+          };
+        }
+      }
+    }
+
+    if (!details) {
+      return res.status(404).json({ error: 'Payment reference not found' });
+    }
+
+    res.json({
+      reference,
+      type,
+      status,
+      details
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to verify payment status' });
+  }
+});
+
+// Retrieve tickets by email, phone, reference, or code
+app.get('/api/tickets/lookup', async (req, res) => {
+  const { query } = req.query;
+  if (!query) {
+    return res.status(400).json({ error: 'Search query is required' });
+  }
+  const cleanQuery = query.trim();
+  try {
+    const db = getDB();
+    const tickets = await db.all(`
+      SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
+      FROM tickets t
+      JOIN events e ON t.event_id = e.id
+      WHERE (t.payment_reference = ? OR t.buyer_email = ? OR t.buyer_phone = ? OR t.ticket_code = ?)
+        AND t.payment_status = 'paid'
+      ORDER BY t.created_at DESC
+    `, [cleanQuery, cleanQuery, cleanQuery, cleanQuery]);
+    
+    res.json(tickets);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to lookup tickets' });
+  }
+});
+
+// Get admin audit logs
+app.get('/api/admin/audit-logs', requireAdmin, async (req, res) => {
+  try {
+    const db = getDB();
+    const logs = await db.all('SELECT * FROM admin_audit_logs ORDER BY created_at DESC');
+    res.json(logs);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch admin audit logs' });
+  }
+});
+
+// Create Event
+app.post('/api/admin/events', requireAdmin, async (req, res) => {
+  const { title, description, date, venue, ticket_price, privacy, access_code, total_tickets } = req.body;
+  if (!title || ticket_price === undefined || !total_tickets) {
+    return res.status(400).json({ error: 'Title, ticket price, and total capacity are required' });
+  }
+  try {
+    const db = getDB();
+    const result = await db.run(`
+      INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+    `, [title, description || '', date || '', venue || '', parseFloat(ticket_price), privacy || 'public', access_code || null, parseInt(total_tickets, 10)]);
+    
+    const newEventId = result.lastID;
+    await logAdminAction('admin', 'CREATE_EVENT', `Created event: ${title} (ID: ${newEventId})`);
+    res.json({ success: true, id: newEventId, message: 'Event created successfully!' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to create event' });
+  }
+});
+
+// Update Event
+app.put('/api/admin/events/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { title, description, date, venue, ticket_price, privacy, access_code, total_tickets } = req.body;
+  if (!title || ticket_price === undefined || !total_tickets) {
+    return res.status(400).json({ error: 'Title, ticket price, and total capacity are required' });
+  }
+  try {
+    const db = getDB();
+    const existing = await db.get('SELECT * FROM events WHERE id = ?', [id]);
+    if (!existing) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    await db.run(`
+      UPDATE events 
+      SET title = ?, description = ?, date = ?, venue = ?, ticket_price = ?, privacy = ?, access_code = ?, total_tickets = ?
+      WHERE id = ?
+    `, [title, description || '', date || '', venue || '', parseFloat(ticket_price), privacy || 'public', access_code || null, parseInt(total_tickets, 10), id]);
+    
+    await logAdminAction('admin', 'UPDATE_EVENT', `Updated event: ${title} (ID: ${id})`);
+    res.json({ success: true, message: 'Event updated successfully!' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update event' });
+  }
+});
+
+// Delete Event
+app.delete('/api/admin/events/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = getDB();
+    const existing = await db.get('SELECT * FROM events WHERE id = ?', [id]);
+    if (!existing) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    await db.run('DELETE FROM events WHERE id = ?', [id]);
+    await logAdminAction('admin', 'DELETE_EVENT', `Deleted event: ${existing.title} (ID: ${id})`);
+    res.json({ success: true, message: 'Event deleted successfully!' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete event' });
+  }
+});
+
 // Start server
 async function start() {
-  await initDB();
+  const db = await initDB();
+  await cleanupStaleTickets(db);
   server.listen(port, () => {
     console.log(`Voteeq Node.js API running on port ${port} (WebSocket enabled)`);
   });

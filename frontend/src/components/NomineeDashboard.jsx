@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import BannerGenerator from './BannerGenerator';
 import { API_BASE_URL } from '../config';
 
-export default function NomineeDashboard({ code, token, onLogout, copyShareLink, dialUssdCode }) {
+export default function NomineeDashboard({ code, token, onLogout, copyShareLink, dialUssdCode, wsTrigger }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -36,7 +36,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
       clearTimeout(timeoutId);
       clearInterval(interval);
     };
-  }, [loadDashboardData]);
+  }, [loadDashboardData, wsTrigger]);
 
   if (loading) {
     return (
@@ -86,9 +86,9 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
               {nominee.name}
             </h1>
             <p style={{ fontSize: '0.75rem', marginTop: '0.4rem', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
-              DIAL SHORTCODE DIRECT:{' '}
+              OFFICIAL USSD SHORTCODE:{' '}
               <button
-                onClick={() => dialUssdCode && dialUssdCode(`*920*102*${nominee.code}#`)}
+                onClick={() => dialUssdCode && dialUssdCode(`*920*566*${nominee.code}#`)}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -105,7 +105,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
                 onMouseLeave={(e) => e.target.style.color = 'var(--accent-dark)'}
                 title="Dial shortcode automatically"
               >
-                *920*102*{nominee.code}#
+                *920*566*{nominee.code}#
               </button>
             </p>
           </div>
@@ -220,8 +220,18 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
                   }} 
                 />
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--accent-dark)', fontWeight: 600, marginTop: '1rem' }}>
-                ✓ Persisted on server. Create a new poster below to overwrite it.
+              <div style={{ 
+                background: '#e2f9eb', 
+                borderLeft: '3px solid #2ecc71', 
+                padding: '0.75rem 1rem', 
+                fontSize: '0.8rem', 
+                color: '#27ae60', 
+                marginTop: '1rem', 
+                fontWeight: 500,
+                textAlign: 'left',
+                borderRadius: '4px'
+              }}>
+                Active campaign poster is successfully saved to the server. Create a new poster below to overwrite it.
               </div>
             </div>
           )}

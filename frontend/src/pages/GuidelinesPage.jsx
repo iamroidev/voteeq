@@ -2,7 +2,7 @@ export default function GuidelinesPage({ onBack }) {
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '2rem 0' }}>
       <button onClick={onBack} className="luxury-btn secondary" style={{ marginBottom: '2rem', padding: '0.5rem 1.5rem', fontSize: '0.7rem' }}>
-        ← Back to Voting
+        ← Back to Portal
       </button>
       
       <div className="editorial-sheet" style={{ padding: '3rem' }}>

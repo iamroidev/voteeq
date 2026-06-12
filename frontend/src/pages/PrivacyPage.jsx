@@ -2,7 +2,7 @@ export default function PrivacyPage({ onBack }) {
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '2rem 0' }}>
       <button onClick={onBack} className="luxury-btn secondary" style={{ marginBottom: '2rem', padding: '0.5rem 1.5rem', fontSize: '0.7rem' }}>
-        ← Back to Voting
+        ← Back to Portal
       </button>
       
       <div className="editorial-sheet" style={{ padding: '3rem' }}>
@@ -33,12 +33,12 @@ export default function PrivacyPage({ onBack }) {
           </ul>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>3. Data Security</h2>
-          <p style={{ marginBottom: '1rem' }}>We implement industry-standard security measures to protect your personal information. All payment data is encrypted and processed through Paystack, a PCI-DSS Level 1 certified payment processor. We do not store credit card numbers or bank account details on our servers.</p>
+          <p style={{ marginBottom: '1rem' }}>We implement industry-standard security measures to protect your personal information. All payment data is encrypted and processed securely through local Mobile Money channels. We do not store mobile money PINs or bank details on our servers.</p>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>4. Data Sharing</h2>
           <p style={{ marginBottom: '1rem' }}>We do not sell or rent your personal information to third parties. We may share data with:</p>
           <ul style={{ paddingLeft: '1.5rem', marginBottom: '1rem' }}>
-            <li style={{ marginBottom: '0.4rem' }}>Payment processors (Paystack) to complete transactions</li>
+            <li style={{ marginBottom: '0.4rem' }}>Payment gateways to complete transactions</li>
             <li style={{ marginBottom: '0.4rem' }}>SMS gateway providers to deliver vote receipts</li>
             <li style={{ marginBottom: '0.4rem' }}>Law enforcement when required by law</li>
           </ul>

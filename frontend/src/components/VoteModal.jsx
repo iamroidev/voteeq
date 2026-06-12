@@ -8,8 +8,12 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [numA, setNumA] = useState(() => Math.floor(2 + Math.random() * 8));
+  const [numB, setNumB] = useState(() => Math.floor(2 + Math.random() * 8));
+  const [captchaInput, setCaptchaInput] = useState('');
+
   const voteShortcuts = [5, 10, 25, 50, 100];
-  const pricePerVote = 1; // 1 GHS per vote
+  const pricePerVote = 1; // 1 GH₵ per vote
 
   const MAX_VOTES = 10000;
   const parsedVotes = Math.min(parseInt(voteCount) || 0, MAX_VOTES);
@@ -23,6 +27,14 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
     }
     if (isInvalidVotes) {
       setError('Please choose a valid whole number of votes (minimum 1)');
+      return;
+    }
+    const correctAnswer = numA + numB;
+    if (parseInt(captchaInput) !== correctAnswer) {
+      setError('Incorrect CAPTCHA verification answer. Please try again.');
+      setNumA(Math.floor(2 + Math.random() * 8));
+      setNumB(Math.floor(2 + Math.random() * 8));
+      setCaptchaInput('');
       return;
     }
 
@@ -53,7 +65,8 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
         amount: parsedVotes * pricePerVote,
         nominee: nominee.name,
         nomineeId: nominee.id,
-        votes: parsedVotes
+        votes: parsedVotes,
+        phone: phone
       });
     } catch (err) {
       console.error(err);
@@ -64,11 +77,11 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
   };
 
   return (
-    <div className="luxury-drawer-overlay" onClick={(e) => { if (e.target.className === 'luxury-drawer-overlay') onClose(); }}>
+    <div className="luxury-drawer-overlay" onClick={(e) => { if (e.target.className === 'luxury-drawer-overlay') onClose(); }} role="dialog" aria-modal="true">
       <div className="luxury-drawer">
         <div className="luxury-drawer-header">
           <h2 style={{ fontSize: '1.25rem' }}>Cast Votes</h2>
-          <button onClick={onClose} className="modal-close-btn">
+          <button onClick={onClose} className="modal-close-btn" aria-label="Close">
             ✕
           </button>
         </div>
@@ -203,6 +216,40 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
               />
             </div>
 
+            {/* Anti-Bot Arithmetic Validation */}
+            <div style={{ marginBottom: '2rem' }}>
+              <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
+                Anti-Bot Verification
+              </label>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <div style={{
+                  padding: '0.6rem 1rem',
+                  background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  fontFamily: 'monospace',
+                  letterSpacing: '0.05em',
+                  color: 'var(--text-primary)',
+                  userSelect: 'none'
+                }}>
+                  {numA} + {numB} =
+                </div>
+                <input
+                  type="text"
+                  required
+                  pattern="\d*"
+                  inputMode="numeric"
+                  placeholder="Answer"
+                  value={captchaInput}
+                  onChange={(e) => setCaptchaInput(e.target.value)}
+                  className="luxury-input"
+                  style={{ flex: 1, padding: '0.6rem 0.75rem' }}
+                />
+              </div>
+            </div>
+
             {/* Pricing Summary card */}
             <div
               className="vote-pricing-summary"
@@ -221,7 +268,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
                   Rate per vote
                 </span>
                 <p style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
-                  GHS {pricePerVote.toFixed(2)}
+                  GH₵ {pricePerVote.toFixed(2)}
                 </p>
               </div>
               <div style={{ textAlign: 'right', minWidth: 0 }}>
@@ -229,15 +276,15 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
                   Total cost due
                 </span>
                 <p style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', color: 'var(--accent-dark)', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  GHS {(parsedVotes * pricePerVote).toFixed(2)}
+                  GH₵ {(parsedVotes * pricePerVote).toFixed(2)}
                 </p>
               </div>
             </div>
 
             <button
               type="submit"
-              disabled={loading}
-              className="luxury-btn"
+              disabled={loading || isInvalidVotes || !phone}
+              className={`luxury-btn ${(loading || isInvalidVotes || !phone) ? 'disabled' : ''}`}
               style={{ width: '100%', padding: '1.1rem', fontSize: '0.8rem', letterSpacing: '0.15em' }}
             >
               {loading ? 'PROCESSING TRANSACTION...' : 'PROCEED TO SECURE CHECKOUT'}

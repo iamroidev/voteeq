@@ -1,5 +1,28 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../config';
+
+const accentColors = [
+  { name: 'Brushed Gold', value: '#b8986c' },
+  { name: 'Dark Burgundy', value: '#6a2e2e' },
+  { name: 'Slate Onyx', value: '#2a2b2d' },
+  { name: 'Sage Green', value: '#606f5c' },
+  { name: 'Warm Ivory', value: '#e2dcd0' },
+  { name: 'Nordic Blue', value: '#5d8aa8' },
+  { name: 'Tuscan Amber', value: '#dca134' },
+  { name: 'Terracotta', value: '#c05a3e' }
+];
+
+const backgroundOptions = [
+  { id: 'black', name: 'STARK ONYX', bg: '#0a0a0a', text: '#ffffff', secondaryText: '#8c8273', cardBg: '#141414', isDark: true },
+  { id: 'white', name: 'IVORY WHITE', bg: '#ffffff', text: '#000000', secondaryText: '#555555', cardBg: '#faf8f5', isDark: false },
+  { id: 'gray', name: 'SLATE CHARCOAL', bg: '#1c1c1c', text: '#ffffff', secondaryText: '#9da3ab', cardBg: '#2a2b2d', isDark: true },
+  { id: 'cream', name: 'WARM CREAM', bg: '#f9f6f0', text: '#1a1a1a', secondaryText: '#878070', cardBg: '#ffffff', isDark: false },
+  { id: 'sand', name: 'DESERT SAND', bg: '#e5ded0', text: '#1a1a1a', secondaryText: '#70695d', cardBg: '#faf8f5', isDark: false },
+  { id: 'sage', name: 'MUTED SAGE', bg: '#e0e5de', text: '#1e261f', secondaryText: '#748075', cardBg: '#fafcfa', isDark: false },
+  { id: 'navy', name: 'MIDNIGHT NAVY', bg: '#0d1527', text: '#ffffff', secondaryText: '#929cb3', cardBg: '#17223b', isDark: true },
+  { id: 'forest', name: 'DEEP FOREST', bg: '#0c1611', text: '#ffffff', secondaryText: '#8a9b91', cardBg: '#16281e', isDark: true },
+  { id: 'burgundy', name: 'BORDEAUX WINE', bg: '#1a0606', text: '#ffffff', secondaryText: '#b39595', cardBg: '#2d0f0f', isDark: true }
+];
 
 export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
   const [saving, setSaving] = useState(false);
@@ -44,135 +67,529 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  const accentColors = [
-    { name: 'Brushed Gold', value: '#b8986c' },
-    { name: 'Dark Burgundy', value: '#6a2e2e' },
-    { name: 'Slate Onyx', value: '#2a2b2d' },
-    { name: 'Sage Green', value: '#606f5c' },
-    { name: 'Warm Ivory', value: '#e2dcd0' },
-    { name: 'Nordic Blue', value: '#5d8aa8' },
-    { name: 'Tuscan Amber', value: '#dca134' },
-    { name: 'Terracotta', value: '#c05a3e' }
-  ];
+  const [template, setTemplate] = useState('classic'); // 'classic', 'aura', 'glass'
 
-  const backgroundOptions = [
-    { id: 'black', name: 'STARK ONYX', bg: '#0a0a0a', text: '#ffffff', secondaryText: '#8c8273', cardBg: '#141414', isDark: true },
-    { id: 'white', name: 'IVORY WHITE', bg: '#ffffff', text: '#000000', secondaryText: '#555555', cardBg: '#faf8f5', isDark: false },
-    { id: 'gray', name: 'SLATE CHARCOAL', bg: '#1c1c1c', text: '#ffffff', secondaryText: '#9da3ab', cardBg: '#2a2b2d', isDark: true },
-    { id: 'cream', name: 'WARM CREAM', bg: '#f9f6f0', text: '#1a1a1a', secondaryText: '#878070', cardBg: '#ffffff', isDark: false },
-    { id: 'sand', name: 'DESERT SAND', bg: '#e5ded0', text: '#1a1a1a', secondaryText: '#70695d', cardBg: '#faf8f5', isDark: false },
-    { id: 'sage', name: 'MUTED SAGE', bg: '#e0e5de', text: '#1e261f', secondaryText: '#748075', cardBg: '#fafcfa', isDark: false },
-    { id: 'navy', name: 'MIDNIGHT NAVY', bg: '#0d1527', text: '#ffffff', secondaryText: '#929cb3', cardBg: '#17223b', isDark: true },
-    { id: 'forest', name: 'DEEP FOREST', bg: '#0c1611', text: '#ffffff', secondaryText: '#8a9b91', cardBg: '#16281e', isDark: true },
-    { id: 'burgundy', name: 'BORDEAUX WINE', bg: '#1a0606', text: '#ffffff', secondaryText: '#b39595', cardBg: '#2d0f0f', isDark: true }
-  ];
-
-  const drawPosterDetails = (ctx, canvas) => {
+  const drawPosterDetails = useCallback((ctx, canvas) => {
     const activeBg = backgroundOptions.find(b => b.id === bgStyle) || backgroundOptions[0];
     const rightBg = activeBg.bg;
     const textPrimaryColor = activeBg.text;
     const textSecondaryColor = activeBg.secondaryText;
     const cardBg = activeBg.cardBg;
 
-    ctx.fillStyle = rightBg;
-    ctx.fillRect(600, 0, 600, canvas.height);
+    // Helper: Dynamic metallic foil gradient to match active accent color
+    const getFoilGradient = (x1, y1, x2, y2) => {
+      let stops = ['#fceea7', '#dcb775', '#b8986c', '#8e714b', '#dcb775', '#fceea7'];
+      
+      if (accent === '#6a2e2e') { // Burgundy
+        stops = ['#ff9999', '#c06c6c', '#8b3a3a', '#541212', '#c06c6c', '#ff9999'];
+      } else if (accent === '#2a2b2d') { // Slate Onyx
+        stops = ['#e0e0e0', '#9e9e9e', '#616161', '#212121', '#9e9e9e', '#e0e0e0'];
+      } else if (accent === '#606f5c') { // Sage Green
+        stops = ['#dce6db', '#a3bfa2', '#728c71', '#415440', '#a3bfa2', '#dce6db'];
+      } else if (accent === '#5d8aa8') { // Nordic Blue
+        stops = ['#bce0fd', '#7cb2d6', '#4a82a6', '#204d6e', '#7cb2d6', '#bce0fd'];
+      } else if (accent === '#dca134') { // Amber
+        stops = ['#ffe18a', '#e8b855', '#c98a22', '#8c5905', '#e8b855', '#ffe18a'];
+      } else if (accent === '#c05a3e') { // Terracotta
+        stops = ['#ffd2c5', '#e38b73', '#b8543b', '#7a2814', '#e38b73', '#ffd2c5'];
+      } else if (accent === '#e2dcd0') { // Warm Ivory
+        stops = ['#ffffff', '#ebe6dc', '#d2c9b6', '#a1957f', '#ebe6dc', '#ffffff'];
+      }
 
-    // Left-to-right boundary line
-    ctx.strokeStyle = activeBg.isDark ? accent : '#1c1c1c';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(600, 0);
-    ctx.lineTo(600, canvas.height);
-    ctx.stroke();
+      const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+      grad.addColorStop(0, stops[0]);
+      grad.addColorStop(0.2, stops[1]);
+      grad.addColorStop(0.4, stops[2]);
+      grad.addColorStop(0.6, stops[3]);
+      grad.addColorStop(0.8, stops[4]);
+      grad.addColorStop(1, stops[5]);
+      return grad;
+    };
 
-    // 1. Tag Ribbon
-    ctx.fillStyle = accent;
-    ctx.fillRect(640, 60, 520, 48);
-    
-    ctx.fillStyle = !activeBg.isDark && (accent === '#e2dcd0' || accent === '#b8986c') ? '#000000' : '#ffffff';
-    ctx.font = '700 16px "Space Grotesk", sans-serif';
-    ctx.fillText('VOTEEQ AWARDS // OFFICIAL NOMINEE', 670, 92);
+    // Helper: Draw procedural visual mock QR code
+    const drawMockQRCode = (x, y, size) => {
+      ctx.save();
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
 
-    // 2. Nominee Name Header
-    ctx.fillStyle = textPrimaryColor;
-    ctx.font = '400 68px "Playfair Display", serif';
-    let nameText = nominee.name.toUpperCase();
-    ctx.fillText(nameText, 640, 210);
+      // White base card
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x, y, size, size);
 
-    // 3. Divider Line
-    ctx.strokeStyle = textSecondaryColor;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(640, 260);
-    ctx.lineTo(1160, 260);
-    ctx.stroke();
+      // Fine outer border
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x, y, size, size);
 
-    // 4. Category Details
-    ctx.fillStyle = textSecondaryColor;
-    ctx.font = '700 16px "Space Grotesk", sans-serif';
-    ctx.fillText('CATEGORY', 640, 300);
-    
-    ctx.fillStyle = textPrimaryColor;
-    ctx.font = '400 36px "Playfair Display", serif';
-    let catName = nominee.category_name || 'ARTIST OF THE YEAR';
-    if (catName.length > 24) catName = catName.substring(0, 22) + '...';
-    ctx.fillText(catName.toUpperCase(), 640, 345);
+      const locSize = Math.floor(size * 0.22);
+      const drawLocator = (lx, ly) => {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(lx, ly, locSize, locSize);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(lx + 1.5, ly + 1.5, locSize - 3, locSize - 3);
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(lx + 3.5, ly + 3.5, locSize - 7, locSize - 7);
+      };
 
-    // 5. Voting Instructions Card block
-    ctx.fillStyle = cardBg;
-    ctx.fillRect(640, 410, 520, 230);
-    if (borderWidth > 0) {
-      ctx.lineWidth = borderWidth;
-      ctx.strokeStyle = textSecondaryColor;
-      ctx.strokeRect(640, 410, 520, 230);
+      // Draw locators (Top-Left, Top-Right, Bottom-Left)
+      drawLocator(x + 3, y + 3);
+      drawLocator(x + size - locSize - 3, y + 3);
+      drawLocator(x + 3, y + size - locSize - 3);
+
+      // Bottom-Right sub-locator
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(x + size - 12, y + size - 12, 6, 6);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x + size - 10, y + size - 10, 2, 2);
+
+      // Seeded random dots
+      let seed = 9876;
+      const pseudoRandom = () => {
+        const val = Math.sin(seed++) * 10000;
+        return val - Math.floor(val);
+      };
+
+      const cellSize = 3.5;
+      ctx.fillStyle = '#000000';
+      for (let px = x + 3; px < x + size - 3; px += cellSize) {
+        for (let py = y + 3; py < py + size - 3; py += cellSize) {
+          // Avoid locator overlaps
+          const inTopLeft = (px < x + locSize + 5 && py < y + locSize + 5);
+          const inTopRight = (px > x + size - locSize - 5 && py < y + locSize + 5);
+          const inBottomLeft = (px < x + locSize + 5 && py > y + size - locSize - 5);
+          if (inTopLeft || inTopRight || inBottomLeft) continue;
+
+          if (pseudoRandom() > 0.45) {
+            ctx.fillRect(px, py, Math.ceil(cellSize), Math.ceil(cellSize));
+          }
+        }
+      }
+      ctx.restore();
+    };
+
+    // Helper: Draw sleek L-shaped gold photo corner brackets
+    const drawCornerBrackets = (x, y, w, h, len = 25, thickness = 3) => {
+      ctx.save();
+      ctx.strokeStyle = getFoilGradient(x, y, x + w, y + h);
+      ctx.lineWidth = thickness;
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+
+      // Top-Left
+      ctx.beginPath(); ctx.moveTo(x + len, y); ctx.lineTo(x, y); ctx.lineTo(x, y + len); ctx.stroke();
+      // Top-Right
+      ctx.beginPath(); ctx.moveTo(x + w - len, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + len); ctx.stroke();
+      // Bottom-Left
+      ctx.beginPath(); ctx.moveTo(x + len, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - len); ctx.stroke();
+      // Bottom-Right
+      ctx.beginPath(); ctx.moveTo(x + w - len, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - len); ctx.stroke();
+      ctx.restore();
+    };
+
+    // Helper: Draw premium official gold star stamp seal watermark
+    const drawOfficialStamp = (cx, cy) => {
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+
+      // Outer gold foil ring
+      ctx.strokeStyle = getFoilGradient(cx - 30, cy - 30, cx + 30, cy + 30);
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 38, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner dashed ring
+      ctx.strokeStyle = getFoilGradient(cx - 25, cy - 25, cx + 25, cy + 25);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, 32, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Star & Logo Seals
+      ctx.fillStyle = getFoilGradient(cx - 20, cy - 20, cx + 20, cy + 20);
+      ctx.font = '900 9px "Space Grotesk", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('VOTEEQ', cx, cy - 7);
+      ctx.fillText('OFFICIAL', cx, cy + 7);
+      ctx.font = '11px "Space Grotesk", sans-serif';
+      ctx.fillText('★', cx, cy);
+      ctx.restore();
+    };
+
+    if (template === 'classic') {
+      ctx.fillStyle = rightBg;
+      ctx.fillRect(600, 0, 600, canvas.height);
+
+      // Subtle diagonal card background textures
+      ctx.save();
+      ctx.strokeStyle = activeBg.isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.025)';
+      ctx.lineWidth = 1;
+      for (let offset = -canvas.height; offset < canvas.width; offset += 24) {
+        ctx.beginPath();
+        ctx.moveTo(600 + offset, 0);
+        ctx.lineTo(600 + offset + canvas.height, canvas.height);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Left-to-right boundary line
+      ctx.strokeStyle = activeBg.isDark ? getFoilGradient(600, 0, 600, canvas.height) : '#1c1c1c';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(600, 0);
+      ctx.lineTo(600, canvas.height);
+      ctx.stroke();
+
+      // Draw Photo Corner brackets on the left panel (0 to 600px)
+      drawCornerBrackets(30, 30, 540, canvas.height - 60, 30, 4);
+
+      // 1. Tag Ribbon
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetX = 3;
+      ctx.shadowOffsetY = 3;
+      ctx.fillStyle = getFoilGradient(640, 60, 1160, 108);
+      ctx.fillRect(640, 60, 520, 48);
+      ctx.restore();
+      
+      ctx.fillStyle = '#000000'; // black text over shiny gold foil looks incredibly crisp!
+      ctx.font = '700 16px "Space Grotesk", sans-serif';
+      ctx.fillText('VOTEEQ AWARDS // OFFICIAL NOMINEE', 670, 92);
+
+      // 2. Nominee Name Header
+      ctx.save();
+      ctx.fillStyle = textPrimaryColor;
+      ctx.font = '400 68px "Playfair Display", serif';
+      ctx.shadowColor = activeBg.isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0,0,0,0.1)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+      let nameText = nominee.name.toUpperCase();
+      ctx.fillText(nameText, 640, 210);
+      ctx.restore();
+
+      // 3. Divider Line
+      ctx.strokeStyle = getFoilGradient(640, 260, 1160, 260);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(640, 260);
+      ctx.lineTo(1160, 260);
+      ctx.stroke();
+
+      // 4. Category Details
+      ctx.fillStyle = textSecondaryColor;
+      ctx.font = '700 16px "Space Grotesk", sans-serif';
+      ctx.fillText('CATEGORY', 640, 300);
+      
+      ctx.save();
+      ctx.fillStyle = getFoilGradient(640, 315, 1160, 355);
+      ctx.font = '400 36px "Playfair Display", serif';
+      let catName = nominee.category_name || 'ARTIST OF THE YEAR';
+      if (catName.length > 24) catName = catName.substring(0, 22) + '...';
+      ctx.fillText(catName.toUpperCase(), 640, 345);
+      ctx.restore();
+
+      // 5. Voting Instructions Card block
+      ctx.save();
+      ctx.fillStyle = cardBg;
+      ctx.shadowColor = 'rgba(0,0,0,0.15)';
+      ctx.shadowBlur = 10;
+      ctx.fillRect(640, 410, 520, 230);
+      ctx.restore();
+
+      if (borderWidth > 0) {
+        ctx.lineWidth = borderWidth;
+        ctx.strokeStyle = getFoilGradient(640, 410, 1160, 640);
+        ctx.strokeRect(640, 410, 520, 230);
+      }
+
+      ctx.fillStyle = textSecondaryColor;
+      ctx.font = '700 15px "Space Grotesk", sans-serif';
+      ctx.fillText('DIAL MOBILE SHORTCODE TO VOTE', 670, 460);
+      
+      ctx.save();
+      ctx.fillStyle = activeBg.isDark ? getFoilGradient(670, 480, 980, 560) : '#000000';
+      ctx.font = '900 48px "Space Grotesk", sans-serif';
+      ctx.fillText(`*920*566*${nominee.code}#`, 670, 530);
+      ctx.restore();
+
+      ctx.fillStyle = textPrimaryColor;
+      ctx.font = '700 13px "Space Grotesk", sans-serif';
+      ctx.fillText('1 VOTE = GH₵ 0.50 // INSTANT SYNC', 670, 585);
+
+      // Draw procedural QR Code inside voting card
+      drawMockQRCode(1005, 455, 120);
+
+      // 6. Online Voting Instructions block
+      ctx.save();
+      ctx.fillStyle = cardBg;
+      ctx.shadowColor = 'rgba(0,0,0,0.15)';
+      ctx.shadowBlur = 10;
+      ctx.fillRect(640, 670, 520, 160);
+      ctx.restore();
+
+      if (borderWidth > 0) {
+        ctx.lineWidth = borderWidth;
+        ctx.strokeStyle = getFoilGradient(640, 670, 1160, 830);
+        ctx.strokeRect(640, 670, 520, 160);
+      }
+
+      ctx.fillStyle = textSecondaryColor;
+      ctx.font = '700 15px "Space Grotesk", sans-serif';
+      ctx.fillText('OR VOTE ONLINE DIRECTLY AT', 670, 720);
+      
+      ctx.save();
+      ctx.fillStyle = activeBg.isDark ? getFoilGradient(670, 740, 980, 790) : '#000000';
+      ctx.font = '700 22px "Space Grotesk", sans-serif';
+      ctx.fillText(`WWW.VOTEEQ.COM/?NOMINEE=${nominee.code}`, 670, 780);
+      ctx.restore();
+
+      // Draw dynamic official stamp seal
+      drawOfficialStamp(1065, 750);
+
+      // 7. Footer metadata
+      ctx.fillStyle = textSecondaryColor;
+      ctx.font = '700 14px "Space Grotesk", sans-serif';
+      ctx.fillText('OFFICIAL CAMPAIGN POSTER', 640, 960);
+      ctx.fillText(`NOMINEE CODE: ${nominee.code}`, 640, 995);
+
+      // Simple geometric decoration
+      ctx.fillStyle = getFoilGradient(1120, 940, 1160, 1000);
+      ctx.fillRect(1120, 940, 40, 60);
+
+      // Outer frame border
+      ctx.strokeStyle = getFoilGradient(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 10;
+      ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
+
+    } else if (template === 'aura') {
+      // 1. Fill background with vignette overlay
+      const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      grad.addColorStop(0, 'rgba(10, 10, 10, 0.15)');
+      grad.addColorStop(0.4, 'rgba(10, 10, 10, 0.65)');
+      grad.addColorStop(1, 'rgba(10, 10, 10, 0.96)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Glowing radial ambient aura
+      const radialGrad = ctx.createRadialGradient(canvas.width / 2, canvas.height * 0.7, 50, canvas.width / 2, canvas.height * 0.7, 550);
+      radialGrad.addColorStop(0, `${accent}55`);
+      radialGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = radialGrad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw Photo Corner brackets around full canvas boundaries
+      drawCornerBrackets(30, 30, canvas.width - 60, canvas.height - 60, 35, 4);
+
+      ctx.save();
+      ctx.textAlign = 'center';
+
+      // 2. Tagline
+      ctx.fillStyle = getFoilGradient(canvas.width / 2 - 200, 190, canvas.width / 2 + 200, 230);
+      ctx.font = '700 20px "Space Grotesk", sans-serif';
+      ctx.fillText('VOTEEQ AWARDS // OFFICIAL NOMINEE', canvas.width / 2, 220);
+
+      // 3. Nominee Name
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 96px "Playfair Display", serif';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+      ctx.shadowBlur = 18;
+      ctx.shadowOffsetX = 3;
+      ctx.shadowOffsetY = 3;
+      ctx.fillText(nominee.name.toUpperCase(), canvas.width / 2, 350);
+      ctx.restore(); // restore shadows
+
+      ctx.save();
+      ctx.textAlign = 'center';
+
+      // 4. Category
+      ctx.fillStyle = getFoilGradient(canvas.width / 2 - 250, 390, canvas.width / 2 + 250, 430);
+      ctx.font = '700 18px "Space Grotesk", sans-serif';
+      ctx.fillText('CATEGORY: ' + (nominee.category_name || 'ARTIST OF THE YEAR').toUpperCase(), canvas.width / 2, 420);
+
+      // 5. Divider
+      ctx.strokeStyle = getFoilGradient(canvas.width / 2 - 180, 480, canvas.width / 2 + 180, 480);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(canvas.width / 2 - 180, 480);
+      ctx.lineTo(canvas.width / 2 + 180, 480);
+      ctx.stroke();
+
+      // 6. Floating USSD card container
+      const cardW = 680;
+      const cardH = 280;
+      const cardX = canvas.width / 2 - cardW / 2;
+      const cardY = 560;
+
+      ctx.fillStyle = 'rgba(15, 14, 13, 0.92)';
+      ctx.fillRect(cardX, cardY, cardW, cardH);
+      ctx.strokeStyle = getFoilGradient(cardX, cardY, cardX + cardW, cardY + cardH);
+      ctx.lineWidth = borderWidth || 2;
+      ctx.strokeRect(cardX, cardY, cardW, cardH);
+
+      ctx.restore(); // restore to draw left-aligned texts in card
+
+      ctx.save();
+      // QR Code inside card
+      drawMockQRCode(cardX + 495, cardY + 75, 130);
+
+      ctx.fillStyle = '#8c8273';
+      ctx.font = '700 16px "Space Grotesk", sans-serif';
+      ctx.fillText('DIAL MOBILE SHORTCODE TO VOTE', cardX + 50, cardY + 65);
+
+      ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 90, cardX + 450, cardY + 160);
+      ctx.font = '900 52px "Space Grotesk", sans-serif';
+      ctx.fillText(`*920*566*${nominee.code}#`, cardX + 50, cardY + 145);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 14px "Space Grotesk", sans-serif';
+      ctx.fillText('OR VOTE ONLINE AT WWW.VOTEEQ.COM', cardX + 50, cardY + 200);
+
+      ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 215, cardX + 450, cardY + 250);
+      ctx.font = '700 16px "Space Grotesk", sans-serif';
+      ctx.fillText(`/?NOMINEE=${nominee.code}`, cardX + 50, cardY + 230);
+      ctx.restore();
+
+      // Official Seal stamp at bottom left
+      drawOfficialStamp(140, 1050);
+
+      // 7. Footer metadata
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#8c8273';
+      ctx.font = '700 16px "Space Grotesk", sans-serif';
+      ctx.fillText(`NOMINEE CODE: ${nominee.code} // VERIFIED LIVE STANDINGS`, canvas.width / 2 + 60, 1060);
+      ctx.restore();
+
+      // Outer gold border frame
+      ctx.strokeStyle = getFoilGradient(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 10;
+      ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
+
+    } else if (template === 'glass') {
+      // Dark dimmer overlay
+      ctx.fillStyle = 'rgba(10, 10, 10, 0.45)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw Photo Corner brackets around full canvas boundaries
+      drawCornerBrackets(30, 30, canvas.width - 60, canvas.height - 60, 35, 4);
+
+      // Glassmorphic Card panel layout at the bottom third
+      const cardX = 80;
+      const cardY = 540;
+      const cardW = 1040;
+      const cardH = 560;
+
+      ctx.fillStyle = activeBg.isDark ? 'rgba(16, 15, 14, 0.9)' : 'rgba(255, 255, 255, 0.9)';
+      ctx.fillRect(cardX, cardY, cardW, cardH);
+
+      // Gold styling borders
+      ctx.strokeStyle = getFoilGradient(cardX, cardY, cardX + cardW, cardY + cardH);
+      ctx.lineWidth = borderWidth || 3;
+      ctx.strokeRect(cardX, cardY, cardW, cardH);
+      ctx.strokeStyle = activeBg.isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cardX + 6, cardY + 6, cardW - 12, cardH - 12);
+
+      // Tag ribbon in glass card
+      ctx.save();
+      ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 50, cardX + 450, cardY + 94);
+      ctx.fillRect(cardX + 50, cardY + 50, 400, 44);
+      ctx.restore();
+      
+      ctx.fillStyle = '#000000';
+      ctx.font = '700 14px "Space Grotesk", sans-serif';
+      ctx.fillText('VOTEEQ OFFICIAL NOMINEE PROFILE', cardX + 70, cardY + 77);
+
+      // Nominee Code top right inside card
+      ctx.fillStyle = textPrimaryColor;
+      ctx.font = '700 16px "Space Grotesk", sans-serif';
+      ctx.fillText(`CODE: ${nominee.code}`, cardX + cardW - 160, cardY + 77);
+
+      // Nominee Name
+      ctx.save();
+      ctx.fillStyle = textPrimaryColor;
+      ctx.font = '700 72px "Playfair Display", serif';
+      ctx.shadowColor = activeBg.isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0,0,0,0.1)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+      ctx.fillText(nominee.name.toUpperCase(), cardX + 50, cardY + 185);
+      ctx.restore();
+
+      // Category Details
+      ctx.fillStyle = textSecondaryColor;
+      ctx.font = '700 14px "Space Grotesk", sans-serif';
+      ctx.fillText('CATEGORY', cardX + 50, cardY + 245);
+      
+      ctx.save();
+      ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 255, cardX + 500, cardY + 310);
+      ctx.font = '500 32px "Playfair Display", serif';
+      ctx.fillText((nominee.category_name || 'ARTIST OF THE YEAR').toUpperCase(), cardX + 50, cardY + 290);
+      ctx.restore();
+
+      // Divider
+      ctx.strokeStyle = getFoilGradient(cardX + 50, cardY + 340, cardX + cardW - 50, cardY + 340);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cardX + 50, cardY + 340);
+      ctx.lineTo(cardX + cardW - 50, cardY + 340);
+      ctx.stroke();
+
+      // Voting Panel inside glass card
+      ctx.fillStyle = textSecondaryColor;
+      ctx.font = '700 14px "Space Grotesk", sans-serif';
+      ctx.fillText('DIAL MOBILE SHORTCODE TO VOTE', cardX + 50, cardY + 390);
+
+      ctx.save();
+      ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 410, cardX + 450, cardY + 480);
+      ctx.font = '900 58px "Space Grotesk", sans-serif';
+      ctx.fillText(`*920*566*${nominee.code}#`, cardX + 50, cardY + 460);
+      ctx.restore();
+
+      ctx.fillStyle = textSecondaryColor;
+      ctx.font = '700 14px "Space Grotesk", sans-serif';
+      ctx.fillText('OR VOTE ONLINE DIRECTLY AT', cardX + 540, cardY + 390);
+
+      ctx.save();
+      ctx.fillStyle = textPrimaryColor;
+      ctx.font = '700 24px "Space Grotesk", sans-serif';
+      ctx.fillText(`WWW.VOTEEQ.COM/?NOMINEE=${nominee.code}`, cardX + 540, cardY + 445);
+      ctx.restore();
+
+      ctx.fillStyle = textSecondaryColor;
+      ctx.font = '700 12px "Space Grotesk", sans-serif';
+      ctx.fillText('1 VOTE = GH₵ 0.50 // SECURE MOBILE CHANNELS', cardX + 540, cardY + 480);
+
+      // Draw vector QR code in glass card (top right area of layout details)
+      drawMockQRCode(cardX + cardW - 190, cardY + 145, 140);
+
+      // Draw official stamp seal
+      drawOfficialStamp(cardX + cardW - 270, cardY + cardH - 100);
+
+      // Footer metadata
+      ctx.fillStyle = textSecondaryColor;
+      ctx.font = '700 14px "Space Grotesk", sans-serif';
+      ctx.fillText('VOTEEQ AWARDS Night portal // verified ticket verification console integrated', 80, 1150);
+
+      // Outer gold border frame
+      ctx.strokeStyle = getFoilGradient(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 10;
+      ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
     }
+  }, [bgStyle, accent, borderWidth, nominee, template]);
 
-    ctx.fillStyle = textSecondaryColor;
-    ctx.font = '700 16px "Space Grotesk", sans-serif';
-    ctx.fillText('DIAL MOBILE SHORTCODE TO VOTE', 675, 460);
-    
-    ctx.fillStyle = activeBg.isDark ? accent : '#000000';
-    ctx.font = '900 62px "Space Grotesk", sans-serif';
-    ctx.fillText(`*920*102*${nominee.code}#`, 675, 540);
-
-    ctx.fillStyle = textPrimaryColor;
-    ctx.font = '700 15px "Space Grotesk", sans-serif';
-    ctx.fillText('1 VOTE = GHS 0.50 // INSTANT SYNC', 675, 600);
-
-    // 6. Online Voting Instructions block
-    ctx.fillStyle = cardBg;
-    ctx.fillRect(640, 670, 520, 160);
-    if (borderWidth > 0) {
-      ctx.lineWidth = borderWidth;
-      ctx.strokeStyle = textSecondaryColor;
-      ctx.strokeRect(640, 670, 520, 160);
-    }
-
-    ctx.fillStyle = textSecondaryColor;
-    ctx.font = '700 16px "Space Grotesk", sans-serif';
-    ctx.fillText('OR VOTE ONLINE DIRECTLY AT', 675, 720);
-    
-    ctx.fillStyle = activeBg.isDark ? accent : '#000000';
-    ctx.font = '700 28px "Space Grotesk", sans-serif';
-    ctx.fillText(`WWW.VOTEEQ.COM/?NOMINEE=${nominee.code}`, 675, 795);
-
-    // 7. Footer metadata
-    ctx.fillStyle = textSecondaryColor;
-    ctx.font = '700 14px "Space Grotesk", sans-serif';
-    ctx.fillText('OFFICIAL CAMPAIGN POSTER', 640, 960);
-    ctx.fillText(`NOMINEE CODE: ${nominee.code}`, 640, 995);
-
-    // Simple geometric decoration
-    ctx.fillStyle = accent;
-    ctx.fillRect(1120, 940, 40, 60);
-
-    // Outer frame border
-    ctx.strokeStyle = rightBg === '#ffffff' ? '#1c1c1c' : rightBg;
-    ctx.lineWidth = 10;
-    ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
-  };
-
-  const drawBanner = () => {
+  const drawBanner = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -180,8 +597,12 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    const isFull = template === 'aura' || template === 'glass';
+    const targetW = isFull ? canvas.width : 600;
+    const targetH = canvas.height;
+
     ctx.fillStyle = '#181715';
-    ctx.fillRect(0, 0, 600, canvas.height);
+    ctx.fillRect(0, 0, targetW, canvas.height);
 
     if (photoUrl) {
       const img = new Image();
@@ -189,12 +610,10 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       img.onload = () => {
         ctx.save();
         ctx.beginPath();
-        ctx.rect(0, 0, 600, canvas.height);
+        ctx.rect(0, 0, targetW, canvas.height);
         ctx.clip();
 
         const imgRatio = img.width / img.height;
-        const targetW = 600;
-        const targetH = canvas.height;
         const targetRatio = targetW / targetH;
 
         let drawW = targetW * imgOffset.scale;
@@ -229,19 +648,19 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
 
           // Center guides
           ctx.beginPath();
-          ctx.moveTo(300, 0);
-          ctx.lineTo(300, canvas.height);
+          ctx.moveTo(targetW / 2, 0);
+          ctx.lineTo(targetW / 2, canvas.height);
           ctx.moveTo(0, canvas.height / 2);
-          ctx.lineTo(600, canvas.height / 2);
+          ctx.lineTo(targetW, canvas.height / 2);
           ctx.stroke();
 
           // Rule of thirds lines
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
           ctx.beginPath();
-          ctx.moveTo(200, 0); ctx.lineTo(200, canvas.height);
-          ctx.moveTo(400, 0); ctx.lineTo(400, canvas.height);
-          ctx.moveTo(0, canvas.height / 3); ctx.lineTo(600, canvas.height / 3);
-          ctx.moveTo(0, (canvas.height / 3) * 2); ctx.lineTo(600, (canvas.height / 3) * 2);
+          ctx.moveTo(targetW / 3, 0); ctx.lineTo(targetW / 3, canvas.height);
+          ctx.moveTo((targetW / 3) * 2, 0); ctx.lineTo((targetW / 3) * 2, canvas.height);
+          ctx.moveTo(0, canvas.height / 3); ctx.lineTo(targetW, canvas.height / 3);
+          ctx.moveTo(0, (canvas.height / 3) * 2); ctx.lineTo(targetW, (canvas.height / 3) * 2);
           ctx.stroke();
 
           ctx.setLineDash([]); // Reset
@@ -253,23 +672,23 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       };
     } else {
       ctx.fillStyle = '#22211f';
-      ctx.fillRect(20, 20, 560, canvas.height - 40);
+      ctx.fillRect(20, 20, targetW - 40, canvas.height - 40);
       
       ctx.fillStyle = '#8c8273';
       ctx.font = '400 24px "Playfair Display", serif';
       ctx.textAlign = 'center';
-      ctx.fillText('NO IMAGE UPLOADED', 300, 560);
+      ctx.fillText('NO IMAGE UPLOADED', targetW / 2, 560);
       ctx.font = '700 13px "Space Grotesk", sans-serif';
-      ctx.fillText('UPLOAD PORTRAIT PHOTO ON CONTROLS ABOVE', 300, 600);
+      ctx.fillText('UPLOAD PORTRAIT PHOTO ON CONTROLS ABOVE', targetW / 2, 600);
       ctx.textAlign = 'left';
 
       drawPosterDetails(ctx, canvas);
     }
-  };
+  }, [template, photoUrl, imgOffset, photoFilter, isDragging, drawPosterDetails]);
 
   useEffect(() => {
     drawBanner();
-  }, [nominee, photoUrl, imgOffset, accent, bgStyle, photoFilter, borderWidth, isDragging]);
+  }, [drawBanner]);
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -362,7 +781,21 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>3. Layout Accent</label>
+            <label style={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>3. Layout Design Preset</label>
+            <select 
+              value={template} 
+              onChange={(e) => setTemplate(e.target.value)} 
+              className="luxury-select"
+              style={{ width: '100%', padding: '0.6rem 1rem', fontSize: '0.75rem', textTransform: 'uppercase' }}
+            >
+              <option value="classic">STARK SPLIT CLASSIC</option>
+              <option value="aura">AURA GLOW MODERN</option>
+              <option value="glass">VINTAGE FROSTED GLASS</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>4. Layout Accent</label>
             <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
               {accentColors.map((c) => (
                 <button
@@ -387,7 +820,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>4. Card Background</label>
+            <label style={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>5. Card Background</label>
             <select 
               value={bgStyle} 
               onChange={(e) => setBgStyle(e.target.value)} 
@@ -401,7 +834,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>5. Portrait Filter</label>
+            <label style={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>6. Portrait Filter</label>
             <select 
               value={photoFilter} 
               onChange={(e) => setPhotoFilter(e.target.value)} 
@@ -415,7 +848,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>6. Inner Borders</label>
+            <label style={{ display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>7. Inner Borders</label>
             <select 
               value={borderWidth} 
               onChange={(e) => setBorderWidth(parseInt(e.target.value))} 
@@ -459,16 +892,19 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
               onMouseLeave={handleMouseUpOrLeave}
               className="banner-canvas"
               style={{
-              width: '100%',
-              maxWidth: '450px',
-              height: 'auto',
-              border: '1px solid rgba(28, 28, 28, 0.08)',
-              background: '#fff',
-              cursor: photoUrl ? (isDragging ? 'grabbing' : 'grab') : 'default',
-              boxShadow: '0 25px 60px -15px rgba(28, 28, 28, 0.15), 0 0 0 1px rgba(28, 28, 28, 0.03)',
-              transition: 'transform 0.3s ease, box-shadow 0.3s ease'
-            }}
-          />
+                width: '100%',
+                maxWidth: '450px',
+                height: 'auto',
+                border: '1px solid rgba(28, 28, 28, 0.08)',
+                background: '#fff',
+                cursor: photoUrl ? (isDragging ? 'grabbing' : 'grab') : 'default',
+                boxShadow: '0 25px 60px -15px rgba(28, 28, 28, 0.15), 0 0 0 1px rgba(28, 28, 28, 0.03)',
+                transition: 'transform 0.3s ease, box-shadow 0.3s ease'
+              }}
+              aria-label="Campaign banner poster preview. Displays nominee profile image, candidate name, category description, and mobile money shortcode voting instructions."
+            >
+              Interactive campaign poster builder showing nominee details.
+            </canvas>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '2.5rem' }}>

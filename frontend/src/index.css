@@ -67,14 +67,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-button:focus, a:focus, input:focus, select:focus {
-  outline: none;
-}
 
 html, body {
   max-width: 100%;
@@ -133,7 +125,7 @@ h1, h2, h3, h4 {
 
 .editorial-header-section {
   text-align: center;
-  margin: 5rem 0 4rem 0;
+  margin: 1.5rem 0 3.5rem 0;
   padding-top: 1rem;
   animation: fade-up 0.75s ease both;
 }
@@ -247,6 +239,11 @@ h1, h2, h3, h4 {
 @keyframes nav-entrance {
   from { opacity: 0; transform: translateX(-50%) translateY(-18px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes nav-entrance-mobile {
+  from { opacity: 0; transform: translateY(-18px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .luxury-logo {
@@ -1061,7 +1058,7 @@ h1, h2, h3, h4 {
   background: #111111;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
-  z-index: 950;
+  z-index: 800;
   border-radius: 8px;
   overflow: hidden;
   font-family: var(--font-sans);
@@ -1171,6 +1168,10 @@ h1, h2, h3, h4 {
     gap: 0.75rem;
     position: sticky !important;
     top: max(0.75rem, env(safe-area-inset-top));
+    left: auto;
+    width: auto;
+    transform: none;
+    animation: nav-entrance-mobile 0.7s cubic-bezier(0.25, 1, 0.5, 1) both;
   }
 
   .luxury-logo {

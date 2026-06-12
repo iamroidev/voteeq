@@ -7,6 +7,19 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
   const [provider, setProvider] = useState('MTN'); // MTN, Telecel, AirtelTigo
   const [isSuccess, setIsSuccess] = useState(false);
   const [phone, setPhone] = useState(checkoutData.phone || '');
+  const [verifiedTicket, setVerifiedTicket] = useState(null);
+
+  const getHeaderTitle = () => {
+    if (isSuccess) {
+      if (checkoutData.isTicket) return 'TICKET CONFIRMED';
+      if (checkoutData.isForm) return 'APPLICATION SUBMITTED';
+      return 'VOTES CONFIRMED';
+    } else {
+      if (checkoutData.isTicket) return 'SECURE TICKET CHECKOUT';
+      if (checkoutData.isForm) return 'NOMINEE ONBOARDING FEE';
+      return 'SECURE VOTE PAYMENT';
+    }
+  };
 
   const getNetworkStyle = (net, isActive) => {
     if (!isActive) {
@@ -63,7 +76,12 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
   const triggerPaymentSuccess = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/payment/mock-verify`, {
+      const endpoint = checkoutData.isForm 
+        ? `${API_BASE_URL}/api/payment/mock-verify-registration` 
+        : (checkoutData.isTicket 
+            ? `${API_BASE_URL}/api/payment/mock-verify-ticket`
+            : `${API_BASE_URL}/api/payment/mock-verify`);
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -74,6 +92,9 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
       if (!response.ok) {
         throw new Error(data.error || 'Failed to authorize mock transaction');
       }
+      if (data.ticket) {
+        setVerifiedTicket(data.ticket);
+      }
       setIsSuccess(true);
     } catch (err) {
       alert(err.message || 'Payment confirmation failed');
@@ -83,11 +104,11 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
   };
 
   return (
-    <div className="luxury-modal-overlay">
+    <div className="luxury-modal-overlay" role="dialog" aria-modal="true">
       <div className="luxury-modal" style={{ maxWidth: '480px' }}>
         <div className="luxury-modal-header" style={{ background: 'var(--text-primary)', color: '#fff', borderBottom: 'none' }}>
           <h2 style={{ fontSize: '0.9rem', color: '#fff', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-            {isSuccess ? 'VOTE CONFIRMED' : 'SECURE MOBILE MONEY PAYMENT'}
+            {getHeaderTitle()}
           </h2>
         </div>
         
@@ -113,23 +134,41 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
               ✓
             </div>
             <h2 style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', fontWeight: 400, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
-              Votes Cast Successfully
+              {checkoutData.isForm ? 'Application Submitted' : (checkoutData.isTicket ? 'Tickets Booked Successfully' : 'Votes Cast Successfully')}
             </h2>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '2.5rem', lineHeight: '1.5' }}>
-              Your transaction was authorized successfully. We have added <strong>{votes} votes</strong> to the tally for <strong>{nominee}</strong>.
+              {checkoutData.isForm ? (
+                <span>
+                  Your payment was authorized successfully. Your candidate application has been submitted. The admin committee will review your submission shortly.
+                  {import.meta.env.DEV && (
+                    <>
+                      <br /><br />
+                      <strong style={{ color: 'var(--accent-dark)', display: 'block', padding: '0.5rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '0.7rem' }}>
+                        [Sandbox Test Hint] You can retrieve your Temporary Activation PIN directly under the 'Applications' tab in the Admin Console or inside the backend receipts log file.
+                      </strong>
+                    </>
+                  )}
+                </span>
+              ) : checkoutData.isTicket ? (
+                <span>Your transaction was authorized successfully. We have reserved <strong>{checkoutData.quantity} tickets</strong> for <strong>{checkoutData.eventTitle}</strong>. Your ticket code(s) will be added to your local device passes.</span>
+              ) : (
+                <span>Your transaction was authorized successfully. We have added <strong>{votes} votes</strong> to the tally for <strong>{nominee}</strong>.</span>
+              )}
             </p>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.75rem' }}>
+              {!checkoutData.isForm && !checkoutData.isTicket && (
+                <button
+                  onClick={() => onComplete(true, { nomineeId: checkoutData.nomineeId, nomineeName: nominee, voteAgain: true })}
+                  className="luxury-btn"
+                  style={{ padding: '0.9rem', fontSize: '0.75rem', letterSpacing: '0.1em' }}
+                >
+                  CAST MORE VOTES FOR {nominee.toUpperCase()}
+                </button>
+              )}
               <button
-                onClick={() => onComplete(true, { nomineeId: checkoutData.nomineeId, nomineeName: nominee, voteAgain: true })}
+                onClick={() => onComplete(true, { voteAgain: false, isForm: checkoutData.isForm, isTicket: checkoutData.isTicket, ticket: verifiedTicket })}
                 className="luxury-btn"
-                style={{ padding: '0.9rem', fontSize: '0.75rem', letterSpacing: '0.1em' }}
-              >
-                CAST MORE VOTES FOR {nominee.toUpperCase()}
-              </button>
-              <button
-                onClick={() => onComplete(true, { voteAgain: false })}
-                className="luxury-btn secondary"
                 style={{ padding: '0.75rem', fontSize: '0.75rem' }}
               >
                 RETURN TO LIST
@@ -147,17 +186,17 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
               marginBottom: '1.5rem', 
               fontSize: '0.8rem' 
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', color: 'var(--text-secondary)' }}>
+              <div style={{ display: 'flex', justifycontent: 'space-between', marginBottom: '0.4rem', color: 'var(--text-secondary)' }}>
                 <span>MERCHANT:</span>
                 <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>VOTEEQ AWARDS</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', color: 'var(--text-secondary)' }}>
+              <div style={{ display: 'flex', justifycontent: 'space-between', marginBottom: '0.4rem', color: 'var(--text-secondary)' }}>
                 <span>ORDER REFERENCE:</span>
                 <span style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{reference}</span>
               </div>
               <div style={{ 
                 display: 'flex', 
-                justifyContent: 'space-between', 
+                justifycontent: 'space-between', 
                 borderTop: '1px solid var(--border-color)', 
                 paddingTop: '0.75rem', 
                 marginTop: '0.75rem', 
@@ -165,12 +204,18 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
                 fontWeight: 500 
               }}>
                 <span>TOTAL AMOUNT DUE:</span>
-                <span style={{ color: 'var(--accent-dark)' }}>GHS {parseFloat(amount).toFixed(2)}</span>
+                <span style={{ color: 'var(--accent-dark)' }}>GH₵ {parseFloat(amount).toFixed(2)}</span>
               </div>
             </div>
 
             <p style={{ fontSize: '0.75rem', marginBottom: '1.5rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-              You are authorizing a Mobile Money payment of <strong style={{ color: 'var(--text-primary)' }}>{votes} votes</strong> for nominee <strong style={{ color: 'var(--text-primary)' }}>{nominee}</strong>.
+              {checkoutData.isForm ? (
+                <span>You are authorizing a Mobile Money payment of GH₵ {parseFloat(amount).toFixed(2)} for nominee registration onboarding fee.</span>
+              ) : checkoutData.isTicket ? (
+                <span>You are authorizing a Mobile Money payment of GH₵ {parseFloat(amount).toFixed(2)} for <strong style={{ color: 'var(--text-primary)' }}>{checkoutData.quantity} tickets</strong> to <strong style={{ color: 'var(--text-primary)' }}>{checkoutData.eventTitle}</strong>.</span>
+              ) : (
+                <span>You are authorizing a Mobile Money payment of <strong style={{ color: 'var(--text-primary)' }}>GH₵ {parseFloat(amount).toFixed(2)} for {votes} votes</strong> for nominee <strong style={{ color: 'var(--text-primary)' }}>{nominee}</strong>.</span>
+              )}
             </p>
 
             {/* Mobile Money Payment form panel */}
@@ -209,7 +254,8 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 className="luxury-input" 
-                style={{ fontSize: '0.8rem' }}
+                style={{ fontSize: '0.8rem', background: checkoutData.phone ? 'var(--bg-tertiary)' : '#fff', color: checkoutData.phone ? 'var(--text-secondary)' : 'var(--text-primary)' }}
+                readOnly={!!checkoutData.phone}
               />
             </div>
 
