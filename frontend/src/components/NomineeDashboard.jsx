@@ -60,15 +60,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
   return (
     <div>
       {/* Header Profile Info card */}
-      <div className="editorial-sheet" style={{ 
-        display: 'flex', 
-        flexWrap: 'wrap', 
-        gap: '2rem', 
-        alignItems: 'center', 
-        justifyContent: 'space-between', 
-        marginBottom: '2.5rem',
-        padding: '2.5rem 3rem'
-      }}>
+      <div className="dashboard-profile-card">
         <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <img 
             src={nominee.photo_url} 
@@ -124,15 +116,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
       </div>
 
       {/* Shareable Nominee Direct Link Block */}
-      <div className="editorial-sheet" style={{ 
-        padding: '2rem 3rem', 
-        marginBottom: '2.5rem',
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '1.5rem',
-        alignItems: 'center',
-        justifyContent: 'space-between'
-      }}>
+      <div className="dashboard-share-card">
         <div style={{ flex: '1', minWidth: '280px' }}>
           <h3 style={{ fontSize: '1.1rem', fontFamily: 'var(--font-serif)', marginBottom: '0.25rem' }}>
             Direct Shareable voting link
@@ -142,7 +126,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
           </p>
         </div>
         
-        <div style={{ display: 'flex', gap: '0.5rem', minWidth: '320px', flex: '1' }}>
+        <div className="dashboard-share-input-group">
           <input
             type="text"
             readOnly
@@ -166,8 +150,8 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
       </div>
 
       {/* Analytics grids */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '2.5rem', marginBottom: '3rem' }}>
-        <div className="editorial-sheet" style={{ padding: '2rem 2.5rem', position: 'relative' }}>
+      <div className="dashboard-analytics-grid">
+        <div className="editorial-sheet" style={{ margin: 0, position: 'relative' }}>
           <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
             Total Votes
           </span>
@@ -183,7 +167,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
           </p>
         </div>
 
-        <div className="editorial-sheet" style={{ padding: '2rem 2.5rem' }}>
+        <div className="editorial-sheet" style={{ margin: 0 }}>
           <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
             Voting Methods
           </span>
@@ -208,14 +192,14 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
       </div>
 
       {/* Main Grid: Left is Banner generator, Right is recent voters logs */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '3rem', alignItems: 'start' }}>
+      <div className="dashboard-main-grid">
         {/* Campaign Banner studio */}
         <div>
           <BannerGenerator nominee={nominee} />
         </div>
 
         {/* Live Vote Log sheet */}
-        <div className="editorial-sheet" style={{ padding: '2.5rem' }}>
+        <div className="editorial-sheet" style={{ margin: 0, padding: '2.5rem' }}>
           <h3 style={{ marginBottom: '1.5rem', fontFamily: 'var(--font-serif)', fontSize: '1.4rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
             Recent Votes
           </h3>

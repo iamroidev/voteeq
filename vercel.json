@@ -8,5 +8,9 @@
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
   "installCommand": "cd frontend && npm install",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- frontend/"
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- frontend/",
+  "rewrites": [
+    { "source": "/admin", "destination": "/" },
+    { "source": "/admin/", "destination": "/" }
+  ]
 }

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import VoteModal from './components/VoteModal';
 import MockPaystack from './components/MockPaystack';
 import NomineeDashboard from './components/NomineeDashboard';
+import AdminDashboard from './components/AdminDashboard';
+import { API_BASE_URL } from './config';
 
 export default function App() {
   // Navigation & Page State
@@ -26,6 +28,26 @@ export default function App() {
   const [loginPasscode, setLoginPasscode] = useState('');
   const [loginError, setLoginError] = useState('');
 
+  // Admin Login/Dashboard States
+  const [authAdmin, setAuthAdmin] = useState(() => {
+    const saved = localStorage.getItem('voteeq_admin_auth');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [adminLoginMode, setAdminLoginMode] = useState(false);
+  const [adminUsername, setAdminUsername] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminLoginError, setAdminLoginError] = useState('');
+
+  // Nominee Register/PIN Activation States
+  const [registerMode, setRegisterMode] = useState(false);
+  const [registerCode, setRegisterCode] = useState('');
+  const [registerPin, setRegisterPin] = useState('');
+  const [registerError, setRegisterError] = useState('');
+  const [registerSuccess, setRegisterSuccess] = useState('');
+
+  // Mobile Menu Drawer State
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   // Accent Color Theme state (Sophisticated antique gold default)
   const [accent, setAccent] = useState('#b8986c');
 
@@ -40,8 +62,8 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      const catRes = await fetch('http://localhost:5000/api/categories');
-      const nomRes = await fetch('http://localhost:5000/api/nominees');
+      const catRes = await fetch(`${API_BASE_URL}/api/categories`);
+      const nomRes = await fetch(`${API_BASE_URL}/api/nominees`);
       if (catRes.ok && nomRes.ok) {
         const catData = await catRes.json();
         const nomData = await nomRes.json();
@@ -69,6 +91,16 @@ export default function App() {
 
   useEffect(() => {
     loadData();
+
+    // Intercept direct navigation to /admin or /admin/
+    const cleanPath = window.location.pathname.replace(/\/$/, '');
+    if (cleanPath === '/admin') {
+      if (!authAdmin) {
+        setAdminLoginMode(true);
+      }
+      window.history.replaceState({}, document.title, '/');
+    }
+
     // Poll nominees votes tallies every 7 seconds
     const interval = setInterval(loadData, 7000);
     return () => clearInterval(interval);
@@ -153,7 +185,7 @@ export default function App() {
     e.preventDefault();
     setLoginError('');
     try {
-      const response = await fetch('http://localhost:5000/api/nominees/login', {
+      const response = await fetch(`${API_BASE_URL}/api/nominees/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: loginCode, passcode: loginPasscode }),
@@ -178,6 +210,72 @@ export default function App() {
     setAuthNominee(null);
     localStorage.removeItem('voteeq_auth');
     triggerToast('Logged out successfully');
+  };
+
+  // Admin Login Flow
+  const handleAdminLogin = async (e) => {
+    e.preventDefault();
+    setAdminLoginError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: adminUsername, password: adminPassword }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Admin login failed');
+      }
+
+      setAuthAdmin(data);
+      localStorage.setItem('voteeq_admin_auth', JSON.stringify(data));
+      setAdminLoginMode(false);
+      setAdminUsername('');
+      setAdminPassword('');
+      triggerToast('Welcome to Admin Console');
+    } catch (err) {
+      setAdminLoginError(err.message || 'Verification failed');
+    }
+  };
+
+  const handleAdminLogout = () => {
+    setAuthAdmin(null);
+    localStorage.removeItem('voteeq_admin_auth');
+    triggerToast('Logged out from Admin Console');
+  };
+
+  // Nominee PIN Registration Flow
+  const handleNomineeRegister = async (e) => {
+    e.preventDefault();
+    setRegisterError('');
+    setRegisterSuccess('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/nominees/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: registerCode, newPin: registerPin }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'PIN Activation failed');
+      }
+
+      setRegisterSuccess('Activation successful! You can now log in.');
+      setRegisterPin('');
+      triggerToast('Nominee PIN Activated!');
+      loadData(); // refresh nominees list
+      
+      // Auto redirect to login mode after 2 seconds
+      setTimeout(() => {
+        setRegisterMode(false);
+        setRegisterSuccess('');
+        setLoginMode(true);
+        setLoginCode(registerCode);
+        setRegisterCode('');
+      }, 2000);
+    } catch (err) {
+      setRegisterError(err.message || 'Registration failed');
+    }
   };
 
   // USSD Sandbox Logic
@@ -277,11 +375,19 @@ export default function App() {
 
       {/* Main Luxury Navigation Bar */}
       <nav className="luxury-nav">
-        <a href="/" onClick={(e) => { e.preventDefault(); handleLogout(); }} className="luxury-logo">
+        <a href="/" onClick={(e) => { e.preventDefault(); if (authAdmin) handleAdminLogout(); else if (authNominee) handleLogout(); }} className="luxury-logo">
           VOTEEQ
         </a>
         
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap' }}>
+        {/* Mobile menu toggle */}
+        <button 
+          onClick={() => setMobileMenuOpen(true)}
+          className="mobile-menu-toggle"
+        >
+          MENU
+        </button>
+        
+        <div className="luxury-nav-actions">
           {/* Custom Luxury Colorway Selector */}
           <div className="theme-picker-container">
             {[
@@ -308,7 +414,15 @@ export default function App() {
             SHORTCODE DIALER
           </button>
 
-          {authNominee ? (
+          {authAdmin ? (
+            <button 
+              onClick={handleAdminLogout}
+              className="luxury-btn secondary"
+              style={{ padding: '0.5rem 1rem', fontSize: '0.65rem', letterSpacing: '0.1em' }}
+            >
+              ADMIN LOGOUT
+            </button>
+          ) : authNominee ? (
             <button 
               onClick={handleLogout}
               className="luxury-btn secondary"
@@ -328,8 +442,16 @@ export default function App() {
         </div>
       </nav>
 
-      {/* SECURE DASHBOARD ROUTE */}
-      {authNominee ? (
+      {/* SECURE DASHBOARDS OR PUBLIC LIST */}
+      {authAdmin ? (
+        <AdminDashboard 
+          token={authAdmin.token} 
+          onLogout={handleAdminLogout} 
+          categories={categories}
+          nominees={nominees}
+          refreshData={loadData}
+        />
+      ) : authNominee ? (
         <NomineeDashboard 
           code={authNominee.nominee.code} 
           token={authNominee.token} 
@@ -638,6 +760,257 @@ export default function App() {
                   Unlock Dashboard
                 </button>
               </form>
+              <div style={{ marginTop: '1.5rem', textAlign: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>First time logging in? </span>
+                <button 
+                  onClick={() => { setLoginMode(false); setRegisterMode(true); }}
+                  style={{ background: 'none', border: 'none', color: 'var(--accent-dark)', textDecoration: 'underline', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Activate Nominee PIN
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Nominee Registration / PIN Activation Modal */}
+      {registerMode && (
+        <div className="luxury-modal-overlay">
+          <div className="luxury-modal" style={{ maxWidth: '420px' }}>
+            <div className="luxury-modal-header">
+              <h2 style={{ fontSize: '1.25rem' }}>Activate Nominee PIN</h2>
+              <button 
+                onClick={() => { setRegisterMode(false); setRegisterError(''); setRegisterSuccess(''); }} 
+                className="modal-close-btn"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="luxury-modal-body">
+              {registerError && (
+                <div style={{ 
+                  background: 'var(--accent-light)', 
+                  borderLeft: '3px solid var(--accent)', 
+                  padding: '0.75rem 1rem', 
+                  fontSize: '0.8rem', 
+                  color: 'var(--accent-dark)',
+                  marginBottom: '1.5rem',
+                  fontWeight: 500
+                }}>
+                  {registerError}
+                </div>
+              )}
+              {registerSuccess && (
+                <div style={{ 
+                  background: '#e2f9eb', 
+                  borderLeft: '3px solid #2ecc71', 
+                  padding: '0.75rem 1rem', 
+                  fontSize: '0.8rem', 
+                  color: '#27ae60',
+                  marginBottom: '1.5rem',
+                  fontWeight: 500
+                }}>
+                  {registerSuccess}
+                </div>
+              )}
+              <form onSubmit={handleNomineeRegister}>
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
+                    Nominee Code
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 101"
+                    value={registerCode}
+                    onChange={(e) => setRegisterCode(e.target.value)}
+                    className="luxury-input"
+                  />
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
+                    Enter the candidate reference code generated by your system admin.
+                  </span>
+                </div>
+                <div style={{ marginBottom: '2rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
+                    Choose a 4 to 6 digit PIN passcode
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    maxLength={6}
+                    placeholder="e.g. 9876"
+                    value={registerPin}
+                    onChange={(e) => setRegisterPin(e.target.value)}
+                    className="luxury-input"
+                  />
+                </div>
+                <button type="submit" className="luxury-btn" style={{ width: '100%' }}>
+                  Register and Set PIN
+                </button>
+              </form>
+              <div style={{ marginTop: '1.5rem', textAlign: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Already activated? </span>
+                <button 
+                  onClick={() => { setRegisterMode(false); setLoginMode(true); }}
+                  style={{ background: 'none', border: 'none', color: 'var(--accent-dark)', textDecoration: 'underline', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Log In
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Login Modal */}
+      {adminLoginMode && (
+        <div className="luxury-modal-overlay">
+          <div className="luxury-modal" style={{ maxWidth: '420px' }}>
+            <div className="luxury-modal-header">
+              <h2 style={{ fontSize: '1.25rem' }}>Admin Authentication</h2>
+              <button 
+                onClick={() => { setAdminLoginMode(false); setAdminLoginError(''); }} 
+                className="modal-close-btn"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="luxury-modal-body">
+              {adminLoginError && (
+                <div style={{ 
+                  background: 'var(--accent-light)', 
+                  borderLeft: '3px solid var(--accent)', 
+                  padding: '0.75rem 1rem', 
+                  fontSize: '0.8rem', 
+                  color: 'var(--accent-dark)',
+                  marginBottom: '1.5rem',
+                  fontWeight: 500
+                }}>
+                  {adminLoginError}
+                </div>
+              )}
+              <form onSubmit={handleAdminLogin}>
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
+                    Admin Username
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. admin"
+                    value={adminUsername}
+                    onChange={(e) => setAdminUsername(e.target.value)}
+                    className="luxury-input"
+                  />
+                </div>
+                <div style={{ marginBottom: '2rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    className="luxury-input"
+                  />
+                </div>
+                <button type="submit" className="luxury-btn" style={{ width: '100%' }}>
+                  Access Console
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Control Center Drawer overlay */}
+      {mobileMenuOpen && (
+        <div className="control-center-overlay" onClick={() => setMobileMenuOpen(false)}>
+          <div className="control-center-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="control-center-header">
+              <h3 style={{ fontSize: '1.1rem', letterSpacing: '0.05em' }}>Control Panel</h3>
+              <button className="control-center-close" onClick={() => setMobileMenuOpen(false)}>✕</button>
+            </div>
+            
+            <div className="control-center-body">
+              {/* Theme Selector */}
+              <div className="control-center-section">
+                <span className="section-label">Select Color Theme</span>
+                <div className="control-theme-picker">
+                  {[
+                    { name: 'Antique Gold', value: '#b8986c' },
+                    { name: 'Royal Burgundy', value: '#6a2e2e' },
+                    { name: 'Midnight Dark', value: '#2a2b2d' },
+                    { name: 'Sage Green', value: '#606f5c' }
+                  ].map(theme => (
+                    <button
+                      key={theme.value}
+                      onClick={() => { changeAccent(theme.value); }}
+                      className={`control-theme-btn ${accent === theme.value ? 'active' : ''}`}
+                    >
+                      <span className="color-dot" style={{ backgroundColor: theme.value }} />
+                      <span className="color-name">{theme.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Actions Grid */}
+              <div className="control-center-section" style={{ marginTop: '2rem' }}>
+                <span className="section-label">System Operations</span>
+                <div className="control-actions-grid">
+                  {authAdmin ? (
+                    <button 
+                      onClick={() => { setMobileMenuOpen(false); handleAdminLogout(); }}
+                      className="control-action-card active"
+                    >
+                      <span className="card-icon" style={{ color: 'var(--accent)' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      </span>
+                      <span className="card-title">Admin Logout</span>
+                      <span className="card-desc">Console Session</span>
+                    </button>
+                  ) : authNominee ? (
+                    <button 
+                      onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
+                      className="control-action-card active"
+                    >
+                      <span className="card-icon" style={{ color: 'var(--accent)' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      </span>
+                      <span className="card-title">Nominee Logout</span>
+                      <span className="card-desc">Code: {authNominee.nominee.code}</span>
+                    </button>
+                  ) : (
+                    <>
+                      <button 
+                        onClick={() => { setMobileMenuOpen(false); setLoginMode(true); }}
+                        className="control-action-card"
+                      >
+                        <span className="card-icon" style={{ color: 'var(--accent)' }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        </span>
+                        <span className="card-title">Nominee Login</span>
+                        <span className="card-desc">Dashboard Access</span>
+                      </button>
+                      
+                      <button 
+                        onClick={() => { setMobileMenuOpen(false); setRegisterMode(true); }}
+                        className="control-action-card"
+                      >
+                        <span className="card-icon" style={{ color: 'var(--accent)' }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                        </span>
+                        <span className="card-title">Register PIN</span>
+                        <span className="card-desc">Activate Nominee Code</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>

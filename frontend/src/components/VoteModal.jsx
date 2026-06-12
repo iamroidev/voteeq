@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE_URL } from '../config';
 
 export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
   const [voteCount, setVoteCount] = useState(10);
@@ -28,7 +29,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/payment/initialize', {
+      const response = await fetch(`${API_BASE_URL}/api/payment/initialize`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

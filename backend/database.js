@@ -1,8 +1,19 @@
-const sqlite3 = require('sqlite3');
+how const sqlite3 = require('sqlite3');
 const { open } = require('sqlite');
 const path = require('path');
+const fs = require('fs');
 
-const dbPath = path.resolve(__dirname, 'voteeq.db');
+// For Render, use /var/data if available (persistent disk), otherwise use db/ subdir
+const dbDir = process.env.RENDER_PERSISTENT_DIR 
+  ? path.join(process.env.RENDER_PERSISTENT_DIR, 'db')
+  : path.join(__dirname, 'db');
+
+// Ensure the directory exists
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
+const dbPath = path.join(dbDir, 'voteeq.db');
 
 let db = null;
 
