@@ -74,7 +74,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
         </div>
         <div className="luxury-drawer-body">
           {/* Nominee Profile summary */}
-          <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '2rem', alignItems: 'center' }}>
+          <div className="drawer-nominee-summary" style={{ display: 'flex', gap: '1.5rem', marginBottom: '2rem', alignItems: 'center' }}>
             <img 
               src={nominee.photo_url} 
               alt={nominee.name} 
@@ -119,7 +119,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
                 Select Vote Count
               </label>
               
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              <div className="vote-shortcut-buttons" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
                 {voteShortcuts.map((num) => (
                   <button
                     key={num}
@@ -204,8 +204,9 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
             </div>
 
             {/* Pricing Summary card */}
-            <div style={{
-              background: 'var(--bg-tertiary)',
+            <div
+              className="vote-pricing-summary"
+              style={{
               border: '1px solid var(--border-color)',
               padding: '1.25rem',
               marginBottom: '2rem',

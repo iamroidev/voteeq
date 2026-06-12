@@ -178,7 +178,7 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
               <label style={{ display: 'block', fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
                 Select Network Provider
               </label>
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+              <div className="network-provider-buttons" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
                 {['MTN', 'Telecel', 'AirtelTigo'].map(net => (
                   <button 
                     key={net} 

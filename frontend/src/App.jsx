@@ -3,6 +3,12 @@ import VoteModal from './components/VoteModal';
 import MockPaystack from './components/MockPaystack';
 import NomineeDashboard from './components/NomineeDashboard';
 import AdminDashboard from './components/AdminDashboard';
+import AboutPage from './pages/AboutPage';
+import HelpSupportPage from './pages/HelpSupportPage';
+import GuidelinesPage from './pages/GuidelinesPage';
+import TermsPage from './pages/TermsPage';
+import PrivacyPage from './pages/PrivacyPage';
+import PaymentPage from './pages/PaymentPage';
 import { API_BASE_URL, WS_BASE_URL } from './config';
 
 export default function App() {
@@ -51,6 +57,9 @@ export default function App() {
 
   // Active public view tab ('vote' or 'leaderboard')
   const [activeTab, setActiveTab] = useState('vote');
+
+  // Footer page navigation state
+  const [currentPage, setCurrentPage] = useState(null);
 
   // Accent Color Theme state (Sophisticated antique gold default)
   const [accent, setAccent] = useState('#b8986c');
@@ -534,8 +543,20 @@ export default function App() {
         </div>
       </nav>
 
+      {/* FOOTER PAGES */}
+      {currentPage && !authAdmin && !authNominee && (
+        <>
+          {currentPage === 'about' && <AboutPage onBack={() => setCurrentPage(null)} />}
+          {currentPage === 'help' && <HelpSupportPage onBack={() => setCurrentPage(null)} />}
+          {currentPage === 'guidelines' && <GuidelinesPage onBack={() => setCurrentPage(null)} />}
+          {currentPage === 'terms' && <TermsPage onBack={() => setCurrentPage(null)} />}
+          {currentPage === 'privacy' && <PrivacyPage onBack={() => setCurrentPage(null)} />}
+          {currentPage === 'payment' && <PaymentPage onBack={() => setCurrentPage(null)} />}
+        </>
+      )}
+
       {/* SECURE DASHBOARDS OR PUBLIC LIST */}
-      {authAdmin ? (
+      {!currentPage && authAdmin ? (
         <AdminDashboard 
           token={authAdmin.token} 
           onLogout={handleAdminLogout} 
@@ -852,9 +873,9 @@ export default function App() {
                 Quick Links
               </h4>
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: 0 }}>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => e.preventDefault()}>About the Awards</a></li>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => e.preventDefault()}>Help & Support</a></li>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => e.preventDefault()}>Nominee Guidelines</a></li>
+                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('about'); window.scrollTo(0, 0); }}>About the Awards</a></li>
+                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('help'); window.scrollTo(0, 0); }}>Help & Support</a></li>
+                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('guidelines'); window.scrollTo(0, 0); }}>Nominee Guidelines</a></li>
               </ul>
             </div>
             
@@ -863,9 +884,9 @@ export default function App() {
                 Legal & Security
               </h4>
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: 0 }}>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => e.preventDefault()}>Terms & Conditions</a></li>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => e.preventDefault()}>Privacy Policy</a></li>
-                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => e.preventDefault()}>Payment Protection</a></li>
+                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('terms'); window.scrollTo(0, 0); }}>Terms & Conditions</a></li>
+                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('privacy'); window.scrollTo(0, 0); }}>Privacy Policy</a></li>
+                <li><a href="#" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.75rem' }} onClick={(e) => { e.preventDefault(); setCurrentPage('payment'); window.scrollTo(0, 0); }}>Payment Protection</a></li>
               </ul>
             </div>
           </div>
