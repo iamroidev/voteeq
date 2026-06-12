@@ -1072,7 +1072,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
 
   const amountPerVote = 1; // 1 GHS per vote
   const totalGHS = amountPerVote * parsedVoteCount;
-  const amountMinor = totalGHS * 100;
+  const amountMinor = Math.round(totalGHS * 100);
 
   const reference = generateReference('v');
   const statusToken = generateStatusToken(reference);
