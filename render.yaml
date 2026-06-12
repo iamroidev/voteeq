@@ -2,15 +2,16 @@ services:
   - type: web
     name: voteeq-api
     env: node
-    buildCommand: cd backend && npm install
-    startCommand: cd backend && node server.js
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 5000
       - key: CORS_ORIGIN
-        value: https://voteeq-roi-dev.vercel.app,https://frontend-roi-dev.vercel.app,https://frontend-3mbv0wlki-roi-dev.vercel.app
+        value: https://voteeq-roi-dev.vercel.app
       - key: JWT_SECRET
         generateValue: true
     disk:
