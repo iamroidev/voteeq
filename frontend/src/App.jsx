@@ -94,6 +94,20 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+    };
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
     const timeoutId = setTimeout(() => {
       loadData();
 
@@ -1124,7 +1138,9 @@ export default function App() {
           <div className="control-center-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="control-center-header">
               <h3 style={{ fontSize: '1.1rem', letterSpacing: '0.05em' }}>Control Panel</h3>
-              <button className="control-center-close" onClick={() => setMobileMenuOpen(false)}>✕</button>
+              <button className="control-center-close" onClick={() => setMobileMenuOpen(false)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
             </div>
             
             <div className="control-center-body">
@@ -1138,7 +1154,7 @@ export default function App() {
                       className={`control-theme-btn ${activeTab === 'vote' ? 'active' : ''}`}
                       style={{ padding: '0.8rem 0.5rem', justifyContent: 'center', gap: '0.5rem' }}
                     >
-                      <span>✦</span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                       <span>VOTE PORTAL</span>
                     </button>
                     <button 

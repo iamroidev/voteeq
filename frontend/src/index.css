@@ -66,6 +66,11 @@
   padding: 0;
 }
 
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--bg-primary);
@@ -1146,6 +1151,11 @@ h1, h2, h3, h4 {
     right: 0;
     border-radius: 16px 16px 0 0;
   }
+
+  .luxury-input, .luxury-select, select, input, textarea {
+    font-size: 16px !important;
+    min-height: 48px;
+  }
 }
 
 /* ==========================================================================
@@ -1180,7 +1190,7 @@ h1, h2, h3, h4 {
   width: 100%;
   max-width: 540px;
   max-height: 85vh;
-  overflow-y: auto;
+  overflow: hidden;
   box-shadow: 0 -15px 40px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.65);
   border-top: 1px solid rgba(255, 255, 255, 0.6);
   display: flex;
@@ -1234,6 +1244,8 @@ h1, h2, h3, h4 {
 .control-center-body {
   padding: 2rem;
   overflow-y: auto;
+  flex: 1;
+  -webkit-overflow-scrolling: touch;
 }
 
 .control-center-section {
