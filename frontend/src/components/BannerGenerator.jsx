@@ -153,7 +153,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       const cellSize = 3.5;
       ctx.fillStyle = '#000000';
       for (let px = x + 3; px < x + size - 3; px += cellSize) {
-        for (let py = y + 3; py < py + size - 3; py += cellSize) {
+        for (let py = y + 3; py < y + size - 3; py += cellSize) {
           // Avoid locator overlaps
           const inTopLeft = (px < x + locSize + 5 && py < y + locSize + 5);
           const inTopRight = (px > x + size - locSize - 5 && py < y + locSize + 5);

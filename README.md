@@ -48,7 +48,22 @@ App runs at `http://localhost:5173`. API URL defaults to `http://localhost:5000`
 | `TURSO_AUTH_TOKEN` | Yes | Turso auth token |
 | `CORS_ORIGIN` | Yes | Comma-separated, e.g. `https://voteeq.vercel.app,https://voteeq-roi-dev.vercel.app` |
 | `FRONTEND_URL` | Yes | Primary Vercel URL for Paystack callbacks |
-| `PAYSTACK_SECRET_KEY` | When live | Enables real payments |
+| `PAYSTACK_SECRET_KEY` | When live | `sk_live_...` or `sk_test_...` — **backend only**, never in git or Vercel |
+
+In the [Paystack dashboard](https://dashboard.paystack.com) → Settings → API Keys & Webhooks:
+
+1. Add **webhook** URL: `https://voteeq-api.onrender.com/api/payment/webhook`
+2. Subscribe to `charge.success`
+3. Use the **secret** key (`sk_...`) as `PAYSTACK_SECRET_KEY` on Render, then redeploy
+
+**Callback vs webhook**
+
+| Setting | Required in Paystack menu? | What Voteeq does |
+|---------|---------------------------|------------------|
+| **Callback URL** | No | Sent on every checkout in API code → `https://voteeq.vercel.app/payment-status?token=...` (uses `FRONTEND_URL` on Render). Redirects the payer back to your site after payment. |
+| **Webhook URL** | **Yes** | Paystack POSTs `charge.success` to your API so votes/tickets/registrations are marked paid. Without this, money can succeed but records stay pending. |
+
+The public key (`pk_...`) is not required — checkout uses Paystack’s hosted payment page.
 
 ### Vercel
 

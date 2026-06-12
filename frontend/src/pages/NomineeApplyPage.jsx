@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { API_BASE_URL } from '../config';
+import { getGhanaPhoneError, normalizeGhanaPhone } from '../utils/phone';
 
 export default function NomineeApplyPage({ onBack, categories, onPaymentRedirect }) {
   const [name, setName] = useState('');
@@ -24,6 +25,14 @@ export default function NomineeApplyPage({ onBack, categories, onPaymentRedirect
       return;
     }
 
+    const phoneError = getGhanaPhoneError(phone);
+    if (phoneError) {
+      setError(phoneError);
+      setLoading(false);
+      return;
+    }
+    const normalizedPhone = normalizeGhanaPhone(phone);
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/nominees/apply`, {
         method: 'POST',
@@ -33,7 +42,7 @@ export default function NomineeApplyPage({ onBack, categories, onPaymentRedirect
         body: JSON.stringify({
           name,
           email,
-          phone,
+          phone: normalizedPhone,
           bio,
           photo_url: photoUrl,
           category_id: categoryId === 'custom' || !categoryId ? null : parseInt(categoryId),
@@ -52,7 +61,7 @@ export default function NomineeApplyPage({ onBack, categories, onPaymentRedirect
         nominee: name,
         votes: 1,
         isForm: true,
-        phone: phone
+        phone: normalizedPhone
       });
     } catch (err) {
       console.error(err);

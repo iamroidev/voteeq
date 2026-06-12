@@ -2,6 +2,7 @@ const { createClient } = require('@libsql/client');
 const path = require('path');
 const fs = require('fs');
 const { hashPin, isProduction } = require('./security');
+const { CAMPUS_EVENTS, CAMPUS_CATEGORIES, CAMPUS_NOMINEES } = require('./seed-campus');
 
 // Support local volume fallback (e.g. Railway volume or local dev folder)
 const dbDir = process.env.RAILWAY_VOLUME_MOUNT 
@@ -236,37 +237,57 @@ async function initDB() {
   await dbWrapper.exec('CREATE INDEX IF NOT EXISTS idx_tickets_ticket_code ON tickets(ticket_code);');
   await dbWrapper.exec('CREATE INDEX IF NOT EXISTS idx_nominees_code ON nominees(code);');
 
-  // Demo seed data — development only
-  if (!isProduction()) {
+  const allowCampusSeed = !isProduction() || process.env.SEED_CAMPUS_DEMO === 'true';
+
+  if (allowCampusSeed && process.env.FORCE_CAMPUS_RESEED === 'true') {
+    console.warn('FORCE_CAMPUS_RESEED: clearing demo events, categories, nominees, votes, and tickets...');
+    await dbWrapper.run('DELETE FROM votes');
+    await dbWrapper.run('DELETE FROM tickets');
+    await dbWrapper.run('DELETE FROM nominees');
+    await dbWrapper.run('DELETE FROM nominee_registrations');
+    await dbWrapper.run('DELETE FROM categories');
+    await dbWrapper.run('DELETE FROM events');
+  }
+
+  if (allowCampusSeed) {
     let eventCount = await dbWrapper.get('SELECT COUNT(*) as count FROM events');
     if (eventCount.count === 0) {
-      console.log('Seeding demo events...');
-      await dbWrapper.run("INSERT INTO events (title, description, date, venue, ticket_price, privacy, total_tickets, tickets_sold) VALUES ('Voteeq Awards Night', 'Celebrate excellence in musical art and performances.', '2026-07-25', 'National Theatre, Accra', 50.0, 'public', 200, 0)");
-      await dbWrapper.run("INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold) VALUES ('VIP Afterparty', 'VIP Private Gathering for nominees and special guests.', '2026-07-26', 'Skybar 25, Accra', 150.0, 'private', 'VIP2026', 50, 0)");
-      eventCount = { count: 2 };
+      console.log('Seeding campus demo events...');
+      for (const event of CAMPUS_EVENTS) {
+        await dbWrapper.run(
+          `INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+          [
+            event.title,
+            event.description,
+            event.date,
+            event.venue,
+            event.ticket_price,
+            event.privacy,
+            event.access_code,
+            event.total_tickets,
+          ]
+        );
+      }
+      eventCount = { count: CAMPUS_EVENTS.length };
     }
 
     let categoryCount = await dbWrapper.get('SELECT COUNT(*) as count FROM categories');
     if (categoryCount.count === 0) {
-      console.log('Seeding demo categories...');
-      await dbWrapper.run("INSERT INTO categories (name, description) VALUES ('Artist of the Year', 'Outstanding creative musical talent')");
-      await dbWrapper.run("INSERT INTO categories (name, description) VALUES ('Best New Artist', 'Most promising breakthrough talent')");
-      await dbWrapper.run("INSERT INTO categories (name, description) VALUES ('Album of the Year', 'Exceptional collection of musical works')");
-      categoryCount = { count: 3 };
+      console.log('Seeding campus demo categories...');
+      for (const [name, description] of CAMPUS_CATEGORIES) {
+        await dbWrapper.run(
+          'INSERT INTO categories (name, description) VALUES (?, ?)',
+          [name, description]
+        );
+      }
+      categoryCount = { count: CAMPUS_CATEGORIES.length };
     }
 
     const nomineeCount = await dbWrapper.get('SELECT COUNT(*) as count FROM nominees');
     if (nomineeCount.count === 0 && categoryCount.count > 0 && eventCount.count > 0) {
-      console.log('Seeding demo nominees (hashed PINs)...');
-      const demoNominees = [
-        ['101', 'Stonebwoy', 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80', 1, 1, '1234', 1250],
-        ['102', 'Shatta Wale', 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=500&q=80', 1, 1, '4321', 890],
-        ['103', 'Sarkodie', 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=500&q=80', 1, 1, '9999', 1420],
-        ['201', 'Black Sherif', 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&q=80', 2, 1, '1111', 2300],
-        ['202', 'King Promise', 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80', 2, 1, '2222', 1500],
-        ['301', '5th Dimension', 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=500&q=80', 3, 1, '3333', 350],
-      ];
-      for (const [code, name, photo, catId, eventId, pin, votes] of demoNominees) {
+      console.log('Seeding campus demo nominees (hashed PINs)...');
+      for (const [code, name, photo, catId, eventId, pin, votes] of CAMPUS_NOMINEES) {
         const hashedPin = await hashPin(pin);
         await dbWrapper.run(
           'INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES (?, ?, ?, ?, ?, ?, ?)',

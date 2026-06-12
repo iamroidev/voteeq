@@ -20,6 +20,8 @@ const {
   MAX_VOTES_PER_TRANSACTION,
   isProduction,
 } = require('./security');
+const { validateGhanaPhone } = require('./phone');
+const { initializePaystackTransaction } = require('./paystack');
 require('dotenv').config();
 
 validateProductionConfig();
@@ -434,6 +436,11 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     return res.status(400).json({ error: 'Invalid quantity. A maximum of 5 tickets can be bought at once.' });
   }
 
+  const phoneCheck = validateGhanaPhone(buyer_phone);
+  if (!phoneCheck.valid) {
+    return res.status(400).json({ error: phoneCheck.error });
+  }
+
   const secretKey = process.env.PAYSTACK_SECRET_KEY;
   if (isProduction() && !secretKey) {
     return res.status(503).json({ error: 'Ticket payments are not configured yet. Please try again later.' });
@@ -469,8 +476,10 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
       await tx.run(`
         INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-      `, [event_id, ticketCode, buyer_name, buyer_email, buyer_phone, qty, totalPrice, reference]);
+      `, [event_id, ticketCode, buyer_name, buyer_email, phoneCheck.normalized, qty, totalPrice, reference]);
     });
+
+    const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
 
     if (!secretKey) {
       return res.json({
@@ -481,8 +490,32 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
       });
     }
 
-    // Paystack integration for tickets will be wired when PAYSTACK_SECRET_KEY is configured
-    res.status(503).json({ error: 'Ticket Paystack checkout is not wired yet. Configure payments first.' });
+    try {
+      const paystackData = await initializePaystackTransaction({
+        secretKey,
+        email: buyer_email,
+        amountMinor: Math.round(totalPrice * 100),
+        reference,
+        callbackUrl: `${frontendBase}/payment-status?token=${statusToken}`,
+        metadata: {
+          type: 'ticket',
+          event_id,
+          quantity: qty,
+          phone: phoneCheck.normalized,
+        },
+      });
+
+      return res.json({
+        reference,
+        statusToken,
+        authorization_url: paystackData.authorization_url,
+        access_code: paystackData.access_code,
+        isMock: false,
+      });
+    } catch (paystackErr) {
+      console.error('Paystack ticket init error:', paystackErr);
+      return res.status(400).json({ error: paystackErr.message || 'Paystack initialization failed' });
+    }
   } catch (err) {
     if (err.message === 'SOLD_OUT') {
       return res.status(400).json({ error: 'Ticket booking failed: Sold out or insufficient tickets remaining.' });
@@ -1040,6 +1073,11 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
     return res.status(503).json({ error: 'Vote payments are not configured yet. Please try again later.' });
   }
 
+  const phoneCheck = validateGhanaPhone(phone);
+  if (!phoneCheck.valid) {
+    return res.status(400).json({ error: phoneCheck.error });
+  }
+
   try {
     const db = getDB();
     const nominee = await db.get('SELECT * FROM nominees WHERE id = ?', [nomineeId]);
@@ -1050,67 +1088,37 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
     await db.run(`
       INSERT INTO votes (nominee_id, voter_phone, email, vote_count, channel, payment_reference, status)
       VALUES (?, ?, ?, ?, 'web', ?, 'pending')
-    `, [nomineeId, phone || 'Web Client', email || null, parsedVoteCount, reference]);
+    `, [nomineeId, phoneCheck.normalized, email || null, parsedVoteCount, reference]);
 
     const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
 
     if (secretKey) {
-      // Real Paystack integration
-      // We will perform an HTTP POST request to Paystack API
-      const paystackPayload = JSON.stringify({
-        email: email || 'voter@voteeq.com',
-        amount: amountMinor,
-        currency: 'GHS',
-        reference: reference,
-        callback_url: `${frontendBase}/payment-status?token=${statusToken}`,
-        metadata: {
-          nomineeId,
-          voteCount: parsedVoteCount,
-          phone
-        }
-      });
-
-      const options = {
-        hostname: 'api.paystack.co',
-        path: '/transaction/initialize',
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${secretKey}`,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(paystackPayload)
-        }
-      };
-
-      const paystackReq = http.request(options, (paystackRes) => {
-        let data = '';
-        paystackRes.on('data', (chunk) => { data += chunk; });
-        paystackRes.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.status && parsed.data) {
-              res.json({
-                reference,
-                statusToken,
-                authorization_url: parsed.data.authorization_url,
-                access_code: parsed.data.access_code,
-                isMock: false
-              });
-            } else {
-              res.status(400).json({ error: parsed.message || 'Paystack initialization failed' });
-            }
-          } catch (e) {
-            res.status(500).json({ error: 'Failed to parse Paystack response' });
-          }
+      try {
+        const paystackData = await initializePaystackTransaction({
+          secretKey,
+          email: email || 'voter@voteeq.com',
+          amountMinor,
+          reference,
+          callbackUrl: `${frontendBase}/payment-status?token=${statusToken}`,
+          metadata: {
+            type: 'vote',
+            nomineeId,
+            voteCount: parsedVoteCount,
+            phone: phoneCheck.normalized,
+          },
         });
-      });
 
-      paystackReq.on('error', (err) => {
-        console.error('Paystack req error:', err);
-        res.status(500).json({ error: 'Paystack connection error' });
-      });
-
-      paystackReq.write(paystackPayload);
-      paystackReq.end();
+        return res.json({
+          reference,
+          statusToken,
+          authorization_url: paystackData.authorization_url,
+          access_code: paystackData.access_code,
+          isMock: false,
+        });
+      } catch (paystackErr) {
+        console.error('Paystack vote init error:', paystackErr);
+        return res.status(400).json({ error: paystackErr.message || 'Paystack initialization failed' });
+      }
     } else {
       res.json({
         reference,
@@ -1315,6 +1323,11 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
     return res.status(400).json({ error: 'Name, Email and Phone are required' });
   }
 
+  const phoneCheck = validateGhanaPhone(phone);
+  if (!phoneCheck.valid) {
+    return res.status(400).json({ error: phoneCheck.error });
+  }
+
   const defaultPhoto = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80';
   const resolvedPhoto = photo_url || defaultPhoto;
   if (!isValidPhotoUrl(resolvedPhoto)) {
@@ -1339,7 +1352,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
     `, [
       name, 
       email, 
-      phone, 
+      phoneCheck.normalized, 
       resolvedPhoto,
       category_id ? parseInt(category_id) : null,
       custom_category || null,
@@ -1351,60 +1364,31 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
     const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
 
     if (secretKey) {
-      const paystackPayload = JSON.stringify({
-        email: email,
-        amount: formFee * 100,
-        currency: 'GHS',
-        reference: reference,
-        callback_url: `${frontendBase}/payment-status?token=${statusToken}`,
-        metadata: {
-          type: 'nominee_form',
-          name,
-          phone
-        }
-      });
-
-      const options = {
-        hostname: 'api.paystack.co',
-        path: '/transaction/initialize',
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${secretKey}`,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(paystackPayload)
-        }
-      };
-
-      const paystackReq = http.request(options, (paystackRes) => {
-        let data = '';
-        paystackRes.on('data', (chunk) => { data += chunk; });
-        paystackRes.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.status && parsed.data) {
-              res.json({
-                reference,
-                statusToken,
-                authorization_url: parsed.data.authorization_url,
-                access_code: parsed.data.access_code,
-                isMock: false
-              });
-            } else {
-              res.status(400).json({ error: parsed.message || 'Form purchase failed to initialize' });
-            }
-          } catch (e) {
-            res.status(500).json({ error: 'Failed to parse Paystack response' });
-          }
+      try {
+        const paystackData = await initializePaystackTransaction({
+          secretKey,
+          email,
+          amountMinor: Math.round(formFee * 100),
+          reference,
+          callbackUrl: `${frontendBase}/payment-status?token=${statusToken}`,
+          metadata: {
+            type: 'nominee_form',
+            name,
+            phone: phoneCheck.normalized,
+          },
         });
-      });
 
-      paystackReq.on('error', (err) => {
-        console.error('Paystack error:', err);
-        res.status(500).json({ error: 'Paystack connection error' });
-      });
-
-      paystackReq.write(paystackPayload);
-      paystackReq.end();
+        return res.json({
+          reference,
+          statusToken,
+          authorization_url: paystackData.authorization_url,
+          access_code: paystackData.access_code,
+          isMock: false,
+        });
+      } catch (paystackErr) {
+        console.error('Paystack form init error:', paystackErr);
+        return res.status(400).json({ error: paystackErr.message || 'Form purchase failed to initialize' });
+      }
     } else {
       res.json({
         reference,
@@ -2189,16 +2173,53 @@ app.put('/api/admin/events/:id', requireAdmin, async (req, res) => {
 
 // Delete Event
 app.delete('/api/admin/events/:id', requireAdmin, async (req, res) => {
-  const { id } = req.params;
+  const eventId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(eventId)) {
+    return res.status(400).json({ error: 'Invalid event id' });
+  }
+
   try {
     const db = getDB();
-    const existing = await db.get('SELECT * FROM events WHERE id = ?', [id]);
+    const existing = await db.get('SELECT * FROM events WHERE id = ?', [eventId]);
     if (!existing) {
       return res.status(404).json({ error: 'Event not found' });
     }
-    await db.run('DELETE FROM events WHERE id = ?', [id]);
-    await logAdminAction(adminUsername(req), 'DELETE_EVENT', `Deleted event: ${existing.title} (ID: ${id})`);
-    res.json({ success: true, message: 'Event deleted successfully!' });
+
+    const ticketCount = await db.get(
+      'SELECT COUNT(*) as count FROM tickets WHERE event_id = ?',
+      [eventId]
+    );
+    const nomineeCount = await db.get(
+      'SELECT COUNT(*) as count FROM nominees WHERE event_id = ?',
+      [eventId]
+    );
+
+    await db.transaction(async (tx) => {
+      await tx.run('DELETE FROM tickets WHERE event_id = ?', [eventId]);
+      await tx.run('UPDATE nominees SET event_id = NULL WHERE event_id = ?', [eventId]);
+      await tx.run('DELETE FROM events WHERE id = ?', [eventId]);
+    });
+
+    const details = [];
+    if (ticketCount.count > 0) {
+      details.push(`${ticketCount.count} ticket record(s) removed`);
+    }
+    if (nomineeCount.count > 0) {
+      details.push(`${nomineeCount.count} nominee(s) unlinked from this event`);
+    }
+
+    await logAdminAction(
+      adminUsername(req),
+      'DELETE_EVENT',
+      `Deleted event: ${existing.title} (ID: ${eventId})${details.length ? ` — ${details.join('; ')}` : ''}`
+    );
+
+    res.json({
+      success: true,
+      message: details.length
+        ? `Event deleted. ${details.join('. ')}.`
+        : 'Event deleted successfully!',
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to delete event' });

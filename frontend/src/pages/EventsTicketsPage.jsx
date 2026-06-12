@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config';
 import { readStoredAuth } from '../utils/storage';
+import { getGhanaPhoneError, normalizeGhanaPhone } from '../utils/phone';
 
 export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, activeEventId, onEventSelect }) {
   const [events, setEvents] = useState([]);
@@ -131,6 +132,14 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
     setSubmitting(true);
     setCheckoutError('');
 
+    const phoneError = getGhanaPhoneError(buyerPhone);
+    if (phoneError) {
+      setCheckoutError(phoneError);
+      setSubmitting(false);
+      return;
+    }
+    const normalizedPhone = normalizeGhanaPhone(buyerPhone);
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/tickets/purchase`, {
         method: 'POST',
@@ -141,7 +150,7 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
           event_id: selectedEvent.id,
           buyer_name: buyerName,
           buyer_email: buyerEmail,
-          buyer_phone: buyerPhone,
+          buyer_phone: normalizedPhone,
           quantity: parseInt(quantity, 10),
           access_code: accessCode
         }),
@@ -160,7 +169,7 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
         eventTitle: selectedEvent.title,
         quantity: parseInt(quantity, 10),
         amount: selectedEvent.ticket_price * parseInt(quantity, 10),
-        phone: buyerPhone,
+        phone: normalizedPhone,
         onSuccessCallback: () => {
           // After success, reload list and save ticket locally so nominee/admin can inspect
           fetchEvents();

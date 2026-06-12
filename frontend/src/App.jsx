@@ -49,6 +49,7 @@ export default function App() {
   const [loginCode, setLoginCode] = useState('');
   const [loginPasscode, setLoginPasscode] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
 
   // Admin Login/Dashboard States
   const [authAdmin, setAuthAdmin] = useState(() => readStoredAuth('voteeq_admin_auth'));
@@ -243,16 +244,12 @@ export default function App() {
     const handleHashChange = () => {
       if (authAdmin) {
         setCurrentPage(null);
-        if (window.location.hash !== '#/admin') {
-          window.location.hash = '#/admin';
-        }
+        syncDashboardHash('admin');
         return;
       }
-      if (authNominee) {
+      if (authNominee?.nominee?.code && authNominee?.token) {
         setCurrentPage(null);
-        if (window.location.hash !== '#/nominee') {
-          window.location.hash = '#/nominee';
-        }
+        syncDashboardHash('nominee');
         return;
       }
 
@@ -402,12 +399,23 @@ export default function App() {
     setToastMessage(msg);
   };
 
+  const dismissToast = () => {
+    setToastMessage('');
+  };
+
   useEffect(() => {
     if (toastMessage) {
-      const timer = setTimeout(() => setToastMessage(''), 4000);
+      const timer = setTimeout(() => setToastMessage(''), 3500);
       return () => clearTimeout(timer);
     }
   }, [toastMessage]);
+
+  const syncDashboardHash = (path) => {
+    const target = `#/${path}`;
+    if (window.location.hash !== target) {
+      window.history.replaceState(null, '', target);
+    }
+  };
 
   // Copy share link helper
   const copyShareLink = (nomineeCode, nomineeName) => {
@@ -479,15 +487,19 @@ export default function App() {
   const handleNomineeLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
+    setLoginSubmitting(true);
     try {
       const response = await fetch(`${API_BASE_URL}/api/nominees/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: loginCode, passcode: loginPasscode }),
+        body: JSON.stringify({ code: loginCode.trim(), passcode: loginPasscode }),
       });
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || 'Authentication error');
+      }
+      if (!data?.token || !data?.nominee?.code) {
+        throw new Error('Invalid login response from server');
       }
 
       setAuthNominee(data);
@@ -495,9 +507,12 @@ export default function App() {
       setLoginMode(false);
       setLoginCode('');
       setLoginPasscode('');
-      triggerToast('Nominee dashboard unlocked');
+      syncDashboardHash('nominee');
+      triggerToast('Nominee dashboard ready');
     } catch (err) {
       setLoginError(err.message || 'Verification failed');
+    } finally {
+      setLoginSubmitting(false);
     }
   };
 
@@ -675,9 +690,19 @@ export default function App() {
       <div className="ambient-glow-2" />
 
       {/* Toast Alert System */}
-      <div className={`luxury-toast ${toastMessage ? 'visible' : ''}`} aria-live="polite">
-        {toastMessage}
-      </div>
+      {toastMessage && (
+        <div
+          className="luxury-toast visible"
+          role="status"
+          aria-live="polite"
+          onClick={dismissToast}
+          onKeyDown={(e) => { if (e.key === 'Escape') dismissToast(); }}
+          tabIndex={0}
+          title="Dismiss"
+        >
+          {toastMessage}
+        </div>
+      )}
 
       {/* Main Luxury Navigation Bar */}
       <nav className="luxury-nav">
@@ -829,7 +854,7 @@ export default function App() {
         />
       )}
 
-      {!currentPage && authNominee && (
+      {!currentPage && authNominee?.nominee?.code && authNominee?.token && (
         <NomineeDashboard
           code={authNominee.nominee.code}
           token={authNominee.token}
@@ -1307,8 +1332,8 @@ export default function App() {
                     className="luxury-input"
                   />
                 </div>
-                <button type="submit" className="luxury-btn" style={{ width: '100%' }}>
-                  Unlock Dashboard
+                <button type="submit" disabled={loginSubmitting} className={`luxury-btn ${loginSubmitting ? 'disabled' : ''}`} style={{ width: '100%' }}>
+                  {loginSubmitting ? 'Signing in...' : 'Unlock Dashboard'}
                 </button>
               </form>
               <div style={{ marginTop: '1.5rem', textAlign: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>

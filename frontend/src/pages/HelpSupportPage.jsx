@@ -1,13 +1,53 @@
 export default function HelpSupportPage({ onBack }) {
   const faqs = [
-    { q: 'How do I vote for my favorite nominee?', a: 'Click the "VOTE ONLINE" button on any nominee card, choose your vote count, enter your mobile money number, and complete the payment. You can also dial *920*566# from your phone.' },
-    { q: 'What payment methods are accepted?', a: 'We accept Mobile Money payments through MTN MoMo, Telecel Cash, and AirtelTigo Money. Online voting costs GH₵ 1.00 per vote, USSD voting costs GH₵ 0.50 per vote.' },
-    { q: 'Is my payment secure?', a: 'Yes. All payments are processed securely through local Mobile Money channels using standard transaction encryption. Your financial data is protected and never stored on our servers.' },
-    { q: 'Can I vote multiple times?', a: 'Yes! There is no limit to how many times you can vote for your favorite nominee. Each transaction is processed separately.' },
-    { q: 'How do I become a nominee?', a: 'Nominees are selected by the Voteeq Awards committee. If you are a nominee, you will receive a code and PIN to access your dashboard. Contact admin for more information.' },
-    { q: 'How do I access my nominee dashboard?', a: 'Click "NOMINEE LOGIN" in the top navigation bar, enter your nominee code and PIN. Your dashboard shows real-time vote statistics and sharing tools.' },
-    { q: 'What happens if my payment fails?', a: 'If a payment fails, no votes are recorded. You can retry the voting process. If money was deducted but votes weren\'t added, contact support with your payment reference.' },
-    { q: 'How do I share a nominee\'s voting link?', a: 'Click "Copy link" on any nominee card to get a shareable URL. When someone opens this link, they\'ll be taken directly to that nominee\'s voting page.' },
+    {
+      q: 'How do I vote for a nominee?',
+      a: 'Open the campus voting portal, find the nominee, and click "VOTE ONLINE". Choose how many votes you want, enter your Ghana mobile number (10 digits, starting with 02x or 05x), and complete checkout through Paystack. Each online vote costs GH₵ 1.00.',
+    },
+    {
+      q: 'How do I buy event tickets?',
+      a: 'Go to Events & Tickets, select a campus event, and fill in your name, email, and phone number. Pay through Paystack to receive your ticket reference. You can look up tickets later using your payment reference or ticket code.',
+    },
+    {
+      q: 'What phone number format should I use?',
+      a: 'Use a valid Ghana mobile number: 10 digits starting with 02x or 05x (for example 0241234567). You can also enter +233 or 233 followed by the number — it will be normalized automatically.',
+    },
+    {
+      q: 'What payment methods are accepted?',
+      a: 'Online payments are processed through Paystack, which supports MTN MoMo, Telecel Cash, AirtelTigo Money, and card payments where enabled. USSD voting at a lower rate is planned but not live yet.',
+    },
+    {
+      q: 'Is USSD or SMS voting available?',
+      a: 'Not yet. USSD and SMS receipts depend on an Arkesel shortcode, which is still being set up with stakeholders. Until that is live, use the website for voting and ticket purchases.',
+    },
+    {
+      q: 'Is my payment secure?',
+      a: 'Yes. Card and mobile money payments are handled by Paystack. Voteeq does not store your mobile money PIN or full card details on our servers.',
+    },
+    {
+      q: 'Can I vote more than once?',
+      a: 'Yes. Each vote is a separate paid transaction. There is no cap on how many times you can support the same nominee.',
+    },
+    {
+      q: 'How do I apply as a nominee?',
+      a: 'Click "Apply as Nominee", complete the form with your details and category, and pay the GH₵ 10.00 registration fee. The committee reviews your application and sends an activation PIN if approved.',
+    },
+    {
+      q: 'How do I access my nominee dashboard?',
+      a: 'After approval, use "NOMINEE LOGIN" with the code and PIN you received. The dashboard shows live vote counts and sharing tools for your campaign.',
+    },
+    {
+      q: 'What if my payment fails or money was deducted without confirmation?',
+      a: 'If checkout fails, no votes or tickets are confirmed. If money left your account but the status page did not update, contact support with your Paystack reference and the phone number used.',
+    },
+    {
+      q: 'How do I share a nominee voting link?',
+      a: 'Use "Copy link" on a nominee card. Anyone who opens that URL goes straight to that nominee\'s voting page.',
+    },
+    {
+      q: 'Who runs payments and when do organisers get paid?',
+      a: 'Paystack collects payments on behalf of the event organiser. Settlement account details are configured in the Paystack business dashboard — the signup phone number can be updated later when the stakeholder account is ready.',
+    },
   ];
 
   return (

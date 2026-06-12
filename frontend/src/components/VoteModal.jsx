@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { API_BASE_URL } from '../config';
+import { getGhanaPhoneError, normalizeGhanaPhone } from '../utils/phone';
 
 export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
   const [voteCount, setVoteCount] = useState(10);
@@ -21,10 +22,12 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
 
   const handleVoteSubmit = async (e) => {
     e.preventDefault();
-    if (!phone) {
-      setError('Mobile Money Number is required to trigger payment prompt');
+    const phoneError = getGhanaPhoneError(phone);
+    if (phoneError) {
+      setError(phoneError);
       return;
     }
+    const normalizedPhone = normalizeGhanaPhone(phone);
     if (isInvalidVotes) {
       setError('Please choose a valid whole number of votes (minimum 1)');
       return;
@@ -50,7 +53,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
         body: JSON.stringify({
           nomineeId: nominee.id,
           email,
-          phone,
+          phone: normalizedPhone,
           voteCount,
         }),
       });
@@ -66,7 +69,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
         nominee: nominee.name,
         nomineeId: nominee.id,
         votes: parsedVotes,
-        phone: phone
+        phone: normalizedPhone
       });
     } catch (err) {
       console.error(err);

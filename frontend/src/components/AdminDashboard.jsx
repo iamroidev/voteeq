@@ -1362,14 +1362,16 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                           
                           <button onClick={async () => {
                             setConfirmDialog({
-                              message: `Are you sure you want to delete the event "${ev.title}"?`,
+                              message: `Delete "${ev.title}"? All ticket records for this event will be removed. Linked nominees will stay in the system but will no longer be tied to this event.`,
                               onConfirm: async () => {
                                 try {
                                   const res = await fetch(`${API_BASE_URL}/api/admin/events/${ev.id}`, {
                                     method: 'DELETE',
                                     headers: { 'Authorization': `Bearer ${token}` }
                                   });
-                                  if (!res.ok) throw new Error('Failed to delete event');
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data.error || 'Failed to delete event');
+                                  setAlertDialog({ title: 'Event deleted', message: data.message || 'Event removed.' });
                                   fetchTicketsData();
                                 } catch (err) {
                                   setAlertDialog({ title: 'Error', message: err.message });

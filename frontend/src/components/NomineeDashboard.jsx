@@ -1,61 +1,101 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import BannerGenerator from './BannerGenerator';
 import { API_BASE_URL } from '../config';
 
 export default function NomineeDashboard({ code, token, onLogout, copyShareLink, dialUssdCode, wsTrigger }) {
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [bannerVersion, setBannerVersion] = useState(() => Date.now());
+  const abortRef = useRef(null);
 
-  const loadDashboardData = useCallback(async () => {
+  const loadDashboardData = useCallback(async ({ isInitial = false } = {}) => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    if (isInitial) {
+      setInitialLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
     try {
-      const response = await fetch(`${API_BASE_URL}/api/nominees/dashboard/${code}`, {
+      const response = await fetch(`${API_BASE_URL}/api/nominees/dashboard/${encodeURIComponent(code)}`, {
         headers: {
           'Authorization': `Bearer ${token}`
-        }
+        },
+        signal: controller.signal,
       });
       const resData = await response.json();
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          onLogout();
+          throw new Error('Session expired. Please log in again.');
+        }
         throw new Error(resData.error || 'Failed to load dashboard metrics');
       }
       setData(resData);
+      setError('');
       setBannerVersion(Date.now());
     } catch (err) {
-      console.error(err);
-      setError(err.message || 'Error updating dashboard metrics');
+      if (err.name === 'AbortError') {
+        setError('Dashboard request timed out. Check your connection and try again.');
+      } else {
+        console.error(err);
+        setError(err.message || 'Error updating dashboard metrics');
+      }
     } finally {
-      setLoading(false);
+      clearTimeout(timeoutId);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
+      setInitialLoading(false);
+      setRefreshing(false);
     }
-  }, [code, token]);
+  }, [code, token, onLogout]);
 
   useEffect(() => {
-    const timeoutId = setTimeout(loadDashboardData, 0);
-    const interval = setInterval(loadDashboardData, 5000);
+    loadDashboardData({ isInitial: true });
+    const interval = setInterval(() => loadDashboardData(), 15000);
     return () => {
-      clearTimeout(timeoutId);
       clearInterval(interval);
+      if (abortRef.current) {
+        abortRef.current.abort();
+      }
     };
   }, [loadDashboardData, wsTrigger]);
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <div style={{ textAlign: 'center', padding: '6rem 0' }}>
         <h2 className="loading-copy" style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-secondary)', fontWeight: 300 }}>
-          Verifying credentials...
+          Loading dashboard...
         </h2>
       </div>
     );
   }
 
-  if (error) {
+  if (error && !data) {
     return (
       <div className="editorial-sheet" style={{ maxWidth: '600px', margin: '3rem auto', textAlign: 'center' }}>
         <h2 style={{ color: 'var(--accent-dark)', marginBottom: '1rem' }}>Secure Access Failure</h2>
         <p style={{ marginBottom: '2rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{error}</p>
+        <button onClick={() => loadDashboardData({ isInitial: true })} className="luxury-btn secondary" style={{ marginRight: '0.75rem' }}>
+          Retry
+        </button>
         <button onClick={onLogout} className="luxury-btn">Back to Portal</button>
       </div>
     );
+  }
+
+  if (!data) {
+    return null;
   }
 
   const { nominee, recentVotes, channelStats } = data;
@@ -112,8 +152,8 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
         </div>
         
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button onClick={loadDashboardData} className="luxury-btn secondary" style={{ padding: '0.75rem 1.5rem', fontSize: '0.7rem' }}>
-            REFRESH
+          <button onClick={() => loadDashboardData()} disabled={refreshing} className={`luxury-btn secondary ${refreshing ? 'disabled' : ''}`} style={{ padding: '0.75rem 1.5rem', fontSize: '0.7rem' }}>
+            {refreshing ? 'REFRESHING...' : 'REFRESH'}
           </button>
         </div>
       </div>
