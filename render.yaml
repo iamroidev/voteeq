@@ -2,6 +2,7 @@ services:
   - type: web
     name: voteeq-api
     env: node
+    plan: free
     rootDir: backend
     buildCommand: npm install
     startCommand: node server.js
@@ -14,7 +15,3 @@ services:
         value: https://voteeq-roi-dev.vercel.app
       - key: JWT_SECRET
         generateValue: true
-    disk:
-      name: data
-      mountPath: /var/data
-      sizeGB: 1

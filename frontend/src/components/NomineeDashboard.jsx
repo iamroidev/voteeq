@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import BannerGenerator from './BannerGenerator';
 import { API_BASE_URL } from '../config';
 
@@ -6,8 +6,9 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [bannerVersion, setBannerVersion] = useState(() => Date.now());
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/nominees/dashboard/${code}`, {
         headers: {
@@ -19,24 +20,28 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
         throw new Error(resData.error || 'Failed to load dashboard metrics');
       }
       setData(resData);
+      setBannerVersion(Date.now());
     } catch (err) {
       console.error(err);
       setError(err.message || 'Error updating dashboard metrics');
     } finally {
       setLoading(false);
     }
-  };
+  }, [code, token]);
 
   useEffect(() => {
-    loadDashboardData();
+    const timeoutId = setTimeout(loadDashboardData, 0);
     const interval = setInterval(loadDashboardData, 5000);
-    return () => clearInterval(interval);
-  }, [code, token]);
+    return () => {
+      clearTimeout(timeoutId);
+      clearInterval(interval);
+    };
+  }, [loadDashboardData]);
 
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '6rem 0' }}>
-        <h2 style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-secondary)', fontWeight: 300 }}>
+        <h2 className="loading-copy" style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-secondary)', fontWeight: 300 }}>
           Verifying credentials...
         </h2>
       </div>
@@ -110,9 +115,6 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
           <button onClick={loadDashboardData} className="luxury-btn secondary" style={{ padding: '0.75rem 1.5rem', fontSize: '0.7rem' }}>
             REFRESH
           </button>
-          <button onClick={onLogout} className="luxury-btn secondary" style={{ padding: '0.75rem 1.5rem', fontSize: '0.7rem' }}>
-            LOGOUT PORTAL
-          </button>
         </div>
       </div>
 
@@ -160,7 +162,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
             {totalVotes.toLocaleString()}
           </p>
           <div style={{ height: '2px', background: 'var(--border-color)', overflow: 'hidden' }}>
-            <div style={{ height: '100%', background: 'var(--accent)', width: '100%' }}></div>
+            <div className="metric-progress-fill" style={{ height: '100%', background: 'var(--accent)', width: '100%' }}></div>
           </div>
           <p style={{ fontSize: '0.65rem', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', animation: 'pulse 2s infinite' }} />
@@ -178,7 +180,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
               <span>{channelStats.web} ({webPercentage}%)</span>
             </div>
             <div style={{ height: '4px', background: 'var(--border-color)', marginBottom: '1.25rem', overflow: 'hidden' }}>
-              <div style={{ height: '100%', background: 'var(--accent)', width: `${webPercentage}%`, transition: 'width 1s cubic-bezier(0.25, 1, 0.5, 1)' }}></div>
+              <div className="metric-progress-fill" style={{ height: '100%', background: 'var(--accent)', width: `${webPercentage}%`, transition: 'width 1s cubic-bezier(0.25, 1, 0.5, 1)' }}></div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 500, marginBottom: '0.35rem' }}>
@@ -186,7 +188,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
               <span>{channelStats.ussd} ({ussdPercentage}%)</span>
             </div>
             <div style={{ height: '4px', background: 'var(--border-color)', overflow: 'hidden' }}>
-              <div style={{ height: '100%', background: 'var(--text-primary)', width: `${ussdPercentage}%`, transition: 'width 1s cubic-bezier(0.25, 1, 0.5, 1)' }}></div>
+              <div className="metric-progress-fill" style={{ height: '100%', background: 'var(--text-primary)', width: `${ussdPercentage}%`, transition: 'width 1s cubic-bezier(0.25, 1, 0.5, 1)' }}></div>
             </div>
           </div>
         </div>
@@ -196,7 +198,38 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
       <div className="dashboard-main-grid">
         {/* Campaign Banner studio */}
         <div>
-          <BannerGenerator nominee={nominee} token={token} />
+          {data?.hasCustomBanner && (
+            <div className="editorial-sheet" style={{ marginBottom: '2rem', padding: '2.5rem', textAlign: 'center' }}>
+              <h3 style={{ fontSize: '1.25rem', fontFamily: 'var(--font-serif)', marginBottom: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                Active Campaign Poster
+              </h3>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+                This is the live card currently configured as your social media link preview.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '1rem 0' }}>
+                <img 
+                  src={`${API_BASE_URL}/banners/${code}.png?t=${bannerVersion}`} 
+                  alt="Active Share Card" 
+                  style={{
+                    width: '100%',
+                    maxWidth: '320px',
+                    height: 'auto',
+                    borderRadius: '8px',
+                    boxShadow: '0 15px 35px rgba(0,0,0,0.18)',
+                    border: '1px solid var(--border-color)',
+                  }} 
+                />
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--accent-dark)', fontWeight: 600, marginTop: '1rem' }}>
+                ✓ Persisted on server. Create a new poster below to overwrite it.
+              </div>
+            </div>
+          )}
+          <BannerGenerator 
+            nominee={nominee} 
+            token={token} 
+            onSaveSuccess={() => setData(prev => ({ ...prev, hasCustomBanner: true }))}
+          />
         </div>
 
         {/* Live Vote Log sheet */}

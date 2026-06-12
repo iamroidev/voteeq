@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { API_BASE_URL } from '../config';
 
 export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {

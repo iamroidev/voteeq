@@ -18,5 +18,12 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
+  },
+  "nodemonConfig": {
+    "ignore": [
+      "db/*",
+      "banners/*",
+      "receipts.log"
+    ]
   }
 }

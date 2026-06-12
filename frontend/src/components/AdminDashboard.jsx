@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../config';
 
 export default function AdminDashboard({ token, onLogout, categories, nominees, refreshData }) {
@@ -18,11 +18,12 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
   const [newNomCategoryId, setNewNomCategoryId] = useState('');
   const [nomError, setNomError] = useState('');
   const [nomSuccess, setNomSuccess] = useState('');
+  const [createdActivationCode, setCreatedActivationCode] = useState('');
 
   // Active sub-view tab: 'overview', 'nominees', 'categories'
   const [activeSubTab, setActiveSubTab] = useState('overview');
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/admin/overview`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -36,11 +37,12 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
     } finally {
       setLoadingStats(false);
     }
-  };
+  }, [token]);
 
   useEffect(() => {
-    fetchStats();
-  }, [nominees, categories]);
+    const timeoutId = setTimeout(fetchStats, 0);
+    return () => clearTimeout(timeoutId);
+  }, [fetchStats]);
 
   const handleCreateCategory = async (e) => {
     e.preventDefault();
@@ -86,6 +88,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
     e.preventDefault();
     setNomError('');
     setNomSuccess('');
+    setCreatedActivationCode('');
     if (!newNomCategoryId) {
       setNomError('Please select a category');
       return;
@@ -108,6 +111,9 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       if (!res.ok) throw new Error(data.error || 'Failed to add nominee');
       
       setNomSuccess(data.message);
+      if (data.activationCode) {
+        setCreatedActivationCode(data.activationCode);
+      }
       setNewNomCode('');
       setNewNomName('');
       setNewNomPhoto('');
@@ -225,7 +231,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                     <span style={{ color: 'var(--text-secondary)' }}>{stats?.channelStats?.web || 0} votes ({((stats?.channelStats?.web || 0) * 1.00).toFixed(2)} GHS)</span>
                   </div>
                   <div style={{ width: '100%', height: '6px', background: 'var(--bg-tertiary)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', background: 'var(--accent)', width: `${stats?.totalVotes ? ((stats.channelStats?.web || 0) / stats.totalVotes) * 100 : 0}%`, transition: 'width 1s ease' }} />
+                    <div className="metric-progress-fill" style={{ height: '100%', background: 'var(--accent)', width: `${stats?.totalVotes ? ((stats.channelStats?.web || 0) / stats.totalVotes) * 100 : 0}%`, transition: 'width 1s ease' }} />
                   </div>
                 </div>
 
@@ -235,7 +241,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                     <span style={{ color: 'var(--text-secondary)' }}>{stats?.channelStats?.ussd || 0} votes ({((stats?.channelStats?.ussd || 0) * 0.50).toFixed(2)} GHS)</span>
                   </div>
                   <div style={{ width: '100%', height: '6px', background: 'var(--bg-tertiary)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', background: 'var(--accent-dark)', width: `${stats?.totalVotes ? ((stats.channelStats?.ussd || 0) / stats.totalVotes) * 100 : 0}%`, transition: 'width 1s ease' }} />
+                    <div className="metric-progress-fill" style={{ height: '100%', background: 'var(--accent-dark)', width: `${stats?.totalVotes ? ((stats.channelStats?.ussd || 0) / stats.totalVotes) * 100 : 0}%`, transition: 'width 1s ease' }} />
                   </div>
                 </div>
               </div>
@@ -265,7 +271,34 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
             <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', letterSpacing: '0.05em' }}>Add Nominee</h3>
             
             {nomError && <div style={{ background: 'var(--accent-light)', borderLeft: '3px solid var(--accent)', padding: '0.75rem 1rem', fontSize: '0.8rem', color: 'var(--accent-dark)', marginBottom: '1.5rem', fontWeight: 500 }}>{nomError}</div>}
-            {nomSuccess && <div style={{ background: '#e2f9eb', borderLeft: '3px solid #2ecc71', padding: '0.75rem 1rem', fontSize: '0.8rem', color: '#27ae60', marginBottom: '1.5rem', fontWeight: 500 }}>{nomSuccess}</div>}
+            {nomSuccess && (
+              <div style={{ background: '#e2f9eb', borderLeft: '3px solid #2ecc71', padding: '1rem', borderRadius: '12px', marginBottom: '1.5rem', color: '#27ae60' }}>
+                <p style={{ fontSize: '0.8rem', fontWeight: 600, margin: 0 }}>{nomSuccess}</p>
+                {createdActivationCode && (
+                  <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'rgba(46, 204, 113, 0.15)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', border: '1px solid rgba(46, 204, 113, 0.3)' }}>
+                    <div>
+                      <span style={{ fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#1e8449', display: 'block', fontWeight: 700 }}>
+                        Temporary Activation Code (Share Securely)
+                      </span>
+                      <strong style={{ fontSize: '1.1rem', fontFamily: 'monospace', color: '#196f3d', letterSpacing: '0.1em' }}>
+                        {createdActivationCode}
+                      </strong>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(createdActivationCode);
+                        alert('Activation code copied to clipboard!');
+                      }}
+                      className="luxury-btn"
+                      style={{ padding: '0.4rem 0.8rem', fontSize: '0.65rem', background: '#2ecc71', color: '#fff', border: 'none', height: 'auto', borderRadius: '6px' }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <form onSubmit={handleCreateNominee} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem', alignItems: 'end' }}>
               <div>
@@ -336,7 +369,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                       <td style={{ color: 'var(--text-secondary)' }}>{n.category_name}</td>
                       <td style={{ fontWeight: 700, color: 'var(--accent-dark)' }}>{n.votes_count}</td>
                       <td>
-                        {n.passcode === 'PENDING' ? (
+                        {n.passcode === 'PENDING' || (n.passcode && n.passcode.startsWith('PENDING_ACT_')) ? (
                           <span style={{ background: '#fef9e7', color: '#f39c12', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', border: '1px solid rgba(243, 156, 18, 0.2)' }}>
                             Pending Setup
                           </span>

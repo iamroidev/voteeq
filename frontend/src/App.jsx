@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import VoteModal from './components/VoteModal';
 import MockPaystack from './components/MockPaystack';
 import NomineeDashboard from './components/NomineeDashboard';
@@ -41,6 +41,7 @@ export default function App() {
   // Nominee Register/PIN Activation States
   const [registerMode, setRegisterMode] = useState(false);
   const [registerCode, setRegisterCode] = useState('');
+  const [registerActivationCode, setRegisterActivationCode] = useState('');
   const [registerPin, setRegisterPin] = useState('');
   const [registerError, setRegisterError] = useState('');
   const [registerSuccess, setRegisterSuccess] = useState('');
@@ -93,20 +94,25 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadData();
+    const timeoutId = setTimeout(() => {
+      loadData();
 
-    // Intercept direct navigation to /admin or /admin/
-    const cleanPath = window.location.pathname.replace(/\/$/, '');
-    if (cleanPath === '/admin') {
-      if (!authAdmin) {
-        setAdminLoginMode(true);
+      // Intercept direct navigation to /admin or /admin/
+      const cleanPath = window.location.pathname.replace(/\/$/, '');
+      if (cleanPath === '/admin') {
+        if (!authAdmin) {
+          setAdminLoginMode(true);
+        }
+        window.history.replaceState({}, document.title, '/');
       }
-      window.history.replaceState({}, document.title, '/');
-    }
+    }, 0);
 
     // Poll nominees votes tallies every 7 seconds
     const interval = setInterval(loadData, 7000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(timeoutId);
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -287,7 +293,11 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/api/nominees/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: registerCode, newPin: registerPin }),
+        body: JSON.stringify({ 
+          code: registerCode, 
+          activationCode: registerActivationCode,
+          newPin: registerPin 
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -296,6 +306,7 @@ export default function App() {
 
       setRegisterSuccess('Activation successful! You can now log in.');
       setRegisterPin('');
+      setRegisterActivationCode('');
       triggerToast('Nominee PIN Activated!');
       loadData(); // refresh nominees list
       
@@ -335,7 +346,7 @@ export default function App() {
       const data = await response.json();
       setUssdScreen(data.message);
       setUssdAction(data.action);
-    } catch (err) {
+    } catch {
       setUssdScreen('Connection error during USSD dial.');
       setUssdAction('release');
     } finally {
@@ -368,7 +379,7 @@ export default function App() {
       if (data.action === 'release') {
         setTimeout(loadData, 3500);
       }
-    } catch (err) {
+    } catch {
       setUssdScreen('USSD communication interrupted.');
       setUssdAction('release');
     } finally {
@@ -409,7 +420,7 @@ export default function App() {
 
       {/* Main Luxury Navigation Bar */}
       <nav className="luxury-nav">
-        <a href="/" onClick={(e) => { e.preventDefault(); if (authAdmin) handleAdminLogout(); else if (authNominee) handleLogout(); }} className="luxury-logo">
+        <a href="/" onClick={(e) => { e.preventDefault(); setActiveTab('vote'); }} className="luxury-logo">
           VOTEEQ
         </a>
         
@@ -422,6 +433,39 @@ export default function App() {
         </button>
         
         <div className="luxury-nav-actions">
+          {/* Main Public View Selector */}
+          {!authAdmin && !authNominee && (
+            <div style={{ display: 'flex', gap: '0.4rem', marginRight: '1.25rem', borderRight: '1px solid var(--border-color)', paddingRight: '1.25rem' }}>
+              <button 
+                onClick={() => setActiveTab('vote')}
+                className={`luxury-btn text-link ${activeTab === 'vote' ? 'active' : ''}`}
+                style={{ 
+                  fontSize: '0.65rem', 
+                  letterSpacing: '0.1em',
+                  padding: '0.4rem 0.5rem',
+                  borderBottom: activeTab === 'vote' ? '1px solid var(--accent)' : '1px solid transparent',
+                  borderRadius: 0,
+                  fontWeight: 600
+                }}
+              >
+                VOTE PORTAL
+              </button>
+              <button 
+                onClick={() => setActiveTab('leaderboard')}
+                className={`luxury-btn text-link ${activeTab === 'leaderboard' ? 'active' : ''}`}
+                style={{ 
+                  fontSize: '0.65rem', 
+                  letterSpacing: '0.1em',
+                  padding: '0.4rem 0.5rem',
+                  borderBottom: activeTab === 'leaderboard' ? '1px solid var(--accent)' : '1px solid transparent',
+                  borderRadius: 0,
+                  fontWeight: 600
+                }}
+              >
+                LEADERBOARD
+              </button>
+            </div>
+          )}
           {/* Custom Luxury Colorway Selector */}
           <div className="theme-picker-container">
             {[
@@ -493,6 +537,104 @@ export default function App() {
           copyShareLink={copyShareLink}
           dialUssdCode={dialUssdCode}
         />
+      ) : activeTab === 'leaderboard' ? (
+        /* PUBLIC LEADERBOARD PAGE */
+        <div className="leaderboard-page-container" style={{ animation: 'fadeIn 0.6s ease' }}>
+          <div className="editorial-header-section">
+            <span className="editorial-tagline">LIVE STANDINGS</span>
+            <h1 className="editorial-title">LEADERBOARD</h1>
+            <div className="editorial-divider" />
+          </div>
+
+          <div style={{ maxWidth: '800px', margin: '0 auto', padding: '0 1.5rem 4rem 1.5rem' }}>
+            {categories.map(cat => {
+              // Get nominees in this category and sort them by votes descending
+              const catNominees = nominees
+                .filter(n => n.category_id === cat.id)
+                .sort((a, b) => b.votes_count - a.votes_count);
+              
+              const totalCatVotes = catNominees.reduce((sum, n) => sum + n.votes_count, 0);
+
+              return (
+                <div key={cat.id} className="editorial-sheet leaderboard-category-sheet" style={{ marginBottom: '3rem', padding: '2.5rem' }}>
+                  <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.6rem', marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+                    {cat.name.toUpperCase()}
+                  </h2>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '2rem' }}>
+                    {cat.description || 'Verified Live Standings'} — {totalCatVotes} Total Votes
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    {catNominees.map((nom, idx) => {
+                      const percentage = totalCatVotes > 0 
+                        ? Math.round((nom.votes_count / totalCatVotes) * 100) 
+                        : 0;
+
+                      // Top 3 rankings styling
+                      let rankBadgeColor = 'var(--text-secondary)';
+                      let rankText = `${idx + 1}`;
+                      if (idx === 0) rankBadgeColor = 'var(--accent)'; // 1st Place (Gold Accent)
+                      if (idx === 1) rankBadgeColor = 'var(--text-primary)';
+                      
+                      return (
+                        <div key={nom.id} className="leaderboard-row" style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', padding: '0.5rem 0' }}>
+                          {/* Rank badge */}
+                          <div style={{ 
+                            width: '32px', 
+                            height: '32px', 
+                            borderRadius: '50%', 
+                            background: rankBadgeColor, 
+                            color: idx === 0 || idx === 1 ? '#fff' : 'var(--text-primary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            fontSize: '0.85rem'
+                          }}>
+                            {rankText}
+                          </div>
+
+                          {/* Mini portrait */}
+                          <img src={nom.photo_url} alt={nom.name} style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '50%',
+                            objectFit: 'cover',
+                            border: idx === 0 ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                            boxShadow: idx === 0 ? '0 0 10px rgba(184, 152, 108, 0.3)' : 'none'
+                          }} />
+
+                          {/* Candidate details & Progress bar */}
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                              <span style={{ color: 'var(--text-primary)' }}>{nom.name} <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 400 }}>(REF. {nom.code})</span></span>
+                              <span style={{ color: 'var(--accent-dark)' }}>{nom.votes_count} votes ({percentage}%)</span>
+                            </div>
+                            
+                            {/* Animated Progress track */}
+                            <div style={{ height: '8px', background: 'var(--border-color)', overflow: 'hidden', borderRadius: '4px' }}>
+                              <div style={{ 
+                                height: '100%', 
+                                background: idx === 0 ? 'var(--accent)' : 'var(--text-primary)', 
+                                width: `${percentage}%`, 
+                                transition: 'width 1.2s cubic-bezier(0.25, 1, 0.5, 1)' 
+                              }} className="leaderboard-progress-fill"></div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {catNominees.length === 0 && (
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center', padding: '1.5rem 0' }}>
+                        No nominees registered under this category.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       ) : (
         /* PUBLIC VOTING LANDING PAGE */
         <div>
@@ -567,7 +709,7 @@ export default function App() {
           {/* Loading Indicator */}
           {loading && nominees.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '6rem 0' }}>
-              <h2 style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-secondary)', fontWeight: 300 }}>
+              <h2 className="loading-copy" style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-secondary)', fontWeight: 300 }}>
                 Catalog Loading...
               </h2>
             </div>
@@ -575,7 +717,7 @@ export default function App() {
             /* Nominees Editorial Column Grid */
             <div className="editorial-grid">
               {filteredNominees.length === 0 ? (
-                <div className="editorial-sheet" style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem 2rem' }}>
+                <div className="editorial-sheet no-results-copy" style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem 2rem' }}>
                   <h3 style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
                     No results found
                   </h3>
@@ -862,7 +1004,23 @@ export default function App() {
                     className="luxury-input"
                   />
                   <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
-                    Enter the candidate reference code generated by your system admin.
+                    Enter the candidate reference code.
+                  </span>
+                </div>
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
+                    Temporary Activation Code
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 123456"
+                    value={registerActivationCode}
+                    onChange={(e) => setRegisterActivationCode(e.target.value)}
+                    className="luxury-input"
+                  />
+                  <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
+                    Enter the 6-digit activation code provided by your system admin.
                   </span>
                 </div>
                 <div style={{ marginBottom: '2rem' }}>
@@ -970,6 +1128,31 @@ export default function App() {
             </div>
             
             <div className="control-center-body">
+              {/* Mobile Navigation Tabs */}
+              {!authAdmin && !authNominee && (
+                <div className="control-center-section" style={{ marginBottom: '1.5rem' }}>
+                  <span className="section-label">Navigation</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.5rem' }}>
+                    <button 
+                      onClick={() => { setActiveTab('vote'); setMobileMenuOpen(false); }}
+                      className={`control-theme-btn ${activeTab === 'vote' ? 'active' : ''}`}
+                      style={{ padding: '0.8rem 0.5rem', justifyContent: 'center', gap: '0.5rem' }}
+                    >
+                      <span>✦</span>
+                      <span>VOTE PORTAL</span>
+                    </button>
+                    <button 
+                      onClick={() => { setActiveTab('leaderboard'); setMobileMenuOpen(false); }}
+                      className={`control-theme-btn ${activeTab === 'leaderboard' ? 'active' : ''}`}
+                      style={{ padding: '0.8rem 0.5rem', justifyContent: 'center', gap: '0.5rem' }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"/><path d="M12 2a6 6 0 0 1 6 6v5a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8a6 6 0 0 1 6-6z"/></svg>
+                      <span>LEADERBOARD</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Theme Selector */}
               <div className="control-center-section">
                 <span className="section-label">Select Color Theme</span>

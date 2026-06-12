@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { API_BASE_URL } from '../config';
 
 export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
@@ -94,19 +94,22 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
         {isSuccess ? (
           /* Success Screen Drawer Panel */
           <div className="luxury-modal-body" style={{ textAlign: 'center', padding: '3rem 2.5rem' }}>
-            <div style={{
-              width: '60px',
-              height: '60px',
-              borderRadius: '50%',
-              background: 'var(--accent-light)',
-              color: 'var(--accent-dark)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.6rem',
-              margin: '0 auto 1.5rem auto',
-              fontWeight: 'bold'
-            }}>
+            <div
+              className="success-check"
+              style={{
+                width: '60px',
+                height: '60px',
+                borderRadius: '50%',
+                background: 'var(--accent-light)',
+                color: 'var(--accent-dark)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.6rem',
+                margin: '0 auto 1.5rem auto',
+                fontWeight: 'bold'
+              }}
+            >
               ✓
             </div>
             <h2 style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', fontWeight: 400, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>

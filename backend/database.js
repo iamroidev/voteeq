@@ -3,16 +3,12 @@ const { open } = require('sqlite');
 const path = require('path');
 const fs = require('fs');
 
-// For Render, use /var/data if available (persistent disk), otherwise use db/ subdir
-const dbDir = process.env.RENDER_PERSISTENT_DIR 
-  ? path.join(process.env.RENDER_PERSISTENT_DIR, 'db')
-  : path.join(__dirname, 'db');
-
-// Ensure the directory exists
+// On Render free tier, use the app directory directly (no persistent disk)
+// Data will reset on redeploy, but keeps it 100% free
+const dbDir = path.join(__dirname, 'db');
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
-
 const dbPath = path.join(dbDir, 'voteeq.db');
 
 let db = null;
@@ -73,7 +69,6 @@ async function initDB() {
     await db.run("INSERT INTO categories (name, description) VALUES ('Album of the Year', 'Exceptional collection of musical works')");
 
     // Seed nominees
-    // Passcode for demo: '1234' for simplicity. In production we would hash. We will store plain or basic hashed. Let's store '1234'.
     await db.run("INSERT INTO nominees (code, name, photo_url, category_id, passcode, votes_count) VALUES ('101', 'Stonebwoy', 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80', 1, '1234', 1250)");
     await db.run("INSERT INTO nominees (code, name, photo_url, category_id, passcode, votes_count) VALUES ('102', 'Shatta Wale', 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=500&q=80', 1, '4321', 890)");
     await db.run("INSERT INTO nominees (code, name, photo_url, category_id, passcode, votes_count) VALUES ('103', 'Sarkodie', 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=500&q=80', 1, '9999', 1420)");

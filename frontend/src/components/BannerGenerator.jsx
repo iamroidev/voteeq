@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { API_BASE_URL } from '../config';
 
-export default function BannerGenerator({ nominee, token }) {
+export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
 
@@ -25,6 +25,7 @@ export default function BannerGenerator({ nominee, token }) {
         throw new Error(data.error || 'Failed to save banner to server');
       }
       setSaveStatus('Campaign banner saved successfully! Social shares will preview this poster.');
+      if (onSaveSuccess) onSaveSuccess();
       setTimeout(() => setSaveStatus(''), 5000);
     } catch (err) {
       console.error(err);
@@ -367,7 +368,8 @@ export default function BannerGenerator({ nominee, token }) {
                 <button
                   key={c.value}
                   onClick={() => setAccent(c.value)}
-                  style={{
+              className="banner-save-status"
+              style={{
                     backgroundColor: c.value,
                     width: '22px',
                     height: '22px',
@@ -447,15 +449,16 @@ export default function BannerGenerator({ nominee, token }) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'center', margin: '1.5rem 0' }}>
-          <canvas
-            ref={canvasRef}
-            width={1200}
-            height={1200}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUpOrLeave}
-            onMouseLeave={handleMouseUpOrLeave}
-            style={{
+            <canvas
+              ref={canvasRef}
+              width={1200}
+              height={1200}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUpOrLeave}
+              onMouseLeave={handleMouseUpOrLeave}
+              className="banner-canvas"
+              style={{
               width: '100%',
               maxWidth: '450px',
               height: 'auto',
@@ -489,13 +492,16 @@ export default function BannerGenerator({ nominee, token }) {
             )}
           </div>
           {saveStatus && (
-            <div style={{
-              fontSize: '0.75rem',
-              color: saveStatus.startsWith('Error') ? '#c05a3e' : 'var(--accent-dark)',
-              fontWeight: 500,
-              textAlign: 'center',
-              animation: 'fadeIn 0.3s ease'
-            }}>
+            <div 
+              className="banner-save-status"
+              style={{
+                fontSize: '0.75rem',
+                color: saveStatus.startsWith('Error') ? '#c05a3e' : 'var(--accent-dark)',
+                fontWeight: 500,
+                textAlign: 'center',
+                animation: 'fadeIn 0.3s ease'
+              }}
+            >
               {saveStatus}
             </div>
           )}
