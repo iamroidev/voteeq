@@ -212,7 +212,8 @@ h1, h2, h3, h4 {
   margin-top: 1.5rem;
   margin-bottom: 4rem;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.015), inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  position: relative;
+  position: sticky;
+  top: 1.5rem;
   z-index: 100;
   transition: var(--transition-smooth);
   animation: nav-entrance 0.7s cubic-bezier(0.25, 1, 0.5, 1) both;
@@ -491,7 +492,7 @@ h1, h2, h3, h4 {
   border-color: var(--accent);
 }
 
-/* Categorization Filter Bar */
+/* Categorization Filter Bar - Sticky for easy access with large nominee listings */
 .filter-panel {
   display: flex;
   justify-content: space-between;
@@ -501,6 +502,14 @@ h1, h2, h3, h4 {
   margin-bottom: 4rem;
   padding-bottom: 1.5rem;
   border-bottom: var(--border-width) solid var(--border-color);
+  position: sticky;
+  top: 0;
+  background: rgba(250, 249, 246, 0.92); /* Glassy ivory matching page background */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 90;
+  padding-top: 1.5rem;
+  transition: var(--transition-fast);
 }
 
 .category-tabs {
@@ -814,6 +823,43 @@ h1, h2, h3, h4 {
   }
 }
 
+/* Mobile responsive modals (Bottom-sheet style for HCI thumb-zone compliance) */
+@media (max-width: 768px) {
+  .luxury-modal-overlay {
+    padding: 0;
+    align-items: flex-end; /* Bottom-sheet alignment on mobile */
+  }
+
+  .luxury-modal {
+    max-width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 16px 16px 0 0;
+    border: none;
+    border-top: var(--border-width) solid var(--border-color);
+    animation: modal-slide-up-mobile 0.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  }
+
+  @keyframes modal-slide-up-mobile {
+    0% { transform: translateY(100%); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+
+  .luxury-modal-header {
+    padding: 1.25rem 1.5rem;
+    position: sticky;
+    top: 0;
+    background: var(--bg-secondary);
+    z-index: 10;
+  }
+
+  .luxury-modal-body {
+    padding: 1.5rem;
+    padding-bottom: 2.5rem; /* Safe area for virtual home bar */
+  }
+}
+
 .metric-box-glow {
   animation: metric-fade-in 0.7s cubic-bezier(0.25, 1, 0.5, 1) both;
 }
@@ -1098,9 +1144,10 @@ h1, h2, h3, h4 {
   .filter-panel {
     flex-direction: column;
     align-items: stretch;
-    gap: 1.25rem;
+    gap: 0.75rem; /* Reduced gap to conserve vertical mobile screen area */
     margin-bottom: 2.5rem;
-    padding-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    padding-top: 1rem;
   }
 
   /* Horizontal scrolling category pills for frictionless mobile swiping */

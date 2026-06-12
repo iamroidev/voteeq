@@ -11,8 +11,9 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
   const voteShortcuts = [5, 10, 25, 50, 100];
   const pricePerVote = 1; // 1 GHS per vote
 
-  const parsedVotes = parseInt(voteCount) || 0;
-  const isInvalidVotes = parsedVotes <= 0 || isNaN(parsedVotes) || parseFloat(voteCount) !== parsedVotes;
+  const MAX_VOTES = 10000;
+  const parsedVotes = Math.min(parseInt(voteCount) || 0, MAX_VOTES);
+  const isInvalidVotes = parsedVotes <= 0 || isNaN(parseInt(voteCount)) || parseFloat(voteCount) !== parseInt(voteCount);
 
   const handleVoteSubmit = async (e) => {
     e.preventDefault();
@@ -143,9 +144,17 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
                 <input
                   type="number"
                   min="1"
+                  max={MAX_VOTES}
                   step="1"
+                  inputMode="numeric"
                   value={voteCount}
-                  onChange={(e) => setVoteCount(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // Allow empty for clearing, but cap at MAX_VOTES
+                    if (val === '') { setVoteCount(''); return; }
+                    const num = parseInt(val);
+                    if (!isNaN(num) && num <= MAX_VOTES) setVoteCount(num);
+                  }}
                   className="luxury-input"
                   style={{ 
                     width: '110px', 
@@ -202,9 +211,11 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
               marginBottom: '2rem',
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'center'
+              alignItems: 'center',
+              gap: '1rem',
+              overflow: 'hidden'
             }}>
-              <div>
+              <div style={{ flexShrink: 0 }}>
                 <span style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
                   Rate per vote
                 </span>
@@ -212,11 +223,11 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
                   GHS {pricePerVote.toFixed(2)}
                 </p>
               </div>
-              <div style={{ textAlign: 'right' }}>
+              <div style={{ textAlign: 'right', minWidth: 0 }}>
                 <span style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
                   Total cost due
                 </span>
-                <p style={{ fontSize: '1.6rem', fontFamily: 'var(--font-serif)', color: 'var(--accent-dark)', marginTop: '0.15rem' }}>
+                <p style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', color: 'var(--accent-dark)', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   GHS {(parsedVotes * pricePerVote).toFixed(2)}
                 </p>
               </div>
