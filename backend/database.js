@@ -1,6 +1,7 @@
 const { createClient } = require('@libsql/client');
 const path = require('path');
 const fs = require('fs');
+const { hashPin, isProduction } = require('./security');
 
 // Support local volume fallback (e.g. Railway volume or local dev folder)
 const dbDir = process.env.RAILWAY_VOLUME_MOUNT 
@@ -56,6 +57,20 @@ const dbWrapper = {
     } else {
       await client.execute(sql);
     }
+  },
+
+  async transaction(fn) {
+    await client.execute('BEGIN IMMEDIATE');
+    try {
+      const result = await fn(dbWrapper);
+      await client.execute('COMMIT');
+      return result;
+    } catch (err) {
+      try {
+        await client.execute('ROLLBACK');
+      } catch (_) { /* ignore */ }
+      throw err;
+    }
   }
 };
 
@@ -66,12 +81,22 @@ async function initDB() {
   const url = process.env.TURSO_DATABASE_URL || localUrl;
   const authToken = process.env.TURSO_AUTH_TOKEN;
 
+  if (isProduction() && !process.env.TURSO_DATABASE_URL) {
+    throw new Error('TURSO_DATABASE_URL is required in production');
+  }
+
   console.log(`Connecting database to: ${url.startsWith('file:') ? 'Local SQLite file' : 'Turso Cloud SQLite'}`);
 
   client = createClient({
     url,
     authToken
   });
+
+  try {
+    await client.execute('PRAGMA foreign_keys = ON;');
+  } catch (e) {
+    console.warn('Could not enable foreign keys:', e.message);
+  }
 
   // Enable WAL mode for local file connections
   if (url.startsWith('file:')) {
@@ -88,6 +113,22 @@ async function initDB() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await dbWrapper.exec(`
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT,
+      date TEXT,
+      venue TEXT,
+      ticket_price REAL DEFAULT 0.0,
+      privacy TEXT DEFAULT 'public',
+      access_code TEXT,
+      total_tickets INTEGER DEFAULT 100,
+      tickets_sold INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
@@ -145,22 +186,6 @@ async function initDB() {
   `);
 
   await dbWrapper.exec(`
-    CREATE TABLE IF NOT EXISTS events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      description TEXT,
-      date TEXT,
-      venue TEXT,
-      ticket_price REAL DEFAULT 0.0,
-      privacy TEXT DEFAULT 'public',
-      access_code TEXT,
-      total_tickets INTEGER DEFAULT 100,
-      tickets_sold INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  await dbWrapper.exec(`
     CREATE TABLE IF NOT EXISTS tickets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       event_id INTEGER NOT NULL,
@@ -206,33 +231,49 @@ async function initDB() {
     // Suppress if column already exists
   }
 
-  // Seed default data if database is empty
-  const categoryCount = await dbWrapper.get('SELECT COUNT(*) as count FROM categories');
-  if (categoryCount.count === 0) {
-    console.log('Seeding initial database categories and nominees...');
-    
-    // Seed categories
-    await dbWrapper.run("INSERT INTO categories (name, description) VALUES ('Artist of the Year', 'Outstanding creative musical talent')");
-    await dbWrapper.run("INSERT INTO categories (name, description) VALUES ('Best New Artist', 'Most promising breakthrough talent')");
-    await dbWrapper.run("INSERT INTO categories (name, description) VALUES ('Album of the Year', 'Exceptional collection of musical works')");
+  await dbWrapper.exec('CREATE INDEX IF NOT EXISTS idx_votes_payment_reference ON votes(payment_reference);');
+  await dbWrapper.exec('CREATE INDEX IF NOT EXISTS idx_tickets_payment_reference ON tickets(payment_reference);');
+  await dbWrapper.exec('CREATE INDEX IF NOT EXISTS idx_tickets_ticket_code ON tickets(ticket_code);');
+  await dbWrapper.exec('CREATE INDEX IF NOT EXISTS idx_nominees_code ON nominees(code);');
 
-    // Seed nominees
-    await dbWrapper.run("INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES ('101', 'Stonebwoy', 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80', 1, 1, '1234', 1250)");
-    await dbWrapper.run("INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES ('102', 'Shatta Wale', 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=500&q=80', 1, 1, '4321', 890)");
-    await dbWrapper.run("INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES ('103', 'Sarkodie', 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=500&q=80', 1, 1, '9999', 1420)");
+  // Demo seed data — development only
+  if (!isProduction()) {
+    let eventCount = await dbWrapper.get('SELECT COUNT(*) as count FROM events');
+    if (eventCount.count === 0) {
+      console.log('Seeding demo events...');
+      await dbWrapper.run("INSERT INTO events (title, description, date, venue, ticket_price, privacy, total_tickets, tickets_sold) VALUES ('Voteeq Awards Night', 'Celebrate excellence in musical art and performances.', '2026-07-25', 'National Theatre, Accra', 50.0, 'public', 200, 0)");
+      await dbWrapper.run("INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold) VALUES ('VIP Afterparty', 'VIP Private Gathering for nominees and special guests.', '2026-07-26', 'Skybar 25, Accra', 150.0, 'private', 'VIP2026', 50, 0)");
+      eventCount = { count: 2 };
+    }
 
-    await dbWrapper.run("INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES ('201', 'Black Sherif', 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&q=80', 2, 1, '1111', 2300)");
-    await dbWrapper.run("INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES ('202', 'King Promise', 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80', 2, 1, '2222', 1500)");
+    let categoryCount = await dbWrapper.get('SELECT COUNT(*) as count FROM categories');
+    if (categoryCount.count === 0) {
+      console.log('Seeding demo categories...');
+      await dbWrapper.run("INSERT INTO categories (name, description) VALUES ('Artist of the Year', 'Outstanding creative musical talent')");
+      await dbWrapper.run("INSERT INTO categories (name, description) VALUES ('Best New Artist', 'Most promising breakthrough talent')");
+      await dbWrapper.run("INSERT INTO categories (name, description) VALUES ('Album of the Year', 'Exceptional collection of musical works')");
+      categoryCount = { count: 3 };
+    }
 
-    await dbWrapper.run("INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES ('301', '5th Dimension', 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=500&q=80', 3, 1, '3333', 350)");
-  }
-
-  // Seed default events if empty
-  const eventCount = await dbWrapper.get('SELECT COUNT(*) as count FROM events');
-  if (eventCount.count === 0) {
-    console.log('Seeding initial database events...');
-    await dbWrapper.run("INSERT INTO events (title, description, date, venue, ticket_price, privacy, total_tickets, tickets_sold) VALUES ('Voteeq Awards Night', 'Celebrate excellence in musical art and performances.', '2026-07-25', 'National Theatre, Accra', 50.0, 'public', 200, 0)");
-    await dbWrapper.run("INSERT INTO events (title, description, date, venue, ticket_price, privacy, access_code, total_tickets, tickets_sold) VALUES ('VIP Afterparty', 'VIP Private Gathering for nominees and special guests.', '2026-07-26', 'Skybar 25, Accra', 150.0, 'private', 'VIP2026', 50, 0)");
+    const nomineeCount = await dbWrapper.get('SELECT COUNT(*) as count FROM nominees');
+    if (nomineeCount.count === 0 && categoryCount.count > 0 && eventCount.count > 0) {
+      console.log('Seeding demo nominees (hashed PINs)...');
+      const demoNominees = [
+        ['101', 'Stonebwoy', 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80', 1, 1, '1234', 1250],
+        ['102', 'Shatta Wale', 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=500&q=80', 1, 1, '4321', 890],
+        ['103', 'Sarkodie', 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=500&q=80', 1, 1, '9999', 1420],
+        ['201', 'Black Sherif', 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&q=80', 2, 1, '1111', 2300],
+        ['202', 'King Promise', 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80', 2, 1, '2222', 1500],
+        ['301', '5th Dimension', 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=500&q=80', 3, 1, '3333', 350],
+      ];
+      for (const [code, name, photo, catId, eventId, pin, votes] of demoNominees) {
+        const hashedPin = await hashPin(pin);
+        await dbWrapper.run(
+          'INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [code, name, photo, catId, eventId, hashedPin, votes]
+        );
+      }
+    }
   }
 
   return dbWrapper;

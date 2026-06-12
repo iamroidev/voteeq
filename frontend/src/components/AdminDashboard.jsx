@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../config';
+import { authFetch } from '../utils/api';
 
 export default function AdminDashboard({ token, onLogout, categories, nominees, refreshData, wsTrigger }) {
   const [stats, setStats] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
   const [alertDialog, setAlertDialog] = useState(null);
-  const [revealedPins, setRevealedPins] = useState({});
+  const [fetchError, setFetchError] = useState('');
   const [loadingStats, setLoadingStats] = useState(true);
   const [registrations, setRegistrations] = useState([]);
   
@@ -23,6 +24,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
   const [nomError, setNomError] = useState('');
   const [nomSuccess, setNomSuccess] = useState('');
   const [createdActivationCode, setCreatedActivationCode] = useState('');
+  const [newNomEventId, setNewNomEventId] = useState('');
 
   // Active sub-view tab: 'overview', 'nominees', 'categories'
   const [activeSubTab, setActiveSubTab] = useState('overview');
@@ -57,25 +59,29 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/overview`, {
+      const res = await authFetch('/api/admin/overview', {
         headers: { 'Authorization': `Bearer ${token}` }
-      });
+      }, onLogout);
       if (res.ok) {
         const data = await res.json();
         setStats(data);
+        setFetchError('');
+      } else if (res.status !== 401 && res.status !== 403) {
+        setFetchError('Failed to load admin overview.');
       }
     } catch (err) {
       console.error('Failed to load admin stats:', err);
+      setFetchError('Network error loading admin data.');
     } finally {
       setLoadingStats(false);
     }
-  }, [token]);
+  }, [token, onLogout]);
 
   const fetchRegistrations = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/registrations`, {
+      const res = await authFetch('/api/admin/registrations', {
         headers: { 'Authorization': `Bearer ${token}` }
-      });
+      }, onLogout);
       if (res.ok) {
         const data = await res.json();
         setRegistrations(data);
@@ -83,15 +89,17 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
     } catch (err) {
       console.error('Failed to load registrations:', err);
     }
-  }, [token]);
+  }, [token, onLogout]);
 
   const fetchTicketsData = useCallback(async () => {
     try {
       setLoadingTickets(true);
-      const resTickets = await fetch(`${API_BASE_URL}/api/admin/tickets`, {
+      const resTickets = await authFetch('/api/admin/tickets', {
         headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const resEvents = await fetch(`${API_BASE_URL}/api/events`);
+      }, onLogout);
+      const resEvents = await authFetch('/api/events', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }, onLogout);
       
       if (resTickets.ok && resEvents.ok) {
         const ticketsData = await resTickets.json();
@@ -104,14 +112,14 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
     } finally {
       setLoadingTickets(false);
     }
-  }, [token]);
+  }, [token, onLogout]);
 
   const fetchAuditLogs = useCallback(async () => {
     try {
       setLoadingAudit(true);
-      const res = await fetch(`${API_BASE_URL}/api/admin/audit-logs`, {
+      const res = await authFetch('/api/admin/audit-logs', {
         headers: { 'Authorization': `Bearer ${token}` }
-      });
+      }, onLogout);
       if (res.ok) {
         const data = await res.json();
         setAuditLogs(data);
@@ -121,7 +129,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
     } finally {
       setLoadingAudit(false);
     }
-  }, [token]);
+  }, [token, onLogout]);
 
   const handleScanTicket = async (codeToScan) => {
     const targetCode = codeToScan || scanCode;
@@ -164,7 +172,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
     const timeoutId = setTimeout(() => {
       fetchStats();
       fetchRegistrations();
-      if (activeSubTab === 'tickets' || activeSubTab === 'events') {
+      if (activeSubTab === 'tickets' || activeSubTab === 'events' || activeSubTab === 'nominees') {
         fetchTicketsData();
       }
       if (activeSubTab === 'audit') {
@@ -193,10 +201,9 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                 <p>The candidate application has been approved.</p>
                 <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '4px', fontFamily: 'monospace' }}>
                   <p><strong>Nominee Code:</strong> {data.assignedCode}</p>
-                  <p style={{ marginTop: '0.25rem' }}><strong>Activation PIN:</strong> {data.activationPin}</p>
                 </div>
                 <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.75rem' }}>
-                  Provide this activation PIN to the nominee so they can register and activate their dashboard.
+                  The activation PIN was sent via your notification channel. Share the nominee code with the applicant.
                 </p>
               </div>
             )
@@ -300,11 +307,12 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
+          body: JSON.stringify({
           code: newNomCode,
           name: newNomName,
           photo_url: newNomPhoto,
-          category_id: parseInt(newNomCategoryId)
+          category_id: parseInt(newNomCategoryId),
+          event_id: newNomEventId ? parseInt(newNomEventId) : null
         })
       });
       const data = await res.json();
@@ -318,6 +326,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       setNewNomName('');
       setNewNomPhoto('');
       setNewNomCategoryId('');
+      setNewNomEventId('');
       refreshData();
     } catch (err) {
       setNomError(err.message);
@@ -348,6 +357,11 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
 
   return (
     <div className="admin-dashboard-container" style={{ animation: 'fadeIn 0.6s ease' }}>
+      {fetchError && (
+        <div style={{ marginBottom: '1.5rem', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(244, 67, 54, 0.3)', color: '#c62828', fontSize: '0.85rem' }}>
+          {fetchError}
+        </div>
+      )}
       {/* Header Panel */}
       <div className="dashboard-header-card" style={{ marginBottom: '3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.5rem', padding: '2rem', background: 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.5)', borderRadius: '24px' }}>
         <div>
@@ -551,6 +565,16 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                   <option value="">-- Choose Category --</option>
                   {categories.map(c => (
                     <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.4rem', color: 'var(--text-secondary)' }}>Event Context</label>
+                <select value={newNomEventId} onChange={e => setNewNomEventId(e.target.value)} className="luxury-select" style={{ width: '100%', height: '43px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
+                  <option value="">Default Event</option>
+                  {eventsList.map(ev => (
+                    <option key={ev.id} value={ev.id}>{ev.title}</option>
                   ))}
                 </select>
               </div>
@@ -796,30 +820,11 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                             color: '#27ae60',
                             border: '1px solid rgba(46, 204, 113, 0.3)' 
                           }}>APPROVED</span>
-                          <div style={{ marginTop: '0.5rem' }}>
-                            <p style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                              Code: {revealedPins[reg.id] ? reg.nominee_code : '••••'}
+                          {reg.nominee_code && (
+                            <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                              Code: {reg.nominee_code}
                             </p>
-                            <p style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                              PIN: {revealedPins[reg.id] ? reg.activation_pin : '••••'}
-                            </p>
-                            <button 
-                              onClick={() => setRevealedPins(prev => ({ ...prev, [reg.id]: !prev[reg.id] }))}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                padding: 0,
-                                fontSize: '0.65rem',
-                                color: 'var(--accent-dark)',
-                                textDecoration: 'underline',
-                                fontWeight: 600,
-                                marginTop: '0.25rem'
-                              }}
-                            >
-                              {revealedPins[reg.id] ? 'Hide' : 'Reveal'}
-                            </button>
-                          </div>
+                          )}
                         </div>
                       ) : (
                         <span style={{ 

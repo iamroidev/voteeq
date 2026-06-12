@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config';
+import { readStoredAuth } from '../utils/storage';
 
-export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, activeEventId }) {
+export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, activeEventId, onEventSelect }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -19,10 +20,10 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
 
   // Ticket Lookup States
   const [lookupQuery, setLookupQuery] = useState('');
+  const [lookupEmail, setLookupEmail] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState('');
   const [lookupSuccess, setLookupSuccess] = useState('');
-  const [eventFilter, setEventFilter] = useState('all');
 
   const handleLookupTickets = async (e) => {
     e.preventDefault();
@@ -31,15 +32,23 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
     setLookupError('');
     setLookupSuccess('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/tickets/lookup?query=${encodeURIComponent(lookupQuery.trim())}`);
+      const trimmed = lookupQuery.trim();
+      const isTicketCode = /^TIX-/i.test(trimmed);
+      const lookupUrl = isTicketCode
+        ? `${API_BASE_URL}/api/tickets/lookup?ticket_code=${encodeURIComponent(trimmed)}`
+        : `${API_BASE_URL}/api/tickets/lookup?reference=${encodeURIComponent(trimmed)}&email=${encodeURIComponent(lookupEmail.trim())}`;
+      if (!isTicketCode && !lookupEmail.trim()) {
+        throw new Error('Enter your buyer email when looking up by payment reference.');
+      }
+      const res = await fetch(lookupUrl);
       if (res.ok) {
         const data = await res.json();
         if (data.length === 0) {
           setLookupError('No active paid tickets found for this query.');
         } else {
           // Merge retrieved tickets into localStorage list
-          const saved = localStorage.getItem('voteeq_purchased_tickets');
-          const ticketsList = saved ? JSON.parse(saved) : [];
+          const saved = readStoredAuth('voteeq_purchased_tickets') || [];
+          const ticketsList = Array.isArray(saved) ? saved : [];
           let addedCount = 0;
           data.forEach(retrieved => {
             if (!ticketsList.some(t => t.ticket_code === retrieved.ticket_code)) {
@@ -64,15 +73,11 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
   };
   
   // Local list of tickets bought during this session (to make mock scanning verification easy)
-  const [purchasedTickets, setPurchasedTickets] = useState(() => {
-    const saved = localStorage.getItem('voteeq_purchased_tickets');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [purchasedTickets, setPurchasedTickets] = useState(() => readStoredAuth('voteeq_purchased_tickets') || []);
 
   useEffect(() => {
     const reloadTickets = () => {
-      const saved = localStorage.getItem('voteeq_purchased_tickets');
-      setPurchasedTickets(saved ? JSON.parse(saved) : []);
+      setPurchasedTickets(readStoredAuth('voteeq_purchased_tickets') || []);
     };
     window.addEventListener('storage', reloadTickets);
     window.addEventListener('ticket-purchased', reloadTickets);
@@ -81,10 +86,6 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
       window.removeEventListener('ticket-purchased', reloadTickets);
     };
   }, []);
-
-  useEffect(() => {
-    setEventFilter(activeEventId ? String(activeEventId) : 'all');
-  }, [activeEventId]);
 
   const fetchEvents = async () => {
     try {
@@ -102,9 +103,9 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
     }
   };
 
-  const visibleEvents = eventFilter === 'all'
-    ? events
-    : events.filter(ev => String(ev.id) === String(eventFilter));
+  const visibleEvents = activeEventId
+    ? events.filter(ev => String(ev.id) === String(activeEventId))
+    : events;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -198,12 +199,11 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
               Event Filter
             </span>
             <select
-              value={eventFilter}
-              onChange={(e) => setEventFilter(e.target.value)}
+              value={activeEventId ? String(activeEventId) : ''}
+              onChange={(e) => onEventSelect?.(e.target.value)}
               className="luxury-select"
               style={{ padding: '0.55rem 0.75rem', fontSize: '0.7rem' }}
             >
-              <option value="all">All Events</option>
               {events.map(ev => (
                 <option key={ev.id} value={ev.id}>{ev.title}</option>
               ))}
@@ -459,24 +459,34 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
           Retrieve Purchased Tickets
         </h3>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', textAlign: 'center', lineHeight: '1.5' }}>
-          Bought tickets on another device or cleared your cache? Enter your Email, Phone number, Ticket code, or Payment reference to restore your passes.
+          Enter your ticket code (TIX-...) or payment reference plus the email used at checkout.
         </p>
 
-        <form onSubmit={handleLookupTickets} style={{ display: 'flex', gap: '0.75rem', maxWidth: '500px', margin: '0 auto' }}>
+        <form onSubmit={handleLookupTickets} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: '500px', margin: '0 auto' }}>
           <input 
             type="text" 
-            placeholder="ENTER EMAIL, PHONE, OR REF..." 
+            placeholder="TICKET CODE OR PAYMENT REFERENCE" 
             value={lookupQuery} 
             onChange={(e) => setLookupQuery(e.target.value)}
             className="luxury-input"
-            style={{ flex: 1, padding: '0.6rem 0.75rem', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+            style={{ width: '100%', padding: '0.6rem 0.75rem', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}
             required
           />
+          {!/^TIX-/i.test(lookupQuery.trim()) && (
+            <input
+              type="email"
+              placeholder="BUYER EMAIL (required for payment reference)"
+              value={lookupEmail}
+              onChange={(e) => setLookupEmail(e.target.value)}
+              className="luxury-input"
+              style={{ width: '100%', padding: '0.6rem 0.75rem', fontSize: '0.75rem' }}
+            />
+          )}
           <button 
             type="submit" 
             disabled={lookupLoading}
             className="luxury-btn" 
-            style={{ padding: '0.6rem 1.5rem', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+            style={{ padding: '0.6rem 1.5rem', fontSize: '0.75rem', width: '100%' }}
           >
             {lookupLoading ? 'SEARCHING...' : 'FIND PASSES'}
           </button>

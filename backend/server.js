@@ -3,9 +3,29 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const http = require('http');
 const { initDB, getDB } = require('./database');
+const {
+  hashPin,
+  verifyPin,
+  isPendingActivation,
+  verifyAdminCredentials,
+  generateReference,
+  generateStatusToken,
+  verifyStatusToken,
+  escapeHtml,
+  isValidPhotoUrl,
+  isValidNomineeCode,
+  validateProductionConfig,
+  mockPaymentsAllowed,
+  timingSafeEqualStr,
+  MAX_VOTES_PER_TRANSACTION,
+  isProduction,
+} = require('./security');
 require('dotenv').config();
 
+validateProductionConfig();
+
 const app = express();
+app.set('trust proxy', 1);
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);
 
@@ -28,9 +48,11 @@ function broadcast(data) {
   }
 }
 
-// Dynamic HMAC token security (alternative to heavy JWT library)
 const crypto = require('crypto');
-const JWT_SECRET = process.env.JWT_SECRET || 'voteeq_super_secret_key_123';
+const JWT_SECRET = process.env.JWT_SECRET || (isProduction() ? null : 'voteeq_dev_secret_key');
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET is required in production');
+}
 
 function generateToken(payload) {
   const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -44,7 +66,7 @@ function verifyToken(token) {
   if (parts.length !== 2) return null;
   const [data, signature] = parts;
   const expectedSignature = crypto.createHmac('sha256', JWT_SECRET).update(data).digest('base64url');
-  if (signature !== expectedSignature) return null;
+  if (!timingSafeEqualStr(signature, expectedSignature)) return null;
   try {
     const payload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
     if (payload.exp && payload.exp < Date.now()) {
@@ -154,10 +176,17 @@ const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()) 
   : ['http://localhost:5173', 'http://localhost:4173', 'https://voteeq-roi-dev.vercel.app', 'https://frontend-roi-dev.vercel.app'];
 
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+    if (allowedOrigins.indexOf(origin) !== -1 || !isProduction()) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -165,12 +194,22 @@ app.use(cors({
   }
 }));
 app.use(bodyParser.json({ 
-  limit: '10mb',
+  limit: '2mb',
   verify: (req, res, buf) => {
     req.rawBody = buf;
   }
 })); // support large canvas uploads
-app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '2mb' }));
+
+app.get('/health', async (req, res) => {
+  try {
+    const db = getDB();
+    await db.get('SELECT 1 as ok');
+    res.json({ status: 'ok', database: 'connected' });
+  } catch {
+    res.status(503).json({ status: 'error', database: 'disconnected' });
+  }
+});
 
 // Ensure banners folder exists
 const bannersDir = path.resolve(__dirname, 'banners');
@@ -186,6 +225,17 @@ const ussdSessions = new Map();
 async function findNomineeByCode(code) {
   const db = getDB();
   return await db.get('SELECT * FROM nominees WHERE code = ?', [code]);
+}
+
+function maskPhone(phone) {
+  if (!phone) return 'N/A';
+  const s = String(phone);
+  if (s.length <= 4) return '****';
+  return '*'.repeat(Math.min(s.length - 4, 6)) + s.slice(-4);
+}
+
+function adminUsername(req) {
+  return req.admin?.username || 'admin';
 }
 
 // ----------------------------------------------------
@@ -210,7 +260,7 @@ app.get('/api/nominees', async (req, res) => {
     const db = getDB();
     const eventId = req.query.event_id ? String(req.query.event_id) : null;
     const nominees = await db.all(`
-      SELECT n.*, c.name as category_name 
+      SELECT n.id, n.code, n.name, n.photo_url, n.category_id, n.event_id, n.votes_count, n.created_at, c.name as category_name 
       FROM nominees n 
       JOIN categories c ON n.category_id = c.id
       ${eventId ? 'WHERE n.event_id = ? OR n.event_id IS NULL' : ''}
@@ -237,8 +287,17 @@ app.post('/api/nominees/login', rateLimiter(15 * 60 * 1000, 10), async (req, res
       return res.status(401).json({ error: 'Nominee not found' });
     }
 
-    if (nominee.passcode !== passcode) {
+    if (isPendingActivation(nominee.passcode)) {
+      return res.status(401).json({ error: 'Account not activated. Use Register PIN from the menu.' });
+    }
+
+    const pinResult = await verifyPin(passcode, nominee.passcode);
+    if (!pinResult.valid) {
       return res.status(401).json({ error: 'Invalid PIN code' });
+    }
+    if (pinResult.needsRehash) {
+      const hashed = await hashPin(passcode);
+      await db.run('UPDATE nominees SET passcode = ? WHERE code = ?', [hashed, code]);
     }
 
     // Secure cryptographic signature token
@@ -257,6 +316,7 @@ app.post('/api/nominees/login', rateLimiter(15 * 60 * 1000, 10), async (req, res
         name: nominee.name,
         photo_url: nominee.photo_url,
         category_id: nominee.category_id,
+        event_id: nominee.event_id,
         votes_count: nominee.votes_count
       }
     });
@@ -298,7 +358,8 @@ app.post('/api/nominees/register', rateLimiter(15 * 60 * 1000, 10), async (req, 
       }
     }
 
-    await db.run('UPDATE nominees SET passcode = ? WHERE code = ?', [newPin, code]);
+    const hashedPin = await hashPin(newPin);
+    await db.run('UPDATE nominees SET passcode = ? WHERE code = ?', [hashedPin, code]);
 
     res.json({ success: true, message: 'Account activated successfully!' });
   } catch (err) {
@@ -314,9 +375,10 @@ app.post('/api/admin/login', rateLimiter(15 * 60 * 1000, 10), async (req, res) =
     return res.status(400).json({ error: 'Username and Password are required' });
   }
 
-  if (username === 'admin' && password === 'admin123') {
+  if (verifyAdminCredentials(username, password)) {
     const token = generateToken({
       role: 'admin',
+      username,
       exp: Date.now() + 24 * 60 * 60 * 1000 // 24 Hours
     });
     res.json({
@@ -328,11 +390,22 @@ app.post('/api/admin/login', rateLimiter(15 * 60 * 1000, 10), async (req, res) =
   }
 });
 
-// 1b. Get all events
+// 1b. Get all events (access codes hidden from public)
 app.get('/api/events', async (req, res) => {
   try {
     const db = getDB();
-    const events = await db.all('SELECT * FROM events ORDER BY date ASC');
+    const authHeader = req.headers.authorization;
+    let isAdmin = false;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      isAdmin = !!(payload && payload.role === 'admin');
+    }
+    const events = isAdmin
+      ? await db.all('SELECT * FROM events ORDER BY date ASC')
+      : await db.all(`
+          SELECT id, title, description, date, venue, ticket_price, privacy, total_tickets, tickets_sold, created_at
+          FROM events ORDER BY date ASC
+        `);
     res.json(events);
   } catch (err) {
     console.error(err);
@@ -353,6 +426,11 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     return res.status(400).json({ error: 'Invalid quantity. A maximum of 5 tickets can be bought at once.' });
   }
 
+  const secretKey = process.env.PAYSTACK_SECRET_KEY;
+  if (isProduction() && !secretKey) {
+    return res.status(503).json({ error: 'Ticket payments are not configured yet. Please try again later.' });
+  }
+
   try {
     const db = getDB();
     await cleanupStaleTickets(db);
@@ -367,33 +445,50 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
       }
     }
 
-    if (event.tickets_sold + qty > event.total_tickets) {
-      return res.status(400).json({ error: 'Ticket booking failed: Sold out or insufficient tickets remaining.' });
-    }
-
-    // Generate secure 8-character uppercase alphanumeric code
     const ticketCode = `TIX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     const totalPrice = event.ticket_price * qty;
-    const reference = `tix_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const reference = generateReference('tix');
+    const statusToken = generateStatusToken(reference);
 
-    await db.run(`
-      INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-    `, [event_id, ticketCode, buyer_name, buyer_email, buyer_phone, qty, totalPrice, reference]);
-
-    res.json({
-      reference,
-      authorization_url: `/mock-paystack-checkout?reference=${reference}&amount=${totalPrice}&event=${encodeURIComponent(event.title)}&quantity=${qty}&isTicket=true`,
-      isMock: true
+    await db.transaction(async (tx) => {
+      const capacity = await tx.get(
+        'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
+        [event_id]
+      );
+      if (!capacity || capacity.tickets_sold + qty > capacity.total_tickets) {
+        throw new Error('SOLD_OUT');
+      }
+      await tx.run(`
+        INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      `, [event_id, ticketCode, buyer_name, buyer_email, buyer_phone, qty, totalPrice, reference]);
     });
+
+    if (!secretKey) {
+      return res.json({
+        reference,
+        statusToken,
+        authorization_url: `/mock-paystack-checkout?reference=${reference}&statusToken=${statusToken}&amount=${totalPrice}&event=${encodeURIComponent(event.title)}&quantity=${qty}&isTicket=true`,
+        isMock: true
+      });
+    }
+
+    // Paystack integration for tickets will be wired when PAYSTACK_SECRET_KEY is configured
+    res.status(503).json({ error: 'Ticket Paystack checkout is not wired yet. Configure payments first.' });
   } catch (err) {
+    if (err.message === 'SOLD_OUT') {
+      return res.status(400).json({ error: 'Ticket booking failed: Sold out or insufficient tickets remaining.' });
+    }
     console.error(err);
     res.status(500).json({ error: 'Failed to initialize ticket purchase' });
   }
 });
 
-// Mock Paystack Ticket Success Trigger
+// Mock Paystack Ticket Success Trigger (development only)
 app.post('/api/payment/mock-verify-ticket', rateLimiter(1 * 60 * 1000, 20), async (req, res) => {
+  if (!mockPaymentsAllowed()) {
+    return res.status(404).json({ error: 'Not found' });
+  }
   const { reference } = req.body;
   if (!reference) {
     return res.status(400).json({ error: 'Reference code is required' });
@@ -585,9 +680,18 @@ app.delete('/api/admin/categories/:id', requireAdmin, async (req, res) => {
 
 // 3f. Create Nominee
 app.post('/api/admin/nominees', requireAdmin, async (req, res) => {
-  const { code, name, photo_url, category_id } = req.body;
+  const { code, name, photo_url, category_id, event_id } = req.body;
   if (!code || !name || !category_id) {
     return res.status(400).json({ error: 'Code, Name and Category are required' });
+  }
+  if (!isValidNomineeCode(code)) {
+    return res.status(400).json({ error: 'Invalid nominee code format' });
+  }
+
+  const defaultPhoto = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80';
+  const resolvedPhoto = photo_url || defaultPhoto;
+  if (!isValidPhotoUrl(resolvedPhoto)) {
+    return res.status(400).json({ error: 'Photo URL must be a valid http(s) URL' });
   }
 
   try {
@@ -602,18 +706,20 @@ app.post('/api/admin/nominees', requireAdmin, async (req, res) => {
     const activationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
     await db.run(
-      'INSERT INTO nominees (code, name, photo_url, category_id, passcode, votes_count) VALUES (?, ?, ?, ?, ?, 0)',
+      'INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES (?, ?, ?, ?, ?, ?, 0)',
       [
         code,
         name,
-        photo_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80',
+        resolvedPhoto,
         category_id,
+        event_id ? parseInt(event_id, 10) : null,
         `PENDING_ACT_${activationCode}`
       ]
     );
+    await logAdminAction(adminUsername(req), 'CREATE_NOMINEE', `Created nominee: ${name} (${code})`);
     res.json({ 
       success: true, 
-      message: 'Nominee added in PENDING activation state!',
+      message: 'Nominee added in PENDING activation state. Save the activation code now — it will not be shown again.',
       activationCode: activationCode
     });
   } catch (err) {
@@ -667,14 +773,17 @@ app.get('/api/nominees/dashboard/:code', async (req, res) => {
       return res.status(404).json({ error: 'Nominee not found' });
     }
 
-    // Get recent votes
-    const votes = await db.all(`
+    // Get recent votes (masked phone numbers)
+    const rawVotes = await db.all(`
       SELECT id, voter_phone, vote_count, channel, status, created_at
       FROM votes
       WHERE nominee_id = ?
       ORDER BY created_at DESC
       LIMIT 10
     `, [nominee.id]);
+    const votes = rawVotes.map(v => ({ ...v, voter_phone: maskPhone(v.voter_phone) }));
+
+    const { passcode, ...safeNominee } = nominee;
 
     // Sum vote methods
     const channelStats = await db.all(`
@@ -687,7 +796,7 @@ app.get('/api/nominees/dashboard/:code', async (req, res) => {
     const hasCustomBanner = fs.existsSync(path.join(bannersDir, `${code}.png`));
 
     res.json({
-      nominee,
+      nominee: safeNominee,
       recentVotes: votes,
       hasCustomBanner,
       channelStats: {
@@ -722,11 +831,24 @@ app.post('/api/nominees/save-banner', async (req, res) => {
     return res.status(403).json({ error: 'Forbidden: cannot set banner for another nominee' });
   }
 
+  if (!isValidNomineeCode(code)) {
+    return res.status(400).json({ error: 'Invalid nominee code' });
+  }
+
   try {
-    // Parse base64 png image data
     const base64Data = image.replace(/^data:image\/png;base64,/, '');
-    const filename = path.join(bannersDir, `${code}.png`);
-    fs.writeFileSync(filename, base64Data, 'base64');
+    const buffer = Buffer.from(base64Data, 'base64');
+    if (buffer.length > 1024 * 1024) {
+      return res.status(400).json({ error: 'Banner image must be under 1MB' });
+    }
+    if (buffer.length < 8 || buffer[0] !== 0x89 || buffer[1] !== 0x50) {
+      return res.status(400).json({ error: 'Banner must be a valid PNG image' });
+    }
+    const filename = path.resolve(bannersDir, `${code}.png`);
+    if (!filename.startsWith(path.resolve(bannersDir))) {
+      return res.status(400).json({ error: 'Invalid banner path' });
+    }
+    fs.writeFileSync(filename, buffer);
     console.log(`Custom banner saved for nominee ${code} to ${filename}`);
     res.json({ success: true, message: 'Share card banner saved successfully!' });
   } catch (err) {
@@ -843,40 +965,43 @@ app.get('/share/:code', async (req, res) => {
       : `${serverUrl}/api/nominees/share-image/${code}`;
 
     const frontendUrl = process.env.FRONTEND_URL || (process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')[0].trim() : 'http://localhost:5173');
+    const safeName = escapeHtml(nominee.name);
+    const safeCategory = escapeHtml(nominee.category_name);
+    const safeCode = escapeHtml(nominee.code);
+    const safeBannerUrl = escapeHtml(bannerUrl);
+    const safeFrontendUrl = escapeHtml(frontendUrl);
+    const nomineeUrl = `${safeFrontendUrl}/?nominee=${safeCode}`;
 
     res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Vote for ${nominee.name} - Voteeq Awards</title>
+  <title>Vote for ${safeName} - Voteeq Awards</title>
   
   <!-- Open Graph / Facebook -->
   <meta property="og:type" content="website">
-  <meta property="og:url" content="${frontendUrl}/?nominee=${nominee.code}">
-  <meta property="og:title" content="Vote for ${nominee.name} - Voteeq Awards">
-  <meta property="og:description" content="Support ${nominee.name} in the ${nominee.category_name} category. Dial *920*566*${nominee.code}# or vote online!">
-  <meta property="og:image" content="${bannerUrl}">
+  <meta property="og:url" content="${nomineeUrl}">
+  <meta property="og:title" content="Vote for ${safeName} - Voteeq Awards">
+  <meta property="og:description" content="Support ${safeName} in the ${safeCategory} category. Dial *920*566*${safeCode}# or vote online!">
+  <meta property="og:image" content="${safeBannerUrl}">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:url" content="${frontendUrl}/?nominee=${nominee.code}">
-  <meta name="twitter:title" content="Vote for ${nominee.name} - Voteeq Awards">
-  <meta name="twitter:description" content="Support ${nominee.name} in the ${nominee.category_name} category. Dial *920*566*${nominee.code}# or vote online!">
-  <meta name="twitter:image" content="${bannerUrl}">
+  <meta name="twitter:url" content="${nomineeUrl}">
+  <meta name="twitter:title" content="Vote for ${safeName} - Voteeq Awards">
+  <meta name="twitter:description" content="Support ${safeName} in the ${safeCategory} category. Dial *920*566*${safeCode}# or vote online!">
+  <meta name="twitter:image" content="${safeBannerUrl}">
 
   <!-- Redirect to the React App -->
-  <script type="text/javascript">
-    window.location.href = "${frontendUrl}/?nominee=${nominee.code}";
-  </script>
-  <meta http-equiv="refresh" content="0;url=${frontendUrl}/?nominee=${nominee.code}">
+  <meta http-equiv="refresh" content="0;url=${nomineeUrl}">
 </head>
 <body>
   <div style="font-family: sans-serif; text-align: center; padding: 4rem;">
     <h2>Redirecting to voting portal...</h2>
-    <p>If you are not redirected, <a href="${frontendUrl}/?nominee=${nominee.code}">click here</a>.</p>
+    <p>If you are not redirected, <a href="${nomineeUrl}">click here</a>.</p>
   </div>
 </body>
 </html>`);
@@ -890,16 +1015,22 @@ app.get('/share/:code', async (req, res) => {
 app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, res) => {
   const { nomineeId, email, phone, voteCount } = req.body;
 
-  if (!nomineeId || !voteCount || voteCount <= 0) {
-    return res.status(400).json({ error: 'Invalid nomination id or vote count' });
+  const parsedVoteCount = parseInt(voteCount, 10);
+  if (!nomineeId || isNaN(parsedVoteCount) || parsedVoteCount <= 0 || parsedVoteCount > MAX_VOTES_PER_TRANSACTION) {
+    return res.status(400).json({ error: `Invalid nomination id or vote count (max ${MAX_VOTES_PER_TRANSACTION})` });
   }
 
   const amountPerVote = 1; // 1 GHS per vote
-  const totalGHS = amountPerVote * voteCount;
-  // Paystack expects amount in minor units (Pesewas in GH, Kobo in NG). So multiplied by 100
+  const totalGHS = amountPerVote * parsedVoteCount;
   const amountMinor = totalGHS * 100;
 
-  const reference = `v_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  const reference = generateReference('v');
+  const statusToken = generateStatusToken(reference);
+  const secretKey = process.env.PAYSTACK_SECRET_KEY;
+
+  if (isProduction() && !secretKey) {
+    return res.status(503).json({ error: 'Vote payments are not configured yet. Please try again later.' });
+  }
 
   try {
     const db = getDB();
@@ -908,13 +1039,12 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
       return res.status(404).json({ error: 'Nominee not found' });
     }
 
-    // Insert pending vote record
     await db.run(`
-      INSERT INTO votes (nominee_id, voter_phone, vote_count, channel, payment_reference, status)
-      VALUES (?, ?, ?, 'web', ?, 'pending')
-    `, [nomineeId, phone || 'Web Client', voteCount, reference]);
+      INSERT INTO votes (nominee_id, voter_phone, email, vote_count, channel, payment_reference, status)
+      VALUES (?, ?, ?, ?, 'web', ?, 'pending')
+    `, [nomineeId, phone || 'Web Client', email || null, parsedVoteCount, reference]);
 
-    const secretKey = process.env.PAYSTACK_SECRET_KEY;
+    const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
 
     if (secretKey) {
       // Real Paystack integration
@@ -924,10 +1054,10 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
         amount: amountMinor,
         currency: 'GHS',
         reference: reference,
-        callback_url: `${req.headers.origin || 'http://localhost:5173'}/payment-status`,
+        callback_url: `${frontendBase}/payment-status?token=${statusToken}`,
         metadata: {
           nomineeId,
-          voteCount,
+          voteCount: parsedVoteCount,
           phone
         }
       });
@@ -952,6 +1082,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
             if (parsed.status && parsed.data) {
               res.json({
                 reference,
+                statusToken,
                 authorization_url: parsed.data.authorization_url,
                 access_code: parsed.data.access_code,
                 isMock: false
@@ -973,11 +1104,10 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
       paystackReq.write(paystackPayload);
       paystackReq.end();
     } else {
-      // MOCK Paystack Flow for offline sandbox testing
-      // We return a mock authorization url that our frontend can catch
       res.json({
         reference,
-        authorization_url: `/mock-paystack-checkout?reference=${reference}&amount=${totalGHS}&nominee=${encodeURIComponent(nominee.name)}&votes=${voteCount}`,
+        statusToken,
+        authorization_url: `/mock-paystack-checkout?reference=${reference}&statusToken=${statusToken}&amount=${totalGHS}&nominee=${encodeURIComponent(nominee.name)}&votes=${parsedVoteCount}`,
         isMock: true
       });
     }
@@ -988,15 +1118,19 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
 });
 
 // 6. Paystack Webhook (Verify/Complete Payment)
-app.post('/api/payment/webhook', async (req, res) => {
+app.post('/api/payment/webhook', rateLimiter(1 * 60 * 1000, 100), async (req, res) => {
   const secretKey = process.env.PAYSTACK_SECRET_KEY;
-  if (secretKey) {
+  if (!secretKey) {
+    if (isProduction()) {
+      return res.status(503).send('Webhook not configured');
+    }
+  } else {
     const signature = req.headers['x-paystack-signature'];
     if (!signature) {
       return res.status(401).send('Missing Paystack signature header');
     }
     const hash = crypto.createHmac('sha512', secretKey).update(req.rawBody || '').digest('hex');
-    if (hash !== signature) {
+    if (!timingSafeEqualStr(hash, signature)) {
       console.warn('Invalid webhook signature attempt');
       return res.status(401).send('Invalid Paystack signature');
     }
@@ -1090,8 +1224,11 @@ Date/Time: ${new Date().toISOString()}
   }
 });
 
-// Mock Paystack Payment Success Trigger (specifically for sandbox testing from UI)
+// Mock Paystack Payment Success Trigger (development only)
 app.post('/api/payment/mock-verify', rateLimiter(1 * 60 * 1000, 20), async (req, res) => {
+  if (!mockPaymentsAllowed()) {
+    return res.status(404).json({ error: 'Not found' });
+  }
   const { reference } = req.body;
   if (!reference) {
     return res.status(400).json({ error: 'Reference code is required' });
@@ -1132,8 +1269,11 @@ app.post('/api/payment/mock-verify', rateLimiter(1 * 60 * 1000, 20), async (req,
   }
 });
 
-// Mock Paystack Registration Form Success Trigger
+// Mock Paystack Registration Form Success Trigger (development only)
 app.post('/api/payment/mock-verify-registration', rateLimiter(1 * 60 * 1000, 20), async (req, res) => {
+  if (!mockPaymentsAllowed()) {
+    return res.status(404).json({ error: 'Not found' });
+  }
   const { reference } = req.body;
   if (!reference) {
     return res.status(400).json({ error: 'Reference code is required' });
@@ -1167,13 +1307,24 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
     return res.status(400).json({ error: 'Name, Email and Phone are required' });
   }
 
-  const formFee = 10.00; // GHS 10.00 registration form fee
-  const reference = `reg_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  const defaultPhoto = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80';
+  const resolvedPhoto = photo_url || defaultPhoto;
+  if (!isValidPhotoUrl(resolvedPhoto)) {
+    return res.status(400).json({ error: 'Photo URL must be a valid http(s) URL' });
+  }
+
+  const formFee = 10.00;
+  const reference = generateReference('reg');
+  const statusToken = generateStatusToken(reference);
+  const secretKey = process.env.PAYSTACK_SECRET_KEY;
+
+  if (isProduction() && !secretKey) {
+    return res.status(503).json({ error: 'Registration payments are not configured yet. Please try again later.' });
+  }
 
   try {
     const db = getDB();
     
-    // Save pending registration
     await db.run(`
       INSERT INTO nominee_registrations (name, email, phone, photo_url, category_id, custom_category, bio, payment_reference, payment_status, form_fee, approval_status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'pending')
@@ -1181,7 +1332,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
       name, 
       email, 
       phone, 
-      photo_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80',
+      resolvedPhoto,
       category_id ? parseInt(category_id) : null,
       custom_category || null,
       bio || '',
@@ -1189,16 +1340,15 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
       formFee
     ]);
 
-    const secretKey = process.env.PAYSTACK_SECRET_KEY;
+    const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
 
     if (secretKey) {
-      // Real Paystack charge initialization for GHS 10.00
       const paystackPayload = JSON.stringify({
         email: email,
-        amount: formFee * 100, // minor units
+        amount: formFee * 100,
         currency: 'GHS',
         reference: reference,
-        callback_url: `${req.headers.origin || 'http://localhost:5173'}/payment-status`,
+        callback_url: `${frontendBase}/payment-status?token=${statusToken}`,
         metadata: {
           type: 'nominee_form',
           name,
@@ -1226,6 +1376,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
             if (parsed.status && parsed.data) {
               res.json({
                 reference,
+                statusToken,
                 authorization_url: parsed.data.authorization_url,
                 access_code: parsed.data.access_code,
                 isMock: false
@@ -1247,10 +1398,10 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
       paystackReq.write(paystackPayload);
       paystackReq.end();
     } else {
-      // MOCK Paystack Flow for offline sandbox testing
       res.json({
         reference,
-        authorization_url: `/mock-paystack-checkout?reference=${reference}&amount=${formFee}&nominee=${encodeURIComponent('Nominee Form Purchase: ' + name)}&votes=1&isForm=true`,
+        statusToken,
+        authorization_url: `/mock-paystack-checkout?reference=${reference}&statusToken=${statusToken}&amount=${formFee}&nominee=${encodeURIComponent('Nominee Form Purchase: ' + name)}&votes=1&isForm=true`,
         isMock: true
       });
     }
@@ -1265,7 +1416,9 @@ app.get('/api/admin/registrations', requireAdmin, async (req, res) => {
   try {
     const db = getDB();
     const registrations = await db.all(`
-      SELECT r.*, c.name as category_name
+      SELECT r.id, r.name, r.email, r.phone, r.photo_url, r.category_id, r.custom_category, r.bio,
+             r.payment_reference, r.payment_status, r.form_fee, r.approval_status, r.nominee_code, r.created_at,
+             c.name as category_name
       FROM nominee_registrations r
       LEFT JOIN categories c ON r.category_id = c.id
       ORDER BY r.created_at DESC
@@ -1346,7 +1499,7 @@ app.post('/api/admin/registrations/:id/approve', requireAdmin, async (req, res) 
       WHERE id = ?
     `, [assignedCode, tempPin, id]);
 
-    await logAdminAction('admin', 'APPROVE_REGISTRATION', `Approved registration ID: ${id}, Nominee Name: ${reg.name}, Assigned Code: ${assignedCode}`);
+    await logAdminAction(adminUsername(req), 'APPROVE_REGISTRATION', `Approved registration ID: ${id}, Nominee Name: ${reg.name}, Assigned Code: ${assignedCode}`);
 
     // Simulate SMS notification receipt log
     const timestamp = new Date().toLocaleString();
@@ -1373,9 +1526,8 @@ and input your Nominee Code and Temporary PIN to set up your personal login PIN.
 
     res.json({ 
       success: true, 
-      message: 'Onboarding approved! Activation PIN issued.',
-      assignedCode,
-      activationPin: tempPin
+      message: 'Onboarding approved. Nominee must activate using their assigned code and the PIN delivered via your notification channel.',
+      assignedCode
     });
 
   } catch (err) {
@@ -1399,7 +1551,7 @@ app.post('/api/admin/registrations/:id/reject', requireAdmin, async (req, res) =
     }
 
     await db.run("UPDATE nominee_registrations SET approval_status = 'rejected' WHERE id = ?", [id]);
-    await logAdminAction('admin', 'REJECT_REGISTRATION', `Rejected registration ID: ${id}`);
+    await logAdminAction(adminUsername(req), 'REJECT_REGISTRATION', `Rejected registration ID: ${id}`);
     res.json({ success: true, message: 'Nominee registration rejected.' });
   } catch (err) {
     console.error(err);
@@ -1456,7 +1608,7 @@ app.post('/api/admin/tickets/scan', requireAdmin, async (req, res) => {
 
     const scannedAt = new Date().toISOString();
     await db.run('UPDATE tickets SET scanned = 1, scanned_at = ? WHERE id = ?', [scannedAt, ticket.id]);
-    await logAdminAction('admin', 'SCAN_TICKET', `Scanned ticket code: ${ticket_code.trim()}, Event: ${ticket.event_title}, Buyer: ${ticket.buyer_name}`);
+    await logAdminAction(adminUsername(req), 'SCAN_TICKET', `Scanned ticket code: ${ticket_code.trim()}, Event: ${ticket.event_title}, Buyer: ${ticket.buyer_name}`);
 
     res.json({
       success: true,
@@ -1495,7 +1647,7 @@ app.post('/api/admin/tickets/scan', requireAdmin, async (req, res) => {
  *    "message": "Text display content"
  * }
  */
-app.post('/api/ussd', async (req, res) => {
+app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
   const { sessionID, msisdn, newSession, userData } = req.body;
 
   if (!sessionID || !msisdn) {
@@ -1644,7 +1796,7 @@ app.post('/api/ussd', async (req, res) => {
     if (session.state === 'AWAITING_CONFIRMATION') {
       if (input === '1') {
         const db = getDB();
-        const reference = `u_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+        const reference = generateReference('u');
 
         await db.run(`
           INSERT INTO votes (nominee_id, voter_phone, vote_count, channel, payment_reference, status)
@@ -1653,31 +1805,35 @@ app.post('/api/ussd', async (req, res) => {
 
         ussdSessions.delete(sessionID);
 
-        setTimeout(async () => {
-          try {
-            const voteRecord = await db.get('SELECT * FROM votes WHERE payment_reference = ?', [reference]);
-            if (voteRecord && voteRecord.status === 'pending') {
-              await db.run('UPDATE votes SET status = ? WHERE id = ?', ['completed', voteRecord.id]);
-              await db.run(
-                'UPDATE nominees SET votes_count = votes_count + ? WHERE id = ?',
-                [voteRecord.vote_count, voteRecord.nominee_id]
-              );
-              console.log(`USSD payment simulation completed for ref: ${reference}`);
-              await sendReceipt(voteRecord.id);
-              broadcast({
-                type: 'VOTE_COMPLETED',
-                nomineeId: voteRecord.nominee_id,
-                votesCount: voteRecord.vote_count
-              });
+        if (mockPaymentsAllowed()) {
+          setTimeout(async () => {
+            try {
+              const voteRecord = await db.get('SELECT * FROM votes WHERE payment_reference = ?', [reference]);
+              if (voteRecord && voteRecord.status === 'pending') {
+                await db.run('UPDATE votes SET status = ? WHERE id = ?', ['completed', voteRecord.id]);
+                await db.run(
+                  'UPDATE nominees SET votes_count = votes_count + ? WHERE id = ?',
+                  [voteRecord.vote_count, voteRecord.nominee_id]
+                );
+                console.log(`USSD payment simulation completed for ref: ${reference}`);
+                await sendReceipt(voteRecord.id);
+                broadcast({
+                  type: 'VOTE_COMPLETED',
+                  nomineeId: voteRecord.nominee_id,
+                  votesCount: voteRecord.vote_count
+                });
+              }
+            } catch (err) {
+              console.error('USSD timeout mock process error:', err);
             }
-          } catch (err) {
-            console.error('USSD timeout mock process error:', err);
-          }
-        }, 3000);
+          }, 3000);
+        }
 
         return res.json({
           action: 'release',
-          message: 'Payment prompt sent. Approve MoMo transaction on your phone to complete voting. Thank you!'
+          message: mockPaymentsAllowed()
+            ? 'Payment prompt sent. Approve MoMo transaction on your phone to complete voting. Thank you!'
+            : 'Payment request submitted. Complete MoMo approval on your phone to finish voting.'
         });
       } else {
         ussdSessions.delete(sessionID);
@@ -1742,27 +1898,45 @@ app.post('/api/ussd', async (req, res) => {
         const db = getDB();
         const ticketCode = `TIX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
         const totalPrice = session.quantity * session.eventPrice;
-        const reference = `tix_ussd_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+        const reference = generateReference('tix_ussd');
 
-        await db.run(`
-          INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
-          VALUES (?, ?, 'USSD Buyer', 'ussd@voteeq.com', ?, ?, ?, ?, 'pending')
-        `, [session.eventId, ticketCode, session.phone, session.quantity, totalPrice, reference]);
+        try {
+          await db.transaction(async (tx) => {
+            const capacity = await tx.get(
+              'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
+              [session.eventId]
+            );
+            if (!capacity || capacity.tickets_sold + session.quantity > capacity.total_tickets) {
+              throw new Error('SOLD_OUT');
+            }
+            await tx.run(`
+              INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
+              VALUES (?, ?, 'USSD Buyer', 'ussd@voteeq.com', ?, ?, ?, ?, 'pending')
+            `, [session.eventId, ticketCode, session.phone, session.quantity, totalPrice, reference]);
+          });
+        } catch (txErr) {
+          if (txErr.message === 'SOLD_OUT') {
+            ussdSessions.delete(sessionID);
+            return res.json({
+              action: 'release',
+              message: 'Sorry, this event is sold out or has insufficient tickets remaining.'
+            });
+          }
+          throw txErr;
+        }
 
         ussdSessions.delete(sessionID);
 
-        // Simulate payment completion
-        setTimeout(async () => {
-          try {
-            const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
-            if (ticketRecord && ticketRecord.payment_status === 'pending') {
-              await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
-              await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
-              console.log(`USSD ticket payment simulation completed for ref: ${reference}`);
-              
-              // Write receipt log to receipts.log
-              const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
-              const logMsg = `
+        if (mockPaymentsAllowed()) {
+          setTimeout(async () => {
+            try {
+              const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
+              if (ticketRecord && ticketRecord.payment_status === 'pending') {
+                await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
+                await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
+                console.log(`USSD ticket payment simulation completed for ref: ${reference}`);
+                const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
+                const logMsg = `
 ========================================
 SMS/EMAIL TICKET RECEIPT (USSD MOCK)
 Ticket ID: TIX_${ticketRecord.id}_${ticketRecord.ticket_code}
@@ -1778,16 +1952,19 @@ Status: Completed
 Date/Time: ${new Date().toISOString()}
 ========================================
 \n`;
-              fs.appendFileSync(receiptsLogPath, logMsg);
+                fs.appendFileSync(receiptsLogPath, logMsg);
+              }
+            } catch (err) {
+              console.error('USSD ticket timeout mock error:', err);
             }
-          } catch (err) {
-            console.error('USSD ticket timeout mock error:', err);
-          }
-        }, 3000);
+          }, 3000);
+        }
 
         return res.json({
           action: 'release',
-          message: 'Payment prompt sent. Approve MoMo transaction on your phone to complete purchase. Thank you!'
+          message: mockPaymentsAllowed()
+            ? 'Payment prompt sent. Approve MoMo transaction on your phone to complete purchase. Thank you!'
+            : 'Payment request submitted. Complete MoMo approval on your phone to finish your purchase.'
         });
       } else {
         ussdSessions.delete(sessionID);
@@ -1816,11 +1993,15 @@ Date/Time: ${new Date().toISOString()}
 });
 
 
-// GET payment transaction status
-app.get('/api/payment/status/:reference', async (req, res) => {
+// GET payment transaction status (requires status token from checkout)
+app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async (req, res) => {
   const { reference } = req.params;
+  const token = req.query.token;
   if (!reference) {
     return res.status(400).json({ error: 'Reference parameter is required' });
+  }
+  if (!verifyStatusToken(reference, token)) {
+    return res.status(403).json({ error: 'Invalid or missing payment status token' });
   }
   try {
     const db = getDB();
@@ -1893,23 +2074,42 @@ app.get('/api/payment/status/:reference', async (req, res) => {
   }
 });
 
-// Retrieve tickets by email, phone, reference, or code
-app.get('/api/tickets/lookup', async (req, res) => {
-  const { query } = req.query;
-  if (!query) {
-    return res.status(400).json({ error: 'Search query is required' });
+// Retrieve tickets by ticket code, or payment reference + buyer email
+app.get('/api/tickets/lookup', rateLimiter(1 * 60 * 1000, 20), async (req, res) => {
+  const ticketCode = (req.query.ticket_code || '').trim();
+  const reference = (req.query.reference || req.query.query || '').trim();
+  const email = (req.query.email || '').trim().toLowerCase();
+
+  if (!ticketCode && !(reference && email)) {
+    return res.status(400).json({
+      error: 'Provide ticket_code, or both reference and email to look up tickets.'
+    });
   }
-  const cleanQuery = query.trim();
+
   try {
     const db = getDB();
-    const tickets = await db.all(`
-      SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
-      FROM tickets t
-      JOIN events e ON t.event_id = e.id
-      WHERE (t.payment_reference = ? OR t.buyer_email = ? OR t.buyer_phone = ? OR t.ticket_code = ?)
-        AND t.payment_status = 'paid'
-      ORDER BY t.created_at DESC
-    `, [cleanQuery, cleanQuery, cleanQuery, cleanQuery]);
+    let tickets;
+
+    if (ticketCode) {
+      if (!/^TIX-[A-F0-9]+$/i.test(ticketCode)) {
+        return res.status(400).json({ error: 'Invalid ticket code format' });
+      }
+      tickets = await db.all(`
+        SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
+        FROM tickets t
+        JOIN events e ON t.event_id = e.id
+        WHERE t.ticket_code = ? AND t.payment_status = 'paid'
+        ORDER BY t.created_at DESC
+      `, [ticketCode.toUpperCase()]);
+    } else {
+      tickets = await db.all(`
+        SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
+        FROM tickets t
+        JOIN events e ON t.event_id = e.id
+        WHERE t.payment_reference = ? AND LOWER(t.buyer_email) = ? AND t.payment_status = 'paid'
+        ORDER BY t.created_at DESC
+      `, [reference, email]);
+    }
     
     res.json(tickets);
   } catch (err) {
@@ -1944,7 +2144,7 @@ app.post('/api/admin/events', requireAdmin, async (req, res) => {
     `, [title, description || '', date || '', venue || '', parseFloat(ticket_price), privacy || 'public', access_code || null, parseInt(total_tickets, 10)]);
     
     const newEventId = result.lastID;
-    await logAdminAction('admin', 'CREATE_EVENT', `Created event: ${title} (ID: ${newEventId})`);
+    await logAdminAction(adminUsername(req), 'CREATE_EVENT', `Created event: ${title} (ID: ${newEventId})`);
     res.json({ success: true, id: newEventId, message: 'Event created successfully!' });
   } catch (err) {
     console.error(err);
@@ -1971,7 +2171,7 @@ app.put('/api/admin/events/:id', requireAdmin, async (req, res) => {
       WHERE id = ?
     `, [title, description || '', date || '', venue || '', parseFloat(ticket_price), privacy || 'public', access_code || null, parseInt(total_tickets, 10), id]);
     
-    await logAdminAction('admin', 'UPDATE_EVENT', `Updated event: ${title} (ID: ${id})`);
+    await logAdminAction(adminUsername(req), 'UPDATE_EVENT', `Updated event: ${title} (ID: ${id})`);
     res.json({ success: true, message: 'Event updated successfully!' });
   } catch (err) {
     console.error(err);
@@ -1989,12 +2189,20 @@ app.delete('/api/admin/events/:id', requireAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Event not found' });
     }
     await db.run('DELETE FROM events WHERE id = ?', [id]);
-    await logAdminAction('admin', 'DELETE_EVENT', `Deleted event: ${existing.title} (ID: ${id})`);
+    await logAdminAction(adminUsername(req), 'DELETE_EVENT', `Deleted event: ${existing.title} (ID: ${id})`);
     res.json({ success: true, message: 'Event deleted successfully!' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to delete event' });
   }
+});
+
+app.use((err, req, res, next) => {
+  if (err && err.message === 'Not allowed by CORS') {
+    return res.status(403).json({ error: 'Origin not allowed by CORS policy' });
+  }
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // Start server

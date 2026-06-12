@@ -18,16 +18,22 @@ export default function PaymentStatusPage({ onBack, onGoToVote, onGoToTickets })
   };
 
   const [reference] = useState(() => getQueryParam('reference') || '');
+  const [statusToken] = useState(() => getQueryParam('token') || getQueryParam('statusToken') || '');
   const [status, setStatus] = useState(() => getQueryParam('reference') ? 'loading' : 'error');
   const [details, setDetails] = useState(null);
   const [type, setType] = useState('');
-  const [errorMsg, setErrorMsg] = useState(() => getQueryParam('reference') ? '' : 'No payment reference found in the URL.');
+  const [errorMsg, setErrorMsg] = useState(() => {
+    if (!getQueryParam('reference')) return 'No payment reference found in the URL.';
+    if (!getQueryParam('token') && !getQueryParam('statusToken')) return 'Missing payment verification token in the URL.';
+    return '';
+  });
 
   const verifyPayment = async (refStr) => {
     if (!refStr) return;
     setStatus('loading');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/payment/status/${refStr}`);
+      const token = statusToken || getQueryParam('token') || getQueryParam('statusToken');
+      const res = await fetch(`${API_BASE_URL}/api/payment/status/${refStr}?token=${encodeURIComponent(token || '')}`);
       if (res.ok) {
         const data = await res.json();
         setStatus(data.status); // 'pending', 'completed', 'failed', etc.
@@ -46,11 +52,13 @@ export default function PaymentStatusPage({ onBack, onGoToVote, onGoToTickets })
   };
 
   useEffect(() => {
-    if (reference) {
+    if (reference && statusToken) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       verifyPayment(reference);
+    } else if (reference && !statusToken) {
+      setStatus('error');
     }
-  }, [reference]);
+  }, [reference, statusToken]);
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto', padding: '2rem 1.5rem' }}>

@@ -14,12 +14,27 @@ import EventsTicketsPage from './pages/EventsTicketsPage';
 import PaymentStatusPage from './pages/PaymentStatusPage';
 import NotFoundPage from './pages/NotFoundPage';
 import { API_BASE_URL, WS_BASE_URL } from './config';
+import { readStoredAuth } from './utils/storage';
+
+const MOBILE_MENU_PAGES = [
+  { id: 'about', label: 'About' },
+  { id: 'help', label: 'Help & Support' },
+  { id: 'guidelines', label: 'Nominee Guidelines' },
+];
+
+const COLOR_THEMES = [
+  { name: 'Antique Gold', value: '#b8986c' },
+  { name: 'Royal Burgundy', value: '#6a2e2e' },
+  { name: 'Midnight Dark', value: '#2a2b2d' },
+  { name: 'Sage Green', value: '#606f5c' },
+];
 
 export default function App() {
   // Navigation & Page State
   const [categories, setCategories] = useState([]);
   const [nominees, setNominees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -29,20 +44,14 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState('');
 
   // Nominee Login/Dashboard
-  const [authNominee, setAuthNominee] = useState(() => {
-    const saved = localStorage.getItem('voteeq_auth');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [authNominee, setAuthNominee] = useState(() => readStoredAuth('voteeq_auth'));
   const [loginMode, setLoginMode] = useState(false);
   const [loginCode, setLoginCode] = useState('');
   const [loginPasscode, setLoginPasscode] = useState('');
   const [loginError, setLoginError] = useState('');
 
   // Admin Login/Dashboard States
-  const [authAdmin, setAuthAdmin] = useState(() => {
-    const saved = localStorage.getItem('voteeq_admin_auth');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [authAdmin, setAuthAdmin] = useState(() => readStoredAuth('voteeq_admin_auth'));
   const [adminLoginMode, setAdminLoginMode] = useState(false);
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -63,7 +72,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('vote');
   const [events, setEvents] = useState([]);
   const [activeEvent, setActiveEvent] = useState(null);
-  const [activeEventId, setActiveEventId] = useState(null);
+  const [activeEventId, setActiveEventId] = useState(undefined);
 
   // Footer page navigation state
   const [currentPage, setCurrentPage] = useState(null);
@@ -112,10 +121,14 @@ export default function App() {
   const [ussdAction, setUssdAction] = useState('release'); // 'prompt' or 'release'
 
   const loadData = async () => {
+    setLoadError('');
     try {
       const catRes = await fetch(`${API_BASE_URL}/api/categories`);
       const nomRes = await fetch(`${API_BASE_URL}/api/nominees`);
       const eventRes = await fetch(`${API_BASE_URL}/api/events`);
+      if (!catRes.ok || !nomRes.ok || !eventRes.ok) {
+        throw new Error('Could not load catalog data from the API. Check your connection or try again later.');
+      }
       if (catRes.ok && nomRes.ok && eventRes.ok) {
         const catData = await catRes.json();
         const nomData = await nomRes.json();
@@ -124,11 +137,17 @@ export default function App() {
         setNominees(nomData);
         if (eventData && eventData.length > 0) {
           const hashRoute = parseHashRoute();
-          const requestedEventId = hashRoute.params.get('eventId');
+          const urlParams = new URLSearchParams(window.location.search);
+          const requestedEventId = hashRoute.params.get('eventId') || urlParams.get('eventId');
           const requestedEvent = requestedEventId ? eventData.find(e => String(e.id) === String(requestedEventId)) : null;
-          const nextEvent = requestedEvent || eventData.find(e => String(e.id) === String(activeEventId)) || eventData[0];
-          setActiveEventId(String(nextEvent.id));
-          setActiveEvent(nextEvent);
+          const nextEvent = requestedEvent || (activeEventId === undefined ? eventData[0] : eventData.find(e => String(e.id) === String(activeEventId)) || null);
+          if (nextEvent) {
+            setActiveEventId(String(nextEvent.id));
+            setActiveEvent(nextEvent);
+          } else {
+            setActiveEventId(null);
+            setActiveEvent(null);
+          }
           setEvents(eventData);
         } else {
           setEvents([]);
@@ -138,14 +157,16 @@ export default function App() {
 
         // Check for shareable direct nominee link parameter (e.g. ?nominee=101)
         const hashRoute = parseHashRoute();
-        const nomineeCode = hashRoute.params.get('nominee') || new URLSearchParams(window.location.search).get('nominee');
+        const urlParams = new URLSearchParams(window.location.search);
+        const nomineeCode = hashRoute.params.get('nominee') || urlParams.get('nominee');
+        const eventId = hashRoute.params.get('eventId') || urlParams.get('eventId');
         if (nomineeCode) {
           const match = nomData.find(n => n.code === nomineeCode);
           if (match) {
             setActiveVoteNominee(match);
             setActiveTab('vote');
             setCurrentPage(null);
-            window.location.hash = buildPublicHash('vote', hashRoute.params.get('eventId') ? { eventId: hashRoute.params.get('eventId') } : {});
+            window.location.hash = buildPublicHash('vote', eventId ? { eventId } : {});
             // Clean URL query parameters quietly after capturing, keeping URL clean
             window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
           }
@@ -153,6 +174,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('API load error:', err);
+      setLoadError(err.message || 'Failed to load data from the server.');
     } finally {
       setLoading(false);
     }
@@ -729,12 +751,7 @@ export default function App() {
           )}
           {/* Custom Luxury Colorway Selector */}
           <div className="theme-picker-container">
-            {[
-              { name: 'Antique Gold', value: '#b8986c' },
-              { name: 'Royal Burgundy', value: '#6a2e2e' },
-              { name: 'Midnight Dark', value: '#2a2b2d' },
-              { name: 'Sage Green', value: '#606f5c' }
-            ].map(theme => (
+            {COLOR_THEMES.map(theme => (
               <button
                 key={theme.value}
                 onClick={() => changeAccent(theme.value)}
@@ -746,13 +763,15 @@ export default function App() {
             ))}
           </div>
 
-          <button
-            onClick={() => setUssdOpen(!ussdOpen)}
-            className="luxury-btn secondary"
-            style={{ padding: '0.5rem 1rem', fontSize: '0.65rem', letterSpacing: '0.1em' }}
-          >
-            SHORTCODE DIALER
-          </button>
+          {import.meta.env.DEV && (
+            <button
+              onClick={() => setUssdOpen(!ussdOpen)}
+              className="luxury-btn secondary"
+              style={{ padding: '0.5rem 1rem', fontSize: '0.65rem', letterSpacing: '0.1em' }}
+            >
+              SHORTCODE DIALER
+            </button>
+          )}
 
           {authAdmin ? (
             <button
@@ -1047,13 +1066,21 @@ export default function App() {
         </div>
 
         {/* Loading Indicator */}
-        {loading && nominees.length === 0 ? (
+        {loadError && (
+          <div className="editorial-sheet" style={{ gridColumn: '1/-1', textAlign: 'center', padding: '3rem 2rem', marginBottom: '2rem', borderColor: 'rgba(244, 67, 54, 0.3)' }}>
+            <h3 style={{ color: '#f44336', marginBottom: '0.75rem' }}>Unable to load catalog</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.5rem' }}>{loadError}</p>
+            <button type="button" className="luxury-btn" onClick={() => { setLoading(true); loadData(); }}>Retry</button>
+          </div>
+        )}
+
+        {loading && nominees.length === 0 && !loadError ? (
           <div style={{ textAlign: 'center', padding: '6rem 0' }}>
             <h2 className="loading-copy" style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-secondary)', fontWeight: 300 }}>
               Catalog Loading...
             </h2>
           </div>
-        ) : (
+        ) : !loadError ? (
           /* Nominees Editorial Column Grid */
           <div className="editorial-grid">
             {filteredNominees.length === 0 ? (
@@ -1494,77 +1521,60 @@ export default function App() {
               {!authAdmin && !authNominee && (
                 <div className="control-center-section" style={{ marginBottom: '1.5rem' }}>
                   <span className="section-label">Navigation</span>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  <div className="control-center-nav-grid">
                     <button
                       onClick={() => { navigateToTab('vote'); setMobileMenuOpen(false); }}
-                      className={`control-theme-btn ${activeTab === 'vote' && !currentPage ? 'active' : ''}`}
-                      style={{ padding: '0.8rem 0.25rem', justifyContent: 'center', gap: '0.4rem', fontSize: '0.65rem', fontWeight: 600 }}
+                      className={`control-theme-btn control-nav-btn ${activeTab === 'vote' && !currentPage ? 'active' : ''}`}
                       type="button"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2V5a2 2 0 0 1 2-2h11" /></svg>
-                      <span>VOTE PORTAL</span>
+                      <span>Vote</span>
                     </button>
                     <button
                       onClick={() => { navigateToTab('leaderboard'); setMobileMenuOpen(false); }}
-                      className={`control-theme-btn ${activeTab === 'leaderboard' && !currentPage ? 'active' : ''}`}
-                      style={{ padding: '0.8rem 0.25rem', justifyContent: 'center', gap: '0.4rem', fontSize: '0.65rem', fontWeight: 600 }}
+                      className={`control-theme-btn control-nav-btn ${activeTab === 'leaderboard' && !currentPage ? 'active' : ''}`}
                       type="button"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34" /><path d="M12 2a6 6 0 0 1 6 6v5a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8a6 6 0 0 1 6-6z" /></svg>
-                      <span>LEADERBOARD</span>
+                      <span>Leaderboard</span>
                     </button>
                     <button
                       onClick={() => { navigateToTab('tickets'); setMobileMenuOpen(false); }}
-                      className={`control-theme-btn ${activeTab === 'tickets' && !currentPage ? 'active' : ''}`}
-                      style={{ padding: '0.8rem 0.25rem', justifyContent: 'center', gap: '0.4rem', fontSize: '0.65rem', fontWeight: 600 }}
+                      className={`control-theme-btn control-nav-btn ${activeTab === 'tickets' && !currentPage ? 'active' : ''}`}
                       type="button"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="3" y1="10" x2="21" y2="10" /><line x1="8" y1="14" x2="8" y2="14.01" /><line x1="12" y1="14" x2="12" y2="14.01" /><line x1="16" y1="14" x2="16" y2="14.01" /></svg>
-                      <span>BUY TICKETS</span>
+                      <span>Tickets</span>
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* Mobile Resources/Pages Section */}
               {!authAdmin && !authNominee && (
                 <div className="control-center-section" style={{ marginBottom: '1.5rem' }}>
-                  <span className="section-label">Resources & Pages</span>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    {[
-                      { id: 'about', label: 'ABOUT THE AWARDS' },
-                      { id: 'help', label: 'HELP & SUPPORT' },
-                      { id: 'guidelines', label: 'NOMINEE GUIDELINES' },
-                      { id: 'apply', label: 'APPLY AS NOMINEE' },
-                      { id: 'terms', label: 'TERMS & CONDITIONS' },
-                      { id: 'privacy', label: 'PRIVACY POLICY' },
-                      { id: 'payment', label: 'PAYMENT PROTECTION' },
-                      { id: 'payment-status', label: 'PAYMENT STATUS' }
-                    ].map(p => (
+                  <span className="section-label">Resources</span>
+                  <div className="control-center-pages-grid">
+                    {MOBILE_MENU_PAGES.map(p => (
                       <button
                         key={p.id}
                         onClick={() => { navigateToPage(p.id); setMobileMenuOpen(false); }}
-                        className={`control-theme-btn ${currentPage === p.id ? 'active' : ''}`}
-                        style={{ padding: '0.6rem 0.5rem', fontSize: '0.6rem', fontWeight: 600, justifyContent: 'center' }}
+                        className={`control-theme-btn control-page-btn ${currentPage === p.id ? 'active' : ''}`}
                         type="button"
                       >
-                        {p.label}
+                        <span>{p.label}</span>
                       </button>
                     ))}
                   </div>
+                  <p className="control-center-footnote">
+                    Legal, privacy, payment status, and nominee application links are in the site footer.
+                  </p>
                 </div>
               )}
 
-              {/* Theme Selector */}
               <div className="control-center-section">
-                <span className="section-label">Select Color Theme</span>
+                <span className="section-label">Color Theme</span>
                 <div className="control-theme-picker">
-                  {[
-                    { name: 'Antique Gold', value: '#b8986c' },
-                    { name: 'Royal Burgundy', value: '#6a2e2e' },
-                    { name: 'Midnight Dark', value: '#2a2b2d' },
-                    { name: 'Sage Green', value: '#606f5c' }
-                  ].map(theme => (
+                  {COLOR_THEMES.map(theme => (
                     <button
                       key={theme.value}
                       onClick={() => { changeAccent(theme.value); }}
@@ -1580,8 +1590,8 @@ export default function App() {
               </div>
 
               {/* Quick Actions Grid */}
-              <div className="control-center-section" style={{ marginTop: '2rem' }}>
-                <span className="section-label">System Operations</span>
+              <div className="control-center-section" style={{ marginTop: '1.5rem' }}>
+                <span className="section-label">Account</span>
                 <div className="control-actions-grid">
                   {authAdmin ? (
                     <button
@@ -1589,7 +1599,7 @@ export default function App() {
                       className="control-action-card active"
                       type="button"
                     >
-                      <span className="card-icon" style={{ color: 'var(--accent)' }}>
+                      <span className="card-icon">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
                       </span>
                       <span className="card-title">Admin Logout</span>
@@ -1601,7 +1611,7 @@ export default function App() {
                       className="control-action-card active"
                       type="button"
                     >
-                      <span className="card-icon" style={{ color: 'var(--accent)' }}>
+                      <span className="card-icon">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
                       </span>
                       <span className="card-title">Nominee Logout</span>
@@ -1614,23 +1624,11 @@ export default function App() {
                         className="control-action-card"
                         type="button"
                       >
-                        <span className="card-icon" style={{ color: 'var(--accent)' }}>
+                        <span className="card-icon">
                           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                         </span>
                         <span className="card-title">Nominee Login</span>
-                        <span className="card-desc">Dashboard Access</span>
-                      </button>
-
-                      <button
-                        onClick={() => { setMobileMenuOpen(false); setAdminLoginMode(true); }}
-                        className="control-action-card"
-                        type="button"
-                      >
-                        <span className="card-icon" style={{ color: 'var(--accent)' }}>
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                        </span>
-                        <span className="card-title">Admin Login</span>
-                        <span className="card-desc">Console Access</span>
+                        <span className="card-desc">Dashboard access</span>
                       </button>
 
                       <button
@@ -1638,11 +1636,11 @@ export default function App() {
                         className="control-action-card"
                         type="button"
                       >
-                        <span className="card-icon" style={{ color: 'var(--accent)' }}>
+                        <span className="card-icon">
                           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
                         </span>
                         <span className="card-title">Register PIN</span>
-                        <span className="card-desc">Activate Nominee Code</span>
+                        <span className="card-desc">Activate nominee code</span>
                       </button>
 
                       <button
@@ -1650,11 +1648,11 @@ export default function App() {
                         className="control-action-card"
                         type="button"
                       >
-                        <span className="card-icon" style={{ color: 'var(--accent)' }}>
+                        <span className="card-icon">
                           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><line x1="20" y1="8" x2="20" y2="14" /><line x1="23" y1="11" x2="17" y2="11" /></svg>
                         </span>
                         <span className="card-title">Apply as Nominee</span>
-                        <span className="card-desc">Submit Nomination Form</span>
+                        <span className="card-desc">Submit nomination form</span>
                       </button>
                     </>
                   )}
@@ -1683,8 +1681,8 @@ export default function App() {
         />
       )}
 
-      {/* FLOATING SHORTCODE DIALER WIDGET */}
-      {ussdOpen && (
+      {/* FLOATING SHORTCODE DIALER WIDGET (dev only) */}
+      {import.meta.env.DEV && ussdOpen && (
         <div className="ussd-device-frame">
           <div className="ussd-device-header">
             <span>SHORTCODE DIALER</span>

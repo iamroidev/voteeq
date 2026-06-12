@@ -13,9 +13,16 @@ services:
         value: 5000
       - key: CORS_ORIGIN
         value: https://voteeq-roi-dev.vercel.app
+      - key: FRONTEND_URL
+        value: https://voteeq-roi-dev.vercel.app
       - key: JWT_SECRET
         generateValue: true
       - key: TURSO_DATABASE_URL
         sync: false
       - key: TURSO_AUTH_TOKEN
         sync: false
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      # PAYSTACK_SECRET_KEY — add in Render dashboard when payments go live
