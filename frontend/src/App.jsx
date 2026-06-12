@@ -591,11 +591,11 @@ export default function App() {
                       if (idx === 1) rankBadgeColor = 'var(--text-primary)';
                       
                       return (
-                        <div key={nom.id} className="leaderboard-row" style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', padding: '0.5rem 0' }}>
+                        <div key={nom.id} className="leaderboard-row" style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', padding: '0.6rem 0' }}>
                           {/* Rank badge */}
                           <div style={{ 
-                            width: '32px', 
-                            height: '32px', 
+                            width: '36px', 
+                            height: '36px', 
                             borderRadius: '50%', 
                             background: rankBadgeColor, 
                             color: idx === 0 || idx === 1 ? '#fff' : 'var(--text-primary)',
@@ -603,7 +603,8 @@ export default function App() {
                             alignItems: 'center',
                             justifyContent: 'center',
                             fontWeight: 700,
-                            fontSize: '0.85rem'
+                            fontSize: '1rem',
+                            lineHeight: 1
                           }}>
                             {rankText}
                           </div>
@@ -620,8 +621,8 @@ export default function App() {
 
                           {/* Candidate details & Progress bar */}
                           <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '0.85rem', fontWeight: 600 }}>
-                              <span style={{ color: 'var(--text-primary)' }}>{nom.name} <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 400 }}>(REF. {nom.code})</span></span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '0.95rem', fontWeight: 600 }}>
+                              <span style={{ color: 'var(--text-primary)' }}>{nom.name} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 400 }}>(REF. {nom.code})</span></span>
                               <span style={{ color: 'var(--accent-dark)' }}>{nom.votes_count} votes ({percentage}%)</span>
                             </div>
                             
