@@ -152,7 +152,7 @@ async function initDB() {
     await dbWrapper.run("INSERT INTO nominees (code, name, photo_url, category_id, passcode, votes_count) VALUES ('201', 'Black Sherif', 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&q=80', 2, '1111', 2300)");
     await dbWrapper.run("INSERT INTO nominees (code, name, photo_url, category_id, passcode, votes_count) VALUES ('202', 'King Promise', 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&q=80', 2, '2222', 1500)");
 
-    await dbWrapper.run("INSERT INTO nominees (code, name, photo_url, category_id, passcode, votes_count) VALUES ('301', '5th Dimension', 'https://images.unsplash.com/photo-1487180142328-054b783fc471?w=500&q=80', 3, '3333', 350)");
+    await dbWrapper.run("INSERT INTO nominees (code, name, photo_url, category_id, passcode, votes_count) VALUES ('301', '5th Dimension', 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=500&q=80', 3, '3333', 350)");
   }
 
   return dbWrapper;
