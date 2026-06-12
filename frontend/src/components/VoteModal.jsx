@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { API_BASE_URL } from '../config';
 import { getGhanaPhoneError, normalizeGhanaPhone } from '../utils/phone';
+import { getEmailError, normalizeEmail } from '../utils/email';
 
 export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
   const [voteCount, setVoteCount] = useState(10);
@@ -28,6 +29,12 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
       return;
     }
     const normalizedPhone = normalizeGhanaPhone(phone);
+    const emailError = getEmailError(email);
+    if (emailError) {
+      setError(emailError);
+      return;
+    }
+    const normalizedEmail = normalizeEmail(email);
     if (isInvalidVotes) {
       setError('Please choose a valid whole number of votes (minimum 1)');
       return;
@@ -54,6 +61,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
           nomineeId: nominee.id,
           email,
           phone: normalizedPhone,
+          email: normalizedEmail,
           voteCount,
         }),
       });
@@ -208,11 +216,12 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
             {/* Invoice email */}
             <div style={{ marginBottom: '2rem' }}>
               <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
-                Email Address (Optional)
+                Email Address (Required for receipt)
               </label>
               <input
                 type="email"
-                placeholder="voter@domain.com"
+                required
+                placeholder="you@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="luxury-input"
@@ -286,8 +295,8 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
 
             <button
               type="submit"
-              disabled={loading || isInvalidVotes || !phone}
-              className={`luxury-btn ${(loading || isInvalidVotes || !phone) ? 'disabled' : ''}`}
+              disabled={loading || isInvalidVotes || !phone || !email.trim()}
+              className={`luxury-btn ${(loading || isInvalidVotes || !phone || !email.trim()) ? 'disabled' : ''}`}
               style={{ width: '100%', padding: '1.1rem', fontSize: '0.8rem', letterSpacing: '0.15em' }}
             >
               {loading ? 'PROCESSING TRANSACTION...' : 'PROCEED TO SECURE CHECKOUT'}

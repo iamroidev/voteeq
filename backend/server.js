@@ -22,6 +22,12 @@ const {
 } = require('./security');
 const { validateGhanaPhone } = require('./phone');
 const { initializePaystackTransaction } = require('./paystack');
+const {
+  isValidEmail,
+  normalizeEmail,
+  sendVoteReceiptEmail,
+  sendTicketReceiptEmail,
+} = require('./email');
 require('dotenv').config();
 
 validateProductionConfig();
@@ -109,7 +115,7 @@ const fs = require('fs');
 const path = require('path');
 const receiptsLogPath = path.resolve(__dirname, 'receipts.log');
 
-async function sendReceipt(voteId) {
+async function sendVoteReceipt(voteId) {
   try {
     const db = getDB();
     const vote = await db.get(`
@@ -126,50 +132,96 @@ async function sendReceipt(voteId) {
     const amountGHS = vote.channel === 'web' ? vote.vote_count * 1.0 : vote.vote_count * 0.5;
     const timestamp = new Date(vote.created_at || Date.now()).toLocaleString();
 
-    let receiptMessage = `
-========================================
-VOTEEQ AWARDS OFFICIAL RECEIPT
-========================================
-Receipt ID: REC_${vote.id}_${vote.payment_reference}
-Timestamp: ${timestamp}
-Nominee Voted For: ${vote.nominee_name.toUpperCase()} (ID: ${vote.nominee_id})
-Votes Count: ${vote.vote_count}
-Amount Paid: GHS ${amountGHS.toFixed(2)}
-Payment Channel: ${vote.channel.toUpperCase()}
-Payment Reference: ${vote.payment_reference}
-Voter Contact (Phone): ${vote.voter_phone || 'N/A'}
-`;
-
-    if (vote.email) {
-      receiptMessage += `Voter Contact (Email): ${vote.email}\n`;
-      receiptMessage += `
-Email Notification Sent To: ${vote.email}
-----------------------------------------
-Subject: Vote Confirmation - Voteeq Awards
-Dear Voter,
-Thank you for voting in the Voteeq Awards!
-We have verified your payment of GHS ${amountGHS.toFixed(2)} for ${vote.vote_count} votes for candidate ${vote.nominee_name}.
-Reference: ${vote.payment_reference}
-----------------------------------------\n`;
+    if (vote.email && isValidEmail(vote.email)) {
+      try {
+        const result = await sendVoteReceiptEmail({
+          to: normalizeEmail(vote.email),
+          nomineeName: vote.nominee_name,
+          voteCount: vote.vote_count,
+          amountGHS,
+          reference: vote.payment_reference,
+          phone: vote.voter_phone,
+        });
+        if (result.sent) {
+          console.log(`Vote receipt emailed to ${vote.email} (Resend id: ${result.id})`);
+        } else {
+          console.warn(`Vote receipt not emailed: ${result.reason}`);
+        }
+      } catch (mailErr) {
+        console.error('Resend vote receipt failed:', mailErr.message);
+      }
     }
 
-    receiptMessage += `
-SMS Notification Sent To: ${vote.voter_phone}
-----------------------------------------
-Voteeq Awards: Verified GHS ${amountGHS.toFixed(2)} for ${vote.vote_count} votes to ${vote.nominee_name}. Thank you!
-----------------------------------------\n`;
-
-    receiptMessage += `========================================\n\n`;
-
-    // Append to file
+    const receiptMessage = `
+========================================
+VOTEEQ VOTE RECEIPT
+Receipt ID: REC_${vote.id}_${vote.payment_reference}
+Timestamp: ${timestamp}
+Nominee: ${vote.nominee_name}
+Votes: ${vote.vote_count}
+Amount: GHS ${amountGHS.toFixed(2)}
+Reference: ${vote.payment_reference}
+Email: ${vote.email || 'N/A'}
+Phone: ${vote.voter_phone || 'N/A'}
+========================================\n\n`;
     fs.appendFileSync(receiptsLogPath, receiptMessage, 'utf8');
-    console.log(`Receipt generated and logged to receipts.log for Vote ID: ${vote.id}`);
 
-    // Mark receipt as sent
     await db.run('UPDATE votes SET receipt_sent = 1 WHERE id = ?', [vote.id]);
-
   } catch (err) {
-    console.error('Error generating receipt:', err);
+    console.error('Error sending vote receipt:', err);
+  }
+}
+
+async function sendTicketReceipt(ticketId) {
+  try {
+    const db = getDB();
+    const ticket = await db.get(`
+      SELECT t.*, e.title as event_title, e.venue as event_venue, e.date as event_date
+      FROM tickets t
+      JOIN events e ON t.event_id = e.id
+      WHERE t.id = ?
+    `, [ticketId]);
+
+    if (!ticket || ticket.payment_status !== 'paid') {
+      return;
+    }
+
+    if (ticket.buyer_email && isValidEmail(ticket.buyer_email)) {
+      try {
+        const result = await sendTicketReceiptEmail({
+          to: normalizeEmail(ticket.buyer_email),
+          eventTitle: ticket.event_title,
+          venue: ticket.event_venue,
+          date: ticket.event_date,
+          buyerName: ticket.buyer_name,
+          quantity: ticket.quantity,
+          amountGHS: ticket.price_paid,
+          ticketCode: ticket.ticket_code,
+          reference: ticket.payment_reference,
+        });
+        if (result.sent) {
+          console.log(`Ticket receipt emailed to ${ticket.buyer_email} (Resend id: ${result.id})`);
+        } else {
+          console.warn(`Ticket receipt not emailed: ${result.reason}`);
+        }
+      } catch (mailErr) {
+        console.error('Resend ticket receipt failed:', mailErr.message);
+      }
+    }
+
+    const logMsg = `
+========================================
+VOTEEQ TICKET RECEIPT
+Event: ${ticket.event_title}
+Ticket code: ${ticket.ticket_code}
+Buyer: ${ticket.buyer_name} (${ticket.buyer_email})
+Quantity: ${ticket.quantity}
+Amount: GHS ${ticket.price_paid.toFixed(2)}
+Reference: ${ticket.payment_reference}
+========================================\n\n`;
+    fs.appendFileSync(receiptsLogPath, logMsg);
+  } catch (err) {
+    console.error('Error sending ticket receipt:', err);
   }
 }
 
@@ -450,6 +502,11 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     return res.status(400).json({ error: phoneCheck.error });
   }
 
+  if (!isValidEmail(buyer_email)) {
+    return res.status(400).json({ error: 'A valid email is required to send your ticket receipt.' });
+  }
+  const normalizedBuyerEmail = normalizeEmail(buyer_email);
+
   const secretKey = process.env.PAYSTACK_SECRET_KEY;
   if (isProduction() && !secretKey) {
     return res.status(503).json({ error: 'Ticket payments are not configured yet. Please try again later.' });
@@ -485,7 +542,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
       await tx.run(`
         INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-      `, [event_id, ticketCode, buyer_name, buyer_email, phoneCheck.normalized, qty, totalPrice, reference]);
+      `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, reference]);
     });
 
     const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
@@ -502,7 +559,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     try {
       const paystackData = await initializePaystackTransaction({
         secretKey,
-        email: buyer_email,
+        email: normalizedBuyerEmail,
         amountMinor: Math.round(totalPrice * 100),
         reference,
         callbackUrl: `${frontendBase}/payment-status?token=${statusToken}`,
@@ -555,26 +612,7 @@ app.post('/api/payment/mock-verify-ticket', rateLimiter(1 * 60 * 1000, 20), asyn
     if (ticketRecord.payment_status === 'pending') {
       await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
       await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
-      
-      // Write receipt log to receipts.log
-      const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
-      const logMsg = `
-========================================
-SMS/EMAIL TICKET RECEIPT (MOCK)
-Ticket ID: TIX_${ticketRecord.id}_${ticketRecord.ticket_code}
-Event: ${event ? event.title : 'Event'}
-Venue: ${event ? event.venue : 'TBA'}
-Date: ${event ? event.date : 'TBA'}
-Buyer: ${ticketRecord.buyer_name} (${ticketRecord.buyer_phone})
-Quantity: ${ticketRecord.quantity}
-Price Paid: GHS ${ticketRecord.price_paid.toFixed(2)}
-Verification Ticket Code: ${ticketRecord.ticket_code}
-Payment Reference: ${ticketRecord.payment_reference}
-Status: Completed
-Date/Time: ${new Date().toISOString()}
-========================================
-\n`;
-      fs.appendFileSync(receiptsLogPath, logMsg);
+      await sendTicketReceipt(ticketRecord.id);
 
       const ticketDetails = await db.get(`
         SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
@@ -1087,6 +1125,11 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
     return res.status(400).json({ error: phoneCheck.error });
   }
 
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ error: 'A valid email is required to send your vote receipt.' });
+  }
+  const normalizedEmail = normalizeEmail(email);
+
   try {
     const db = getDB();
     const nominee = await db.get('SELECT * FROM nominees WHERE id = ?', [nomineeId]);
@@ -1097,7 +1140,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
     await db.run(`
       INSERT INTO votes (nominee_id, voter_phone, email, vote_count, channel, payment_reference, status)
       VALUES (?, ?, ?, ?, 'web', ?, 'pending')
-    `, [nomineeId, phoneCheck.normalized, email || null, parsedVoteCount, reference]);
+    `, [nomineeId, phoneCheck.normalized, normalizedEmail, parsedVoteCount, reference]);
 
     const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
 
@@ -1105,7 +1148,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
       try {
         const paystackData = await initializePaystackTransaction({
           secretKey,
-          email: email || 'voter@voteeq.com',
+          email: normalizedEmail,
           amountMinor,
           reference,
           callbackUrl: `${frontendBase}/payment-status?token=${statusToken}`,
@@ -1181,26 +1224,7 @@ app.post('/api/payment/webhook', rateLimiter(1 * 60 * 1000, 100), async (req, re
           await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
           await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
           console.log(`Ticket payment confirmed for reference: ${reference}`);
-          
-          // Write receipt log to receipts.log
-          const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
-          const logMsg = `
-========================================
-SMS/EMAIL TICKET RECEIPT
-Ticket ID: TIX_${ticketRecord.id}_${ticketRecord.ticket_code}
-Event: ${event ? event.title : 'Event'}
-Venue: ${event ? event.venue : 'TBA'}
-Date: ${event ? event.date : 'TBA'}
-Buyer: ${ticketRecord.buyer_name} (${ticketRecord.buyer_phone})
-Quantity: ${ticketRecord.quantity}
-Price Paid: GHS ${ticketRecord.price_paid.toFixed(2)}
-Verification Ticket Code: ${ticketRecord.ticket_code}
-Payment Reference: ${ticketRecord.payment_reference}
-Status: Completed
-Date/Time: ${new Date().toISOString()}
-========================================
-\n`;
-          fs.appendFileSync(receiptsLogPath, logMsg);
+          await sendTicketReceipt(ticketRecord.id);
         }
         return res.status(200).send('Webhook processed successfully');
       }
@@ -1229,8 +1253,7 @@ Date/Time: ${new Date().toISOString()}
 
         console.log(`Payment confirmed! Added ${voteRecord.vote_count} votes for nominee ID ${voteRecord.nominee_id}`);
 
-        // Send Email/SMS receipt simulator
-        await sendReceipt(voteRecord.id);
+        await sendVoteReceipt(voteRecord.id);
 
         // Broadcast to WebSocket clients
         broadcast({
@@ -1275,7 +1298,7 @@ app.post('/api/payment/mock-verify', rateLimiter(1 * 60 * 1000, 20), async (req,
       );
 
       // Trigger Email/SMS receipt simulation
-      await sendReceipt(voteRecord.id);
+      await sendVoteReceipt(voteRecord.id);
 
       // Broadcast WebSocket real-time update
       broadcast({
@@ -1817,7 +1840,7 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
                   [voteRecord.vote_count, voteRecord.nominee_id]
                 );
                 console.log(`USSD payment simulation completed for ref: ${reference}`);
-                await sendReceipt(voteRecord.id);
+                await sendVoteReceipt(voteRecord.id);
                 broadcast({
                   type: 'VOTE_COMPLETED',
                   nomineeId: voteRecord.nominee_id,
@@ -2024,7 +2047,9 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
         nominee_name: vote.nominee_name,
         vote_count: vote.vote_count,
         amount: vote.channel === 'web' ? vote.vote_count * 1.0 : vote.vote_count * 0.5,
-        timestamp: vote.created_at
+        timestamp: vote.created_at,
+        email: vote.email,
+        phone: vote.voter_phone,
       };
     } else {
       const reg = await db.get('SELECT * FROM nominee_registrations WHERE payment_reference = ?', [reference]);
@@ -2053,7 +2078,9 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
             quantity: ticket.quantity,
             amount: ticket.price_paid,
             timestamp: ticket.created_at,
-            ticket_code: ticket.ticket_code
+            ticket_code: ticket.ticket_code,
+            email: ticket.buyer_email,
+            phone: ticket.buyer_phone,
           };
         }
       }

@@ -1920,6 +1920,29 @@ h1, h2, h3, h4 {
   to { opacity: 1; }
 }
 
+@media print {
+  body * {
+    visibility: hidden;
+  }
 
+  #payment-receipt-print,
+  #payment-receipt-print * {
+    visibility: visible;
+  }
 
+  #payment-receipt-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    border: none !important;
+    background: #fff !important;
+    color: #000 !important;
+    padding: 2rem !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
 

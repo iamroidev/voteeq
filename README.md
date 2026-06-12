@@ -65,6 +65,17 @@ In the [Paystack dashboard](https://dashboard.paystack.com) → Settings → API
 
 The public key (`pk_...`) is not required — checkout uses Paystack’s hosted payment page.
 
+### Resend (email receipts)
+
+Votes and tickets require a valid email. After Paystack confirms payment, Voteeq emails a receipt via [Resend](https://resend.com).
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `RESEND_API_KEY` | For live email | Create at Resend → API Keys (can reuse a key from another project or create a new one for Voteeq) |
+| `RESEND_FROM_EMAIL` | Recommended | Default: `Voteeq <onboarding@resend.dev>` (testing — only delivers to your Resend account email). For production, add and verify your domain in Resend, then e.g. `Voteeq <receipts@voteeq.com>` |
+
+Set both on **Render** alongside Paystack keys, then redeploy the API.
+
 ### Vercel
 
 | Variable | Value |

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config';
 import { readStoredAuth } from '../utils/storage';
 import { getGhanaPhoneError, normalizeGhanaPhone } from '../utils/phone';
+import { getEmailError, normalizeEmail } from '../utils/email';
 
 export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, activeEventId, onEventSelect }) {
   const [events, setEvents] = useState([]);
@@ -139,6 +140,13 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
       return;
     }
     const normalizedPhone = normalizeGhanaPhone(buyerPhone);
+    const emailError = getEmailError(buyerEmail);
+    if (emailError) {
+      setCheckoutError(emailError);
+      setSubmitting(false);
+      return;
+    }
+    const normalizedEmail = normalizeEmail(buyerEmail);
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/tickets/purchase`, {
@@ -149,7 +157,7 @@ export default function EventsTicketsPage({ isTab, onBack, onPaymentRedirect, ac
         body: JSON.stringify({
           event_id: selectedEvent.id,
           buyer_name: buyerName,
-          buyer_email: buyerEmail,
+          buyer_email: normalizedEmail,
           buyer_phone: normalizedPhone,
           quantity: parseInt(quantity, 10),
           access_code: accessCode
