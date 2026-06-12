@@ -12,6 +12,12 @@
     "VITE_API_URL": "https://voteeq-api.onrender.com",
     "VITE_WS_URL": "wss://voteeq-api.onrender.com"
   },
+  "rewrites": [
+    {
+      "source": "/((?!assets/).*)",
+      "destination": "/index.html"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
