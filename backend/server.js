@@ -254,12 +254,12 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(bodyParser.json({ 
-  limit: '2mb',
+  limit: '10mb',
   verify: (req, res, buf) => {
     req.rawBody = buf;
   }
 })); // support large canvas uploads
-app.use(bodyParser.urlencoded({ extended: true, limit: '2mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
 app.get('/health', async (req, res) => {
   try {
