@@ -27,140 +27,32 @@ function drawPhotoAreaWatermark(ctx, x, y, w, h) {
   ctx.restore();
 }
 
-function loadCoverPhoto(ctx, photoUrl, imgOffset, photoFilter, x, y, w, h) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x, y, w, h);
-      ctx.clip();
-      const imgRatio = img.width / img.height;
-      const targetRatio = w / h;
-      let drawW = w * imgOffset.scale;
-      let drawH = h * imgOffset.scale;
-      if (imgRatio > targetRatio) {
-        drawW = h * imgRatio * imgOffset.scale;
-      } else {
-        drawH = (w / imgRatio) * imgOffset.scale;
-      }
-      const cx = x + w / 2 + imgOffset.x;
-      const cy = y + h / 2 + imgOffset.y;
-      if (photoFilter === 'grayscale') ctx.filter = 'grayscale(100%) contrast(1.15)';
-      else if (photoFilter === 'sepia') ctx.filter = 'sepia(80%) contrast(1.05)';
-      else ctx.filter = 'none';
-      ctx.drawImage(img, cx - drawW / 2, cy - drawH / 2, drawW, drawH);
-      ctx.filter = 'none';
-      ctx.restore();
-      resolve();
-    };
-    img.onerror = reject;
-    img.src = photoUrl;
-  });
-}
-
-async function buildWhatsAppStatusCanvas({ photoUrl, imgOffset, photoFilter, nominee, accent, bgStyle, backgroundOptions, shareUrl }) {
+/** Letterbox the studio square poster onto 9:16 — same design, only aspect ratio changes. */
+function buildWhatsAppStatusCanvas(sourceCanvas, backgroundColor = '#0a0a0a') {
   const canvas = document.createElement('canvas');
   canvas.width = WHATSAPP_STATUS_W;
   canvas.height = WHATSAPP_STATUS_H;
   const ctx = canvas.getContext('2d');
-  const activeBg = backgroundOptions.find((b) => b.id === bgStyle) || backgroundOptions[0];
-  const photoH = Math.round(WHATSAPP_STATUS_H * 0.58);
-  const panelY = photoH;
 
-  ctx.fillStyle = '#141312';
-  ctx.fillRect(0, 0, WHATSAPP_STATUS_W, photoH);
-  if (photoUrl) {
-    await loadCoverPhoto(ctx, photoUrl, imgOffset, photoFilter, 0, 0, WHATSAPP_STATUS_W, photoH);
-    drawPhotoAreaWatermark(ctx, 0, 0, WHATSAPP_STATUS_W, photoH);
-  } else {
-    ctx.fillStyle = '#2a2927';
-    ctx.fillRect(0, 0, WHATSAPP_STATUS_W, photoH);
-    ctx.fillStyle = '#8c8273';
-    ctx.font = '400 28px "Playfair Display", serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('UPLOAD PORTRAIT PHOTO', WHATSAPP_STATUS_W / 2, photoH / 2);
-    ctx.textAlign = 'left';
-  }
+  ctx.fillStyle = backgroundColor;
+  ctx.fillRect(0, 0, WHATSAPP_STATUS_W, WHATSAPP_STATUS_H);
 
-  const fade = ctx.createLinearGradient(0, photoH - 140, 0, photoH);
-  fade.addColorStop(0, 'transparent');
-  fade.addColorStop(1, activeBg.bg);
-  ctx.fillStyle = fade;
-  ctx.fillRect(0, photoH - 140, WHATSAPP_STATUS_W, 140);
+  const destSize = WHATSAPP_STATUS_W;
+  const offsetY = Math.round((WHATSAPP_STATUS_H - destSize) / 2);
 
-  ctx.fillStyle = activeBg.bg;
-  ctx.fillRect(0, panelY, WHATSAPP_STATUS_W, WHATSAPP_STATUS_H - panelY);
-
-  const { text: textPrimary, secondaryText: textSecondary } = activeBg;
-
-  ctx.fillStyle = accent;
-  ctx.fillRect(48, panelY + 32, 100, 5);
-
-  ctx.fillStyle = textSecondary;
-  ctx.font = '700 20px "Space Grotesk", sans-serif';
-  ctx.fillText(`${BRANDING.eventTitle.toUpperCase()} // OFFICIAL NOMINEE`, 48, panelY + 76);
-
-  ctx.fillStyle = textPrimary;
-  ctx.font = '400 68px "Playfair Display", serif';
-  const name = nominee.name.toUpperCase();
-  ctx.fillText(name.length > 16 ? `${name.slice(0, 14)}…` : name, 48, panelY + 158);
-
-  ctx.fillStyle = textSecondary;
-  ctx.font = '700 18px "Space Grotesk", sans-serif';
-  ctx.fillText('CATEGORY', 48, panelY + 204);
-  ctx.fillStyle = accent;
-  ctx.font = '400 34px "Playfair Display", serif';
-  let cat = (nominee.category_name || 'Award category').toUpperCase();
-  if (cat.length > 30) cat = `${cat.slice(0, 28)}…`;
-  ctx.fillText(cat, 48, panelY + 248);
-
-  ctx.fillStyle = activeBg.cardBg;
-  ctx.fillRect(48, panelY + 278, WHATSAPP_STATUS_W - 96, 188);
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(48, panelY + 278, WHATSAPP_STATUS_W - 96, 188);
-
-  ctx.fillStyle = textSecondary;
-  ctx.font = '700 17px "Space Grotesk", sans-serif';
-  ctx.fillText('DIAL TO VOTE', 72, panelY + 316);
-  ctx.fillStyle = textPrimary;
-  ctx.font = '900 52px "Space Grotesk", sans-serif';
-  ctx.fillText(`*920*566*${nominee.code}#`, 72, panelY + 378);
-  ctx.fillStyle = textSecondary;
-  ctx.font = '700 14px "Space Grotesk", sans-serif';
-  ctx.fillText(formatVotePricingLine(), 72, panelY + 412);
-  ctx.font = '700 15px "Space Grotesk", sans-serif';
-  const linkDisplay = shareUrl.replace(/^https?:\/\//i, '');
-  ctx.fillText(`OR VOTE · ${linkDisplay}`, 72, panelY + 448);
-
-  ctx.save();
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(WHATSAPP_STATUS_W - 96, panelY + 372, 48, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = accent;
-  ctx.font = '900 13px "Space Grotesk", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(BRANDING.platformName.toUpperCase(), WHATSAPP_STATUS_W - 96, panelY + 364);
-  ctx.font = '10px "Space Grotesk", sans-serif';
-  ctx.fillText('OFFICIAL', WHATSAPP_STATUS_W - 96, panelY + 382);
-  ctx.fillText('★', WHATSAPP_STATUS_W - 96, panelY + 398);
-  ctx.restore();
-
-  ctx.fillStyle = textSecondary;
-  ctx.font = '700 17px "Space Grotesk", sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(`CODE ${nominee.code} · ${BRANDING.eventYear}`, 48, WHATSAPP_STATUS_H - 64);
-
-  ctx.save();
-  ctx.globalAlpha = 0.22;
-  ctx.fillStyle = textPrimary;
-  ctx.font = '700 88px "Space Grotesk", sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillText(BRANDING.platformName.toUpperCase(), WHATSAPP_STATUS_W - 36, WHATSAPP_STATUS_H - 40);
-  ctx.restore();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(
+    sourceCanvas,
+    0,
+    0,
+    sourceCanvas.width,
+    sourceCanvas.height,
+    0,
+    offsetY,
+    destSize,
+    destSize
+  );
 
   return canvas;
 }
@@ -875,22 +767,15 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
     }
   };
 
-  const handleDownload = async (format = 'square') => {
+  const handleDownload = (format = 'square') => {
     try {
-      let exportCanvas = canvasRef.current;
-      if (format === 'status') {
-        exportCanvas = await buildWhatsAppStatusCanvas({
-          photoUrl,
-          imgOffset,
-          photoFilter,
-          nominee,
-          accent,
-          bgStyle,
-          backgroundOptions,
-          shareUrl: getNomineeVoteUrl(nominee.code),
-        });
-      }
-      if (!exportCanvas) return;
+      const sourceCanvas = canvasRef.current;
+      if (!sourceCanvas) return;
+
+      const activeBg = backgroundOptions.find((b) => b.id === bgStyle) || backgroundOptions[0];
+      const exportCanvas = format === 'status'
+        ? buildWhatsAppStatusCanvas(sourceCanvas, activeBg.bg)
+        : sourceCanvas;
       const url = exportCanvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.download = format === 'status'
