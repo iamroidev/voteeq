@@ -61,6 +61,48 @@ async function initializePaystackTransaction({
   return parsed.data;
 }
 
+async function verifyPaystackTransaction(secretKey, reference) {
+  const key = String(secretKey || '').trim();
+  if (!key) {
+    throw new Error('Paystack secret key is not configured');
+  }
+
+  const ref = encodeURIComponent(String(reference));
+  let response;
+  try {
+    response = await fetch(`https://api.paystack.co/transaction/verify/${ref}`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+  } catch (err) {
+    console.error('Paystack verify network error:', err);
+    throw new Error('Could not reach Paystack to verify payment.');
+  }
+
+  const raw = await response.text();
+  let parsed;
+  try {
+    parsed = raw ? JSON.parse(raw) : {};
+  } catch (err) {
+    console.error('Paystack verify non-JSON:', response.status, raw.slice(0, 300));
+    throw new Error(`Paystack verify returned unexpected response (HTTP ${response.status})`);
+  }
+
+  if (!response.ok || !parsed.status) {
+    const message = parsed.message || `Paystack verify failed (HTTP ${response.status})`;
+    throw new Error(message);
+  }
+
+  const data = parsed.data || {};
+  return {
+    ok: data.status === 'success',
+    status: data.status,
+    reference: data.reference,
+    amount: data.amount,
+    data,
+  };
+}
+
 module.exports = {
   initializePaystackTransaction,
+  verifyPaystackTransaction,
 };

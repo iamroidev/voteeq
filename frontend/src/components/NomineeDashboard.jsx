@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { API_BASE_URL } from '../config';
+import { getNomineeShareUrl } from '../branding';
 import { nomineePhotoSrc } from '../utils/photoUrl';
 
 const BannerGenerator = lazy(() => import('./BannerGenerator'));
@@ -279,7 +280,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
             Direct Shareable voting link
           </h3>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            Share this link directly on social media so fans can vote for you with one click.
+            Share this link on WhatsApp or social media — it shows your photo in the preview, then opens voting.
           </p>
         </div>
         
@@ -287,7 +288,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
           <input
             type="text"
             readOnly
-            value={`${window.location.origin}/?nominee=${nominee.code}`}
+            value={getNomineeShareUrl(nominee.code, API_BASE_URL)}
             className="luxury-input"
             style={{ 
               fontSize: '0.75rem', 

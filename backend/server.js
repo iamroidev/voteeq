@@ -36,7 +36,8 @@ const {
 const { createRateLimiter } = require('./rate-limiter');
 const { prepareProfilePhotoFromDataUrl, buildProfilePhotoUrl } = require('./profile-photo');
 const { validateGhanaPhone } = require('./phone');
-const { initializePaystackTransaction } = require('./paystack');
+const { initializePaystackTransaction, verifyPaystackTransaction } = require('./paystack');
+const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
 const {
   isValidEmail,
@@ -110,7 +111,7 @@ const fs = require('fs');
 const path = require('path');
 const receiptsLogPath = path.resolve(__dirname, 'receipts.log');
 
-async function sendVoteReceipt(voteId) {
+async function sendVoteReceipt(voteId, { force = false } = {}) {
   try {
     const db = getDB();
     const vote = await db.get(`
@@ -120,8 +121,17 @@ async function sendVoteReceipt(voteId) {
       WHERE v.id = ?
     `, [voteId]);
 
-    if (!vote || vote.status !== 'completed' || vote.receipt_sent === 1) {
-      return;
+    if (!vote) {
+      return { ok: false, reason: 'not_found' };
+    }
+    if (vote.status !== 'completed') {
+      return { ok: false, reason: 'not_completed' };
+    }
+    if (!force && vote.receipt_sent === 1) {
+      return { ok: false, reason: 'already_sent' };
+    }
+    if (!vote.email || !isValidEmail(vote.email)) {
+      return { ok: false, reason: 'no_email' };
     }
 
     const amountGHS = vote.amount_paid != null
@@ -129,29 +139,33 @@ async function sendVoteReceipt(voteId) {
       : (vote.channel === 'web' ? vote.vote_count * 1.0 : vote.vote_count * 0.5);
     const timestamp = new Date(vote.created_at || Date.now()).toLocaleString();
 
-    if (vote.email && isValidEmail(vote.email)) {
-      try {
-        const result = await sendVoteReceiptEmail({
-          to: normalizeEmail(vote.email),
-          nomineeName: vote.nominee_name,
-          voteCount: vote.vote_count,
-          amountGHS,
-          reference: vote.payment_reference,
-          phone: vote.voter_phone,
-        });
-        if (result.sent) {
-          console.log(`Vote receipt emailed to ${vote.email} (Resend id: ${result.id})`);
-        } else {
-          console.warn(`Vote receipt not emailed: ${result.reason}`);
-        }
-      } catch (mailErr) {
-        console.error('Resend vote receipt failed:', mailErr.message);
+    let emailSent = false;
+    let resendId;
+    try {
+      const result = await sendVoteReceiptEmail({
+        to: normalizeEmail(vote.email),
+        nomineeName: vote.nominee_name,
+        voteCount: vote.vote_count,
+        amountGHS,
+        reference: vote.payment_reference,
+        phone: vote.voter_phone,
+      });
+      if (result.sent) {
+        emailSent = true;
+        resendId = result.id;
+        console.log(`Vote receipt emailed to ${vote.email} (Resend id: ${result.id})`);
+      } else {
+        console.warn(`Vote receipt not emailed: ${result.reason}`);
+        return { ok: false, reason: result.reason || 'email_not_sent' };
       }
+    } catch (mailErr) {
+      console.error('Resend vote receipt failed:', mailErr.message);
+      return { ok: false, reason: mailErr.message || 'email_failed' };
     }
 
     const receiptMessage = `
 ========================================
-VOTEEQ VOTE RECEIPT
+VOTEEQ VOTE RECEIPT${force ? ' (RESENT BY ADMIN)' : ''}
 Receipt ID: REC_${vote.id}_${vote.payment_reference}
 Timestamp: ${timestamp}
 Nominee: ${vote.nominee_name}
@@ -163,13 +177,19 @@ Phone: ${vote.voter_phone || 'N/A'}
 ========================================\n\n`;
     fs.appendFileSync(receiptsLogPath, receiptMessage, 'utf8');
 
-    await db.run('UPDATE votes SET receipt_sent = 1 WHERE id = ?', [vote.id]);
+    if (emailSent) {
+      await db.run('UPDATE votes SET receipt_sent = 1 WHERE id = ?', [vote.id]);
+      return { ok: true, email: vote.email, resendId };
+    }
+
+    return { ok: false, reason: 'email_not_sent' };
   } catch (err) {
     console.error('Error sending vote receipt:', err);
+    return { ok: false, reason: err.message || 'unknown_error' };
   }
 }
 
-async function sendTicketReceipt(ticketId) {
+async function sendTicketReceipt(ticketId, { force = false } = {}) {
   try {
     const db = getDB();
     const ticket = await db.get(`
@@ -179,36 +199,44 @@ async function sendTicketReceipt(ticketId) {
       WHERE t.id = ?
     `, [ticketId]);
 
-    if (!ticket || ticket.payment_status !== 'paid') {
-      return;
+    if (!ticket) {
+      return { ok: false, reason: 'not_found' };
+    }
+    if (ticket.payment_status !== 'paid') {
+      return { ok: false, reason: 'not_paid' };
+    }
+    if (!ticket.buyer_email || !isValidEmail(ticket.buyer_email)) {
+      return { ok: false, reason: 'no_email' };
     }
 
-    if (ticket.buyer_email && isValidEmail(ticket.buyer_email)) {
-      try {
-        const result = await sendTicketReceiptEmail({
-          to: normalizeEmail(ticket.buyer_email),
-          eventTitle: ticket.event_title,
-          venue: ticket.event_venue,
-          date: formatEventDateForDisplay(ticket.event_date),
-          buyerName: ticket.buyer_name,
-          quantity: ticket.quantity,
-          amountGHS: ticket.price_paid,
-          ticketCode: ticket.ticket_code,
-          reference: ticket.payment_reference,
-        });
-        if (result.sent) {
-          console.log(`Ticket receipt emailed to ${ticket.buyer_email} (Resend id: ${result.id})`);
-        } else {
-          console.warn(`Ticket receipt not emailed: ${result.reason}`);
-        }
-      } catch (mailErr) {
-        console.error('Resend ticket receipt failed:', mailErr.message);
+    let resendId;
+    try {
+      const result = await sendTicketReceiptEmail({
+        to: normalizeEmail(ticket.buyer_email),
+        eventTitle: ticket.event_title,
+        venue: ticket.event_venue,
+        date: formatEventDateForDisplay(ticket.event_date),
+        buyerName: ticket.buyer_name,
+        quantity: ticket.quantity,
+        amountGHS: ticket.price_paid,
+        ticketCode: ticket.ticket_code,
+        reference: ticket.payment_reference,
+      });
+      if (result.sent) {
+        resendId = result.id;
+        console.log(`Ticket receipt emailed to ${ticket.buyer_email} (Resend id: ${result.id})`);
+      } else {
+        console.warn(`Ticket receipt not emailed: ${result.reason}`);
+        return { ok: false, reason: result.reason || 'email_not_sent' };
       }
+    } catch (mailErr) {
+      console.error('Resend ticket receipt failed:', mailErr.message);
+      return { ok: false, reason: mailErr.message || 'email_failed' };
     }
 
     const logMsg = `
 ========================================
-VOTEEQ TICKET RECEIPT
+VOTEEQ TICKET RECEIPT${force ? ' (RESENT BY ADMIN)' : ''}
 Event: ${ticket.event_title}
 Ticket code: ${ticket.ticket_code}
 Buyer: ${ticket.buyer_name} (${ticket.buyer_email})
@@ -217,8 +245,11 @@ Amount: GHS ${ticket.price_paid.toFixed(2)}
 Reference: ${ticket.payment_reference}
 ========================================\n\n`;
     fs.appendFileSync(receiptsLogPath, logMsg);
+
+    return { ok: true, email: ticket.buyer_email, resendId };
   } catch (err) {
     console.error('Error sending ticket receipt:', err);
+    return { ok: false, reason: err.message || 'unknown_error' };
   }
 }
 
@@ -651,7 +682,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
         email: normalizedBuyerEmail,
         amountMinor: ticketPricing.amountMinor,
         reference,
-        callbackUrl: `${frontendBase}/payment-status?token=${statusToken}`,
+        callbackUrl: `${frontendBase}/payment-status?token=${statusToken}&reference=${encodeURIComponent(reference)}`,
         metadata: {
           type: 'ticket',
           event_id,
@@ -1074,7 +1105,33 @@ app.post('/api/nominees/save-banner', async (req, res) => {
   }
 });
 
-// 4b. Dynamic SVG Campaign share card generation
+// 4b. Dynamic share card (JPEG for social crawlers — SVG/remote URLs are unreliable in OG tags)
+app.get('/api/nominees/share-card/:code.jpg', async (req, res) => {
+  const { code } = req.params;
+  try {
+    const db = getDB();
+    const nominee = await db.get(`
+      SELECT n.*, c.name as category_name
+      FROM nominees n
+      JOIN categories c ON n.category_id = c.id
+      WHERE n.code = ?
+    `, [code]);
+
+    if (!nominee) {
+      return res.status(404).send('Nominee not found');
+    }
+
+    const image = await generateShareCardImage(nominee, { photosDir, format: 'jpeg' });
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(image);
+  } catch (err) {
+    console.error('Share card JPEG error:', err);
+    res.status(500).send('Error generating share card');
+  }
+});
+
+// Legacy SVG share image (kept for direct image links)
 app.get('/api/nominees/share-image/:code', async (req, res) => {
   const { code } = req.params;
   try {
@@ -1173,11 +1230,13 @@ app.get('/share/:code', async (req, res) => {
     const host = req.headers.host || 'localhost:5000';
     const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
     const serverUrl = `${protocol}://${host}`;
-    const customBannerPath = path.join(bannersDir, `${code}.png`);
-    const hasCustomBanner = fs.existsSync(customBannerPath);
-    const bannerUrl = hasCustomBanner 
-      ? `${serverUrl}/banners/${code}.png`
-      : `${serverUrl}/api/nominees/share-image/${code}`;
+    const { url: bannerUrl, type: bannerType } = resolveShareOgImage({
+      nominee,
+      code,
+      serverUrl,
+      bannersDir,
+      photosDir,
+    });
 
     const frontendUrl = process.env.FRONTEND_URL || (process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')[0].trim() : 'http://localhost:5173');
     const safeName = escapeHtml(nominee.name);
@@ -1185,6 +1244,7 @@ app.get('/share/:code', async (req, res) => {
     const safeCode = escapeHtml(nominee.code);
     const safeBannerUrl = escapeHtml(bannerUrl);
     const safeFrontendUrl = escapeHtml(frontendUrl);
+    const sharePageUrl = `${serverUrl}/share/${safeCode}`;
     const nomineeUrl = `${safeFrontendUrl}/?nominee=${safeCode}`;
 
     res.send(`<!DOCTYPE html>
@@ -1193,19 +1253,19 @@ app.get('/share/:code', async (req, res) => {
   <meta charset="UTF-8">
   <title>Vote for ${safeName} - Voteeq Awards</title>
   
-  <!-- Open Graph / Facebook -->
+  <!-- Open Graph / Facebook / WhatsApp -->
   <meta property="og:type" content="website">
-  <meta property="og:url" content="${nomineeUrl}">
+  <meta property="og:url" content="${sharePageUrl}">
   <meta property="og:title" content="Vote for ${safeName} - Voteeq Awards">
   <meta property="og:description" content="Support ${safeName} in the ${safeCategory} category. Dial *920*566*${safeCode}# or vote online!">
   <meta property="og:image" content="${safeBannerUrl}">
-  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:type" content="${bannerType}">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:url" content="${nomineeUrl}">
+  <meta name="twitter:url" content="${sharePageUrl}">
   <meta name="twitter:title" content="Vote for ${safeName} - Voteeq Awards">
   <meta name="twitter:description" content="Support ${safeName} in the ${safeCategory} category. Dial *920*566*${safeCode}# or vote online!">
   <meta name="twitter:image" content="${safeBannerUrl}">
@@ -1287,7 +1347,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
           email: normalizedEmail,
           amountMinor,
           reference,
-          callbackUrl: `${frontendBase}/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/payment-status?token=${statusToken}&reference=${encodeURIComponent(reference)}`,
           metadata: {
             type: 'vote',
             nomineeId,
@@ -1519,7 +1579,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
           email,
           amountMinor: Math.round(formFee * 100),
           reference,
-          callbackUrl: `${frontendBase}/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/payment-status?token=${statusToken}&reference=${encodeURIComponent(reference)}`,
           metadata: {
             type: 'nominee_form',
             name,
@@ -1759,6 +1819,128 @@ app.post('/api/admin/tickets/scan', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Check-in validation error occurred' });
+  }
+});
+
+function receiptErrorMessage(reason) {
+  const messages = {
+    not_found: 'Transaction not found.',
+    not_completed: 'Vote payment is not completed yet.',
+    not_paid: 'Ticket payment is not completed yet.',
+    already_sent: 'Receipt was already emailed. Use resend to send again.',
+    no_email: 'No valid email address is stored for this transaction.',
+    email_not_sent: 'Email could not be sent. Check Resend configuration.',
+    email_failed: 'Email provider returned an error.',
+  };
+  return messages[reason] || String(reason || 'Could not send receipt.');
+}
+
+// Search completed vote/ticket payments for receipt support
+app.get('/api/admin/receipts/search', requireAdmin, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 3) {
+    return res.status(400).json({ error: 'Enter at least 3 characters (payment reference or email).' });
+  }
+
+  try {
+    const db = getDB();
+    const emailQuery = normalizeEmail(q);
+    const likeQuery = `%${q}%`;
+
+    const votes = await db.all(`
+      SELECT v.id, v.payment_reference, v.email, v.voter_phone, v.vote_count, v.status,
+             v.receipt_sent, v.created_at, v.amount_paid, n.name as nominee_name
+      FROM votes v
+      JOIN nominees n ON v.nominee_id = n.id
+      WHERE v.status = 'completed' AND (
+        v.payment_reference = ?
+        OR LOWER(v.email) = LOWER(?)
+        OR v.voter_phone LIKE ?
+      )
+      ORDER BY v.created_at DESC
+      LIMIT 25
+    `, [q, emailQuery, likeQuery]);
+
+    const tickets = await db.all(`
+      SELECT t.id, t.payment_reference, t.ticket_code, t.buyer_email, t.buyer_phone,
+             t.buyer_name, t.quantity, t.payment_status, t.price_paid, t.created_at,
+             e.title as event_title
+      FROM tickets t
+      JOIN events e ON t.event_id = e.id
+      WHERE t.payment_status = 'paid' AND (
+        t.payment_reference = ?
+        OR t.ticket_code = ?
+        OR LOWER(t.buyer_email) = LOWER(?)
+        OR t.buyer_phone LIKE ?
+      )
+      ORDER BY t.created_at DESC
+      LIMIT 25
+    `, [q, q, emailQuery, likeQuery]);
+
+    res.json({ votes, tickets });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Receipt search failed' });
+  }
+});
+
+app.post('/api/admin/receipts/votes/:id/resend', requireAdmin, async (req, res) => {
+  const voteId = parseInt(req.params.id, 10);
+  if (!voteId) {
+    return res.status(400).json({ error: 'Invalid vote id' });
+  }
+
+  try {
+    const result = await sendVoteReceipt(voteId, { force: true });
+    if (!result.ok) {
+      return res.status(400).json({ error: receiptErrorMessage(result.reason) });
+    }
+
+    await logAdminAction(
+      adminUsername(req),
+      'RESEND_VOTE_RECEIPT',
+      `Resent vote receipt for vote #${voteId} to ${result.email}`
+    );
+
+    res.json({
+      success: true,
+      message: `Vote receipt sent to ${result.email}.`,
+      email: result.email,
+      resendId: result.resendId,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to resend vote receipt' });
+  }
+});
+
+app.post('/api/admin/receipts/tickets/:id/resend', requireAdmin, async (req, res) => {
+  const ticketId = parseInt(req.params.id, 10);
+  if (!ticketId) {
+    return res.status(400).json({ error: 'Invalid ticket id' });
+  }
+
+  try {
+    const result = await sendTicketReceipt(ticketId, { force: true });
+    if (!result.ok) {
+      return res.status(400).json({ error: receiptErrorMessage(result.reason) });
+    }
+
+    await logAdminAction(
+      adminUsername(req),
+      'RESEND_TICKET_RECEIPT',
+      `Resent ticket receipt for ticket #${ticketId} to ${result.email}`
+    );
+
+    res.json({
+      success: true,
+      message: `Ticket receipt sent to ${result.email}.`,
+      email: result.email,
+      resendId: result.resendId,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to resend ticket receipt' });
   }
 });
 
@@ -2204,6 +2386,85 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
 
     if (!details) {
       return res.status(404).json({ error: 'Payment reference not found' });
+    }
+
+    const secretKey = process.env.PAYSTACK_SECRET_KEY;
+    if (secretKey && (status === 'pending' || status === 'processing')) {
+      try {
+        const verified = await verifyPaystackTransaction(secretKey, reference);
+        if (verified.ok) {
+          if (type === 'vote') {
+            const voteResult = await completeVotePayment(db, reference);
+            if (voteResult.outcome === 'completed') {
+              runInBackground(() => sendVoteReceipt(voteResult.vote.id));
+              broadcast({
+                type: 'VOTE_COMPLETED',
+                nomineeId: voteResult.nomineeId,
+                votesCount: voteResult.votesAdded,
+              });
+            }
+            const freshVote = await db.get(`
+              SELECT v.*, n.name as nominee_name
+              FROM votes v
+              JOIN nominees n ON v.nominee_id = n.id
+              WHERE v.payment_reference = ?
+            `, [reference]);
+            if (freshVote) {
+              status = freshVote.status;
+              details = {
+                nominee_name: freshVote.nominee_name,
+                vote_count: freshVote.vote_count,
+                amount: freshVote.amount_paid != null
+                  ? freshVote.amount_paid
+                  : (freshVote.channel === 'web' ? freshVote.vote_count * 1.0 : freshVote.vote_count * 0.5),
+                amount_base: freshVote.amount_base,
+                amount_fee: freshVote.amount_fee,
+                timestamp: freshVote.created_at,
+                email: freshVote.email,
+                phone: freshVote.voter_phone,
+              };
+            }
+          } else if (type === 'ticket') {
+            const ticketResult = await completeTicketPayment(db, reference);
+            if (ticketResult.outcome === 'completed') {
+              runInBackground(() => sendTicketReceipt(ticketResult.ticket.id));
+            }
+            const freshTicket = await db.get(`
+              SELECT t.*, e.title as event_title
+              FROM tickets t
+              JOIN events e ON t.event_id = e.id
+              WHERE t.payment_reference = ?
+            `, [reference]);
+            if (freshTicket) {
+              status = freshTicket.payment_status === 'paid' ? 'completed' : freshTicket.payment_status;
+              details = {
+                event_title: freshTicket.event_title,
+                buyer_name: freshTicket.buyer_name,
+                quantity: freshTicket.quantity,
+                amount: freshTicket.price_paid,
+                timestamp: freshTicket.created_at,
+                ticket_code: freshTicket.ticket_code,
+                email: freshTicket.buyer_email,
+                phone: freshTicket.buyer_phone,
+              };
+            }
+          } else if (type === 'nominee_registration') {
+            const regResult = await completeRegistrationPayment(db, reference);
+            if (regResult.outcome === 'completed') {
+              status = 'completed';
+            }
+          }
+        }
+      } catch (verifyErr) {
+        console.warn(`Paystack verify on status check (${reference}):`, verifyErr.message);
+      }
+    }
+
+    if (type === 'vote' && status === 'completed') {
+      const voteRow = await db.get('SELECT id, receipt_sent FROM votes WHERE payment_reference = ?', [reference]);
+      if (voteRow && voteRow.receipt_sent !== 1) {
+        runInBackground(() => sendVoteReceipt(voteRow.id));
+      }
     }
 
     res.json({

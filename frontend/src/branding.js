@@ -67,6 +67,15 @@ export function getNomineeVoteUrl(code, origin) {
   return `${base}/?nominee=${encodeURIComponent(code)}`;
 }
 
+/** Link to share on WhatsApp/social — serves OG preview then redirects to the vote page */
+export function getNomineeShareUrl(code, apiBase) {
+  const base = (apiBase || '').replace(/\/$/, '');
+  if (!base) {
+    return getNomineeVoteUrl(code);
+  }
+  return `${base}/share/${encodeURIComponent(code)}`;
+}
+
 export function formatVotePricingLine() {
   const online = `ONLINE GH₵ ${BRANDING.votePriceOnlineGhs}`;
   if (BRANDING.showUssd) {

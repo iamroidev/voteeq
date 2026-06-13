@@ -76,6 +76,13 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState('');
 
+  const [receiptQuery, setReceiptQuery] = useState('');
+  const [receiptResults, setReceiptResults] = useState({ votes: [], tickets: [] });
+  const [receiptSearching, setReceiptSearching] = useState(false);
+  const [receiptMessage, setReceiptMessage] = useState('');
+  const [receiptError, setReceiptError] = useState('');
+  const [resendingReceiptId, setResendingReceiptId] = useState('');
+
   // Event Form States
   const [editingEventId, setEditingEventId] = useState(null);
   const [eventTitle, setEventTitle] = useState('');
@@ -204,6 +211,63 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       setScanResult({ success: false, error: err.message || 'Network error scanning ticket' });
     } finally {
       setScanning(false);
+    }
+  };
+
+  const searchReceipts = async (e) => {
+    e?.preventDefault();
+    const q = receiptQuery.trim();
+    if (q.length < 3) {
+      setReceiptError('Enter a payment reference, email, phone, or ticket code (at least 3 characters).');
+      setReceiptResults({ votes: [], tickets: [] });
+      return;
+    }
+
+    setReceiptSearching(true);
+    setReceiptError('');
+    setReceiptMessage('');
+    try {
+      const res = await authFetch(`/api/admin/receipts/search?q=${encodeURIComponent(q)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }, onLogout);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Search failed');
+      setReceiptResults({ votes: data.votes || [], tickets: data.tickets || [] });
+      if ((data.votes || []).length === 0 && (data.tickets || []).length === 0) {
+        setReceiptError('No completed payments found for that reference or contact.');
+      }
+    } catch (err) {
+      setReceiptError(err.message || 'Could not search receipts');
+      setReceiptResults({ votes: [], tickets: [] });
+    } finally {
+      setReceiptSearching(false);
+    }
+  };
+
+  const resendReceipt = async (type, id) => {
+    const key = `${type}-${id}`;
+    setResendingReceiptId(key);
+    setReceiptError('');
+    setReceiptMessage('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/receipts/${type}/${id}/resend`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Resend failed');
+      setReceiptMessage(data.message || 'Receipt sent.');
+      if (type === 'votes') {
+        setReceiptResults((prev) => ({
+          ...prev,
+          votes: prev.votes.map((v) => (v.id === id ? { ...v, receipt_sent: 1 } : v)),
+        }));
+      }
+      fetchAuditLogs();
+    } catch (err) {
+      setReceiptError(err.message || 'Could not resend receipt');
+    } finally {
+      setResendingReceiptId('');
     }
   };
 
@@ -500,6 +564,12 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
           onClick={() => setActiveSubTab('tickets')}
         >
           Tickets & Scanner
+        </button>
+        <button 
+          className={`category-tab-btn ${activeSubTab === 'receipts' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('receipts')}
+        >
+          Receipts
         </button>
         <button 
           className={`category-tab-btn ${activeSubTab === 'events' ? 'active' : ''}`}
@@ -1068,6 +1138,144 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Receipt support — lookup and resend vote/ticket emails */}
+      {activeSubTab === 'receipts' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          <div className="editorial-sheet" style={{ margin: 0, padding: '2rem' }}>
+            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', marginBottom: '0.5rem', fontWeight: 400 }}>
+              Resend payment receipts
+            </h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '1.5rem' }}>
+              Search by Paystack reference, voter email, phone, or ticket code. Use this when someone paid but did not receive their VoteEQ receipt email.
+            </p>
+
+            {receiptError && (
+              <div style={{ background: 'var(--accent-light)', borderLeft: '3px solid var(--accent)', padding: '0.75rem 1rem', fontSize: '0.8rem', color: 'var(--accent-dark)', marginBottom: '1rem', fontWeight: 500 }}>
+                {receiptError}
+              </div>
+            )}
+            {receiptMessage && (
+              <div style={{ background: 'rgba(39, 174, 96, 0.1)', borderLeft: '3px solid #27ae60', padding: '0.75rem 1rem', fontSize: '0.8rem', color: '#27ae60', marginBottom: '1rem', fontWeight: 500 }}>
+                {receiptMessage}
+              </div>
+            )}
+
+            <form onSubmit={searchReceipts} style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
+              <input
+                type="text"
+                className="luxury-input"
+                placeholder="Payment reference, email, phone, or ticket code"
+                value={receiptQuery}
+                onChange={(e) => setReceiptQuery(e.target.value)}
+                style={{ flex: '1 1 280px', fontFamily: 'monospace', fontSize: '0.8rem' }}
+              />
+              <button type="submit" disabled={receiptSearching} className={`luxury-btn ${receiptSearching ? 'disabled' : ''}`} style={{ fontSize: '0.7rem', padding: '0 1.5rem' }}>
+                {receiptSearching ? 'SEARCHING...' : 'SEARCH'}
+              </button>
+            </form>
+
+            {receiptResults.votes.length > 0 && (
+              <div style={{ marginBottom: '2rem' }}>
+                <h4 style={{ fontSize: '0.75rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '1rem' }}>Vote payments</h4>
+                <div className="table-responsive">
+                  <table className="luxury-table">
+                    <thead>
+                      <tr>
+                        <th>Reference</th>
+                        <th>Nominee</th>
+                        <th>Contact</th>
+                        <th>Votes</th>
+                        <th>Receipt</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {receiptResults.votes.map((v) => (
+                        <tr key={v.id}>
+                          <td style={{ fontFamily: 'monospace', fontSize: '0.7rem', wordBreak: 'break-all' }}>{v.payment_reference}</td>
+                          <td>{v.nominee_name}</td>
+                          <td style={{ fontSize: '0.75rem' }}>
+                            <div>{v.email || '—'}</div>
+                            <div style={{ color: 'var(--text-secondary)' }}>{v.voter_phone || ''}</div>
+                          </td>
+                          <td style={{ fontWeight: 700 }}>{v.vote_count}</td>
+                          <td>
+                            <span style={{
+                              fontSize: '0.6rem',
+                              fontWeight: 700,
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: '8px',
+                              background: v.receipt_sent === 1 ? '#e2f9eb' : 'var(--accent-light)',
+                              color: v.receipt_sent === 1 ? '#27ae60' : 'var(--accent-dark)',
+                            }}>
+                              {v.receipt_sent === 1 ? 'EMAILED' : 'NOT SENT'}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="luxury-btn secondary"
+                              style={{ fontSize: '0.65rem', padding: '0.35rem 0.75rem' }}
+                              disabled={resendingReceiptId === `votes-${v.id}` || !v.email}
+                              onClick={() => resendReceipt('votes', v.id)}
+                            >
+                              {resendingReceiptId === `votes-${v.id}` ? 'SENDING...' : 'RESEND'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {receiptResults.tickets.length > 0 && (
+              <div>
+                <h4 style={{ fontSize: '0.75rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '1rem' }}>Ticket payments</h4>
+                <div className="table-responsive">
+                  <table className="luxury-table">
+                    <thead>
+                      <tr>
+                        <th>Reference</th>
+                        <th>Event</th>
+                        <th>Buyer</th>
+                        <th>Ticket code</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {receiptResults.tickets.map((t) => (
+                        <tr key={t.id}>
+                          <td style={{ fontFamily: 'monospace', fontSize: '0.7rem', wordBreak: 'break-all' }}>{t.payment_reference}</td>
+                          <td style={{ fontSize: '0.75rem' }}>{t.event_title}</td>
+                          <td style={{ fontSize: '0.75rem' }}>
+                            <div>{t.buyer_name}</div>
+                            <div>{t.buyer_email}</div>
+                          </td>
+                          <td style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent-dark)' }}>{t.ticket_code}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="luxury-btn secondary"
+                              style={{ fontSize: '0.65rem', padding: '0.35rem 0.75rem' }}
+                              disabled={resendingReceiptId === `tickets-${t.id}` || !t.buyer_email}
+                              onClick={() => resendReceipt('tickets', t.id)}
+                            >
+                              {resendingReceiptId === `tickets-${t.id}` ? 'SENDING...' : 'RESEND'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

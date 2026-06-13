@@ -66,6 +66,21 @@ export default function PaymentStatusPage({ onBack, onGoToVote, onGoToTickets })
   }, [reference, statusToken]);
 
   useEffect(() => {
+    if (status !== 'pending' || !reference || !statusToken) return undefined;
+
+    const interval = setInterval(() => {
+      verifyPayment(reference);
+    }, 3000);
+
+    const timeout = setTimeout(() => clearInterval(interval), 45000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [status, reference, statusToken]);
+
+  useEffect(() => {
     if (status === 'completed' && details && !printTriggered.current) {
       printTriggered.current = true;
       const timer = setTimeout(() => window.print(), 800);

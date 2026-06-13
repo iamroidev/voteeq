@@ -3,8 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const { hashPin, isProduction } = require('./security');
 const { CAMPUS_EVENTS, CAMPUS_CATEGORIES, CAMPUS_NOMINEES } = require('./seed-campus');
-const { ACSES_EVENT } = require('./seed-ACSES');
-const { ACSES_AWARD_CATEGORIES } = require('./seed-ACSES-categories');
+const { ACSES_EVENT } = require('./seed-acses');
+const { ACSES_AWARD_CATEGORIES } = require('./seed-acses-categories');
 
 // Support local volume fallback (e.g. Railway volume or local dev folder)
 const dbDir = process.env.RAILWAY_VOLUME_MOUNT 

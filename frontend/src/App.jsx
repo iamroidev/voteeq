@@ -18,7 +18,7 @@ import PublicVoteFilters from './components/PublicVoteFilters';
 import PaymentStatusPage from './pages/PaymentStatusPage';
 import NotFoundPage from './pages/NotFoundPage';
 import { API_BASE_URL, WS_BASE_URL } from './config';
-import { BRANDING, formatEventDate, formatEventMeta } from './branding';
+import { BRANDING, formatEventDate, formatEventMeta, getNomineeShareUrl } from './branding';
 import { readStoredAuth } from './utils/storage';
 import { nomineePhotoSrc } from './utils/photoUrl';
 import { COLOR_THEMES, applyAccentTheme, getStoredAccent } from './utils/theme';
@@ -455,14 +455,9 @@ export default function App() {
 
   // Copy share link helper
   const copyShareLink = (nomineeCode, nomineeName) => {
-    const params = new URLSearchParams(window.location.search);
-    params.set('nominee', nomineeCode);
-    if (activeEventId) {
-      params.set('eventId', activeEventId);
-    }
-    const link = `${window.location.origin}/?${params.toString()}`;
+    const link = getNomineeShareUrl(nomineeCode, API_BASE_URL);
     navigator.clipboard.writeText(link).then(() => {
-      triggerToast(`Share link copied for ${nomineeName.toUpperCase()}`);
+      triggerToast(`Share link copied for ${nomineeName.toUpperCase()} — preview shows their photo`);
     }).catch(err => {
       console.error('Copy failed', err);
       triggerToast('Could not copy link to clipboard');
