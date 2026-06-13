@@ -519,9 +519,9 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       {activeSubTab === 'overview' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
           <div className="editorial-sheet" style={{ margin: 0, padding: '1.5rem 2rem' }}>
-            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', marginBottom: '0.5rem' }}>ASCES AWARDS '26 catalog</h3>
+            <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', marginBottom: '0.5rem' }}>ACSES AWARDS '26 catalog</h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '1rem' }}>
-              Reset the portal for ASCES AWARDS '26. Clears votes, tickets, and registrations, then loads the ticketed event and 28 award categories. Add nominees per category when ASCES provides the shortlist.
+              Reset the portal for ACSES AWARDS '26. Clears votes, tickets, and registrations, then loads the ticketed event and 28 award categories. Add nominees per category when ACSES provides the shortlist.
             </p>
             {reseedMessage && (
               <p style={{ fontSize: '0.8rem', color: 'var(--accent-dark)', marginBottom: '1rem', fontWeight: 500 }}>{reseedMessage}</p>
@@ -533,24 +533,24 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
               style={{ fontSize: '0.7rem' }}
               onClick={() => {
                 setConfirmDialog({
-                  message: "Reset for ASCES AWARDS '26? All current events, nominees, votes, tickets, and pending applications will be removed.",
+                  message: "Reset for ACSES AWARDS '26? All current events, nominees, votes, tickets, and pending applications will be removed.",
                   onConfirm: async () => {
                     setReseedLoading(true);
                     setReseedMessage('');
                     try {
-                      const res = await fetch(`${API_BASE_URL}/api/admin/demo/reseed-asces`, {
+                      const res = await fetch(`${API_BASE_URL}/api/admin/demo/reseed-ACSES`, {
                         method: 'POST',
                         headers: { Authorization: `Bearer ${token}` },
                       });
                       const data = await res.json();
                       if (!res.ok) throw new Error(data.error || 'Reseed failed');
-                      setReseedMessage(data.message || "ASCES AWARDS '26 loaded.");
+                      setReseedMessage(data.message || "ACSES AWARDS '26 loaded.");
                       fetchStats();
                       fetchRegistrations();
                       fetchTicketsData();
                       refreshData();
                     } catch (err) {
-                      setReseedMessage(err.message || 'Failed to reset ASCES catalog.');
+                      setReseedMessage(err.message || 'Failed to reset ACSES catalog.');
                     } finally {
                       setReseedLoading(false);
                     }
@@ -558,7 +558,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                 });
               }}
             >
-              {reseedLoading ? 'Resetting...' : "Reset for ASCES AWARDS '26"}
+              {reseedLoading ? 'Resetting...' : "Reset for ACSES AWARDS '26"}
             </button>
           </div>
 

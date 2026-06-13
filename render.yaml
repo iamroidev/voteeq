@@ -25,7 +25,7 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
-      - key: SEED_ASCES_AWARDS
+      - key: SEED_ACSES_AWARDS
         value: "true"
       - key: TICKETS_ENABLED
         value: "false"

@@ -807,8 +807,8 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       const url = exportCanvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.download = format === 'status'
-        ? `ASCES_Status_${nominee.code}.png`
-        : `ASCES_Poster_${nominee.name.replace(/\s+/g, '_')}.png`;
+        ? `ACSES_Status_${nominee.code}.png`
+        : `ACSES_Poster_${nominee.name.replace(/\s+/g, '_')}.png`;
       link.href = url;
       link.click();
     } catch (err) {

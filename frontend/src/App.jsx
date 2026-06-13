@@ -21,6 +21,7 @@ import { API_BASE_URL, WS_BASE_URL } from './config';
 import { BRANDING, formatEventDate, formatEventMeta } from './branding';
 import { readStoredAuth } from './utils/storage';
 import { nomineePhotoSrc } from './utils/photoUrl';
+import { COLOR_THEMES, applyAccentTheme, getStoredAccent } from './utils/theme';
 
 const VOTE_GRID_PAGE_SIZE = 12;
 
@@ -28,13 +29,6 @@ const MOBILE_MENU_PAGES = [
   { id: 'about', label: 'About' },
   { id: 'help', label: 'Help & Support' },
   { id: 'guidelines', label: 'Nominee Guidelines' },
-];
-
-const COLOR_THEMES = [
-  { name: 'Antique Gold', value: '#b8986c' },
-  { name: 'Royal Burgundy', value: '#6a2e2e' },
-  { name: 'Midnight Dark', value: '#2a2b2d' },
-  { name: 'Sage Green', value: '#606f5c' },
 ];
 
 export default function App() {
@@ -91,7 +85,8 @@ export default function App() {
   const [previousTab, setPreviousTab] = useState('vote');
 
   // Accent Color Theme state (Sophisticated antique gold default)
-  const [accent, setAccent] = useState('#b8986c');
+  const [accent, setAccent] = useState(() => getStoredAccent());
+  const activeTheme = COLOR_THEMES.find((t) => t.value === accent) || COLOR_THEMES[0];
 
   // WebSocket updates state trigger
   const [wsTrigger, setWsTrigger] = useState(0);
@@ -223,7 +218,13 @@ export default function App() {
 
   useEffect(() => {
     document.title = BRANDING.documentTitle;
+    applyAccentTheme(getStoredAccent());
   }, []);
+
+  const changeAccent = (color) => {
+    setAccent(color);
+    applyAccentTheme(color);
+  };
 
   useEffect(() => {
     if (mobileMenuOpen) {
@@ -424,33 +425,6 @@ export default function App() {
       }
     };
   }, []);
-
-  const changeAccent = (color) => {
-    setAccent(color);
-    document.documentElement.style.setProperty('--accent', color);
-
-    let rgb = '184, 152, 108';
-    let lightColor = '#f5eedf';
-    let darkColor = '#8e714b';
-
-    if (color === '#6a2e2e') {
-      rgb = '106, 46, 46';
-      lightColor = '#f5ebeb';
-      darkColor = '#4a1d1d';
-    } else if (color === '#2a2b2d') {
-      rgb = '42, 43, 45';
-      lightColor = '#e8e9ea';
-      darkColor = '#151515';
-    } else if (color === '#606f5c') {
-      rgb = '96, 111, 92';
-      lightColor = '#eef2ed';
-      darkColor = '#414f3e';
-    }
-
-    document.documentElement.style.setProperty('--accent-rgb', rgb);
-    document.documentElement.style.setProperty('--accent-light', lightColor);
-    document.documentElement.style.setProperty('--accent-dark', darkColor);
-  };
 
   // Toast notifier helper
   const triggerToast = (msg) => {
@@ -865,17 +839,22 @@ export default function App() {
             </div>
           )}
           {/* Custom Luxury Colorway Selector */}
-          <div className="theme-picker-container">
-            {COLOR_THEMES.map(theme => (
-              <button
-                key={theme.value}
-                onClick={() => changeAccent(theme.value)}
-                className={`theme-picker-btn ${accent === theme.value ? 'active' : ''}`}
-                style={{ backgroundColor: theme.value }}
-                title={`${theme.name} Theme`}
-                aria-label={`${theme.name} Theme`}
-              />
-            ))}
+          <div className="theme-picker-container" title={`Theme: ${activeTheme.name}`}>
+            <span className="theme-picker-label">{activeTheme.name}</span>
+            <div className="theme-picker-swatches">
+              {COLOR_THEMES.map((theme) => (
+                <button
+                  key={theme.value}
+                  onClick={() => changeAccent(theme.value)}
+                  className={`theme-picker-btn ${accent === theme.value ? 'active' : ''}`}
+                  style={{ backgroundColor: theme.value }}
+                  title={theme.name}
+                  aria-label={`${theme.name} theme${accent === theme.value ? ' (active)' : ''}`}
+                  aria-pressed={accent === theme.value}
+                  type="button"
+                />
+              ))}
+            </div>
           </div>
 
           {import.meta.env.DEV && BRANDING.showUssd && (
@@ -1167,7 +1146,7 @@ export default function App() {
               <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
                 <button
                   type="button"
-                  className="luxury-btn secondary"
+                  className="luxury-btn secondary load-more-nominees-btn"
                   onClick={() => setVoteGridVisibleCount((count) => count + VOTE_GRID_PAGE_SIZE)}
                   style={{ padding: '0.85rem 2rem', fontSize: '0.75rem' }}
                 >
@@ -1583,17 +1562,22 @@ export default function App() {
 
               <div className="control-center-section">
                 <span className="section-label">Color Theme</span>
+                <p className="theme-active-banner">
+                  Active: <strong>{activeTheme.name}</strong>
+                </p>
                 <div className="control-theme-picker">
-                  {COLOR_THEMES.map(theme => (
+                  {COLOR_THEMES.map((theme) => (
                     <button
                       key={theme.value}
                       onClick={() => { changeAccent(theme.value); }}
                       className={`control-theme-btn ${accent === theme.value ? 'active' : ''}`}
-                      aria-label={`${theme.name} Theme`}
+                      aria-label={`${theme.name} theme`}
+                      aria-pressed={accent === theme.value}
                       type="button"
                     >
                       <span className="color-dot" style={{ backgroundColor: theme.value }} />
                       <span className="color-name">{theme.name}</span>
+                      {accent === theme.value && <span className="theme-check" aria-hidden="true">✓</span>}
                     </button>
                   ))}
                 </div>

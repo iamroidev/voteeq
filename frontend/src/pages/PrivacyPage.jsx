@@ -16,7 +16,7 @@ export default function PrivacyPage({ onBack }) {
         
         <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>1. Information We Collect</h2>
-          <p style={{ marginBottom: '1rem' }}>When you use the VoteEQ platform for ASCES Awards, we may collect:</p>
+          <p style={{ marginBottom: '1rem' }}>When you use the VoteEQ platform for ACSES Awards, we may collect:</p>
           <ul style={{ paddingLeft: '1.5rem', marginBottom: '1rem' }}>
             <li style={{ marginBottom: '0.4rem' }}>Phone number (for voting transactions and receipts)</li>
             <li style={{ marginBottom: '0.4rem' }}>Email address (optional, for vote receipts)</li>

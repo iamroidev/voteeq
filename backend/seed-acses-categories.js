@@ -1,9 +1,9 @@
-/** Award categories for ASCES Awards '26 — keep in sync with frontend/src/branding.js */
-const ASCES_AWARD_CATEGORIES = [
+/** Award categories for ACSES Awards '26 — keep in sync with frontend/src/branding.js */
+const ACSES_AWARD_CATEGORIES = [
   ['Rising Star Award', 'Outstanding emerging talent in the department'],
   ['Most Influential Student of the Year (Male)', 'Male student with exceptional community impact'],
   ['Most Influential Student of the Year (Female)', 'Female student with exceptional community impact'],
-  ['Most Dedicated Executive', 'Executive member with consistent service to ASCES'],
+  ['Most Dedicated Executive', 'Executive member with consistent service to ACSES'],
   ['Course Rep of the Year', 'Exemplary course representative'],
   ['Student Entrepreneur of the Year', 'Student building or leading a venture'],
   ['Student Politician of the Year', 'Student leadership in campus politics and advocacy'],
@@ -30,4 +30,4 @@ const ASCES_AWARD_CATEGORIES = [
   ['Most Innovative Fresher', 'First-year student with standout innovation'],
 ];
 
-module.exports = { ASCES_AWARD_CATEGORIES };
+module.exports = { ACSES_AWARD_CATEGORIES };

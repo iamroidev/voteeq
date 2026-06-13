@@ -8,7 +8,7 @@ function withNormalizedEventDate(row) {
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const http = require('http');
-const { initDB, getDB, reseedAscesAwards, reseedCampusDemo } = require('./database');
+const { initDB, getDB, reseedACSESAwards, reseedCampusDemo } = require('./database');
 const {
   hashPin,
   verifyPin,
@@ -2323,20 +2323,20 @@ app.put('/api/admin/events/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// Reset catalog for ASCES Awards '26 — UMaT Tarkwa (admin only)
-app.post('/api/admin/demo/reseed-asces', requireAdmin, async (req, res) => {
+// Reset catalog for ACSES Awards '26 — UMaT Tarkwa (admin only)
+app.post('/api/admin/demo/reseed-ACSES', requireAdmin, async (req, res) => {
   try {
     const db = getDB();
-    await reseedAscesAwards(db);
-    await logAdminAction(adminUsername(req), 'RESEED_ASCES_AWARDS', "Reset catalog for ASCES Awards '26");
+    await reseedACSESAwards(db);
+    await logAdminAction(adminUsername(req), 'RESEED_ACSES_AWARDS', "Reset catalog for ACSES Awards '26");
     res.json({
       success: true,
-      message: "ASCES AWARDS '26 loaded with 28 award categories. Add shortlisted nominees when ASCES sends the list.",
+      message: "ACSES AWARDS '26 loaded with 28 award categories. Add shortlisted nominees when ACSES sends the list.",
     });
   } catch (err) {
-    console.error('ASCES reseed error:', err);
+    console.error('ACSES reseed error:', err);
     res.status(500).json({
-      error: err.message || 'Failed to reset for ASCES Awards',
+      error: err.message || 'Failed to reset for ACSES Awards',
     });
   }
 });

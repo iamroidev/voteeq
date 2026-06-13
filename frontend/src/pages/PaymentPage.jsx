@@ -13,7 +13,7 @@ export default function PaymentPage({ onBack }) {
         
         <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
           <p style={{ marginBottom: '1.5rem' }}>
-            Your payment security is our top priority. Here is how we protect every transaction on VoteEQ for ASCES Awards.
+            Your payment security is our top priority. Here is how we protect every transaction on VoteEQ for ACSES Awards.
           </p>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', color: 'var(--text-primary)', marginBottom: '1rem', marginTop: '2rem' }}>

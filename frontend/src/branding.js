@@ -1,6 +1,6 @@
-/** ASCES AWARDS '26 — UMaT (VoteEQ independent platform) */
+/** ACSES AWARDS '26 — UMaT (VoteEQ independent platform) */
 
-export const ASCES_AWARD_CATEGORIES = [
+export const ACSES_AWARD_CATEGORIES = [
   'Rising Star Award',
   'Most Influential Student of the Year (Male)',
   'Most Influential Student of the Year (Female)',
@@ -33,12 +33,12 @@ export const ASCES_AWARD_CATEGORIES = [
 
 export const BRANDING = {
   platformName: 'VoteEQ',
-  eventTitle: "ASCES AWARDS '26",
+  eventTitle: "ACSES AWARDS '26",
   /** Calendar year shown on tickets/receipts (not the '26 in the event title) */
   eventYear: '2026',
-  organizerName: 'ASCES',
+  organizerName: 'ACSES',
   organizerFullName:
-    'Association of Computer Science and Engineering Students (ASCES)',
+    'Association of Computer Science and Engineering Students (ACSES)',
   department: 'Department of Computer Science and Engineering',
   faculty: 'Faculty of Computing and Mathematical Sciences',
   university: 'University of Mines and Technology (UMaT)',
@@ -46,9 +46,9 @@ export const BRANDING = {
   showVenue: false,
   /** Set true when shortlisted nominees are published and voting should be live */
   votingOpen: false,
-  /** Set true when ASCES opens awards night ticket sales */
+  /** Set true when ACSES opens awards night ticket sales */
   ticketsEnabled: false,
-  ticketEventTitle: "ASCES AWARDS '26",
+  ticketEventTitle: "ACSES AWARDS '26",
   defaultTab: 'vote',
   showUssd: false,
   votePriceOnlineGhs: '1.00',
@@ -58,7 +58,7 @@ export const BRANDING = {
   passPaystackFeeToCustomer: true,
   supportEmail: 'support@voteeq.online',
   privacyEmail: 'privacy@voteeq.online',
-  documentTitle: "ASCES AWARDS '26 | VoteEQ",
+  documentTitle: "ACSES AWARDS '26 | VoteEQ",
 };
 
 /** Direct link supporters use to open the vote page for this nominee */

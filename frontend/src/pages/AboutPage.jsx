@@ -1,4 +1,4 @@
-import { BRANDING, ASCES_AWARD_CATEGORIES } from '../branding';
+import { BRANDING, ACSES_AWARD_CATEGORIES } from '../branding';
 
 export default function AboutPage({ onBack }) {
   return (
@@ -38,9 +38,9 @@ export default function AboutPage({ onBack }) {
             How this portal works
           </h2>
           <ol style={{ paddingLeft: '1.5rem', marginBottom: '1.5rem' }}>
-            <li style={{ marginBottom: '0.5rem' }}><strong style={{ color: 'var(--text-primary)' }}>Shortlist:</strong> {BRANDING.organizerName} publishes approved nominees across {ASCES_AWARD_CATEGORIES.length} categories.</li>
+            <li style={{ marginBottom: '0.5rem' }}><strong style={{ color: 'var(--text-primary)' }}>Shortlist:</strong> {BRANDING.organizerName} publishes approved nominees across {ACSES_AWARD_CATEGORIES.length} categories.</li>
             <li style={{ marginBottom: '0.5rem' }}><strong style={{ color: 'var(--text-primary)' }}>Vote:</strong> Students vote online through {BRANDING.platformName} at GH₵ 1.00 per vote.</li>
-            <li style={{ marginBottom: '0.5rem' }}><strong style={{ color: 'var(--text-primary)' }}>Attend:</strong> {BRANDING.ticketsEnabled ? 'Purchase awards night tickets with QR check-in and email receipt.' : 'Awards night tickets will go on sale here once announced by ASCES.'}</li>
+            <li style={{ marginBottom: '0.5rem' }}><strong style={{ color: 'var(--text-primary)' }}>Attend:</strong> {BRANDING.ticketsEnabled ? 'Purchase awards night tickets with QR check-in and email receipt.' : 'Awards night tickets will go on sale here once announced by ACSES.'}</li>
           </ol>
         </div>
       </div>

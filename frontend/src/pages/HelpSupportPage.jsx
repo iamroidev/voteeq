@@ -1,4 +1,4 @@
-import { BRANDING, ASCES_AWARD_CATEGORIES } from '../branding';
+import { BRANDING, ACSES_AWARD_CATEGORIES } from '../branding';
 
 export default function HelpSupportPage({ onBack }) {
   const faqs = [
@@ -8,7 +8,7 @@ export default function HelpSupportPage({ onBack }) {
     },
     {
       q: 'When can I vote?',
-      a: `Voting opens on this portal once ${BRANDING.organizerName} publishes shortlisted nominees. Each online vote costs GH₵ 1.00 across ${ASCES_AWARD_CATEGORIES.length} award categories.`,
+      a: `Voting opens on this portal once ${BRANDING.organizerName} publishes shortlisted nominees. Each online vote costs GH₵ 1.00 across ${ACSES_AWARD_CATEGORIES.length} award categories.`,
     },
     ...(BRANDING.ticketsEnabled
       ? [{

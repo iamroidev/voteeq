@@ -1,4 +1,4 @@
-import { BRANDING, ASCES_AWARD_CATEGORIES } from '../branding';
+import { BRANDING, ACSES_AWARD_CATEGORIES } from '../branding';
 
 /** Shown on Vote and Leaderboard while no nominees are published yet */
 export default function AwaitingNomineesPanel({
@@ -7,7 +7,7 @@ export default function AwaitingNomineesPanel({
   compact = false,
   selectedCategoryName = null,
 }) {
-  const categoryCount = ASCES_AWARD_CATEGORIES.length;
+  const categoryCount = ACSES_AWARD_CATEGORIES.length;
   const ticketsOpen = BRANDING.ticketsEnabled && onBuyTickets;
 
   return (

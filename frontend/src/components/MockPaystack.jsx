@@ -189,7 +189,7 @@ export default function MockPaystack({ checkoutData, onComplete, onCancel }) {
             }}>
               <div style={{ display: 'flex', justifycontent: 'space-between', marginBottom: '0.4rem', color: 'var(--text-secondary)' }}>
                 <span>MERCHANT:</span>
-                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{BRANDING.platformName.toUpperCase()} · ASCES AWARDS {BRANDING.eventYear}</span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{BRANDING.platformName.toUpperCase()} · ACSES AWARDS {BRANDING.eventYear}</span>
               </div>
               <div style={{ display: 'flex', justifycontent: 'space-between', marginBottom: '0.4rem', color: 'var(--text-secondary)' }}>
                 <span>ORDER REFERENCE:</span>

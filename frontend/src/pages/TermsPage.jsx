@@ -14,7 +14,7 @@ export default function TermsPage({ onBack }) {
         
         <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>1. Acceptance of Terms</h2>
-          <p style={{ marginBottom: '1rem' }}>By accessing or using the VoteEQ platform for ASCES Awards (&quot;Platform&quot;), you agree to be bound by these Terms &amp; Conditions. If you do not agree, do not use the Platform.</p>
+          <p style={{ marginBottom: '1rem' }}>By accessing or using the VoteEQ platform for ACSES Awards (&quot;Platform&quot;), you agree to be bound by these Terms &amp; Conditions. If you do not agree, do not use the Platform.</p>
           
           <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', color: 'var(--text-primary)', marginBottom: '0.75rem', marginTop: '2rem' }}>2. Eligibility</h2>
           <p style={{ marginBottom: '1rem' }}>The Platform is available to individuals aged 13 and above. By using the Platform, you represent that you meet this age requirement and have the legal capacity to enter into these terms.</p>

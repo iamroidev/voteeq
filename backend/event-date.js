@@ -1,4 +1,4 @@
-/** Calendar year for ASCES Awards night — never use '26 in date fields */
+/** Calendar year for ACSES Awards night — never use '26 in date fields */
 const DEFAULT_EVENT_YEAR = '2026';
 
 function normalizeDisplayDate(value) {
