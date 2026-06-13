@@ -1,6 +1,38 @@
 # Voteeq
 
-Voting and event ticketing platform.
+Paid nominee voting and event ticketing platform for campus awards and live events (e.g. ASCES at UMaT). Paystack checkout, real-time leaderboards, nominee self-service dashboards, and admin tooling.
+
+**Live:** [voteeq.online](https://voteeq.online) · API: [api.voteeq.online](https://api.voteeq.online)
+
+---
+
+## System Design
+
+```mermaid
+flowchart LR
+  Web[React SPA Vercel]
+  API[Express API]
+  WS[WebSocket Leaderboard]
+  DB[(Turso libSQL)]
+  Pay[Paystack]
+  Email[Resend]
+
+  Web --> API
+  Web --> WS
+  API --> DB
+  API --> Pay
+  Pay -->|webhook| API
+  API --> Email
+```
+
+| Flow | Behavior |
+|------|----------|
+| **Vote purchase** | User selects nominee → Paystack hosted checkout → webhook marks vote paid → receipt email |
+| **Leaderboard** | WebSocket broadcast on vote confirmation |
+| **Ticketing** | Optional `TICKETS_ENABLED` module with QR scan at door |
+| **Nominee portal** | Self-upload photo, share cards, OG image generation (Sharp) |
+
+---
 
 ## Stack
 
@@ -104,3 +136,9 @@ Optional: EventBridge + Lambda pinging `/health` every 10 minutes can reduce Ren
 - Demo seed data (sample nominees/events) is **development only**.
 - Payment status lookups require a `token` query param returned at checkout.
 - Ticket lookup requires a ticket code (`TIX-...`) or payment reference + buyer email.
+
+---
+
+## License
+
+MIT · **Author:** [iamroidev](https://github.com/iamroidev)
