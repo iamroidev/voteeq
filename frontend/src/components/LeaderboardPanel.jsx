@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { nomineePhotoSrc } from '../utils/photoUrl';
 
 const PODIUM_SIZE = 3;
 const COLLAPSED_PREVIEW = 3;
@@ -34,7 +35,7 @@ function NomineeRow({ nom, rank, totalVotes, compact = false }) {
     <div className={`lb-row${compact ? ' lb-row--compact' : ''}`}>
       <RankBadge rank={rank} />
       <img
-        src={nom.photo_url}
+        src={nomineePhotoSrc(nom.photo_url)}
         alt=""
         loading="lazy"
         decoding="async"
@@ -76,7 +77,7 @@ function PodiumStrip({ nominees, totalVotes }) {
         return (
           <div key={nom.id} className={`lb-podium-slot lb-podium-slot--${rank}`} role="listitem">
             <span className="lb-podium-rank">{rank}</span>
-            <img src={nom.photo_url} alt="" loading="lazy" decoding="async" className="lb-podium-photo" />
+            <img src={nomineePhotoSrc(nom.photo_url)} alt="" loading="lazy" decoding="async" className="lb-podium-photo" />
             <span className="lb-podium-name">{nom.name}</span>
             <span className="lb-podium-votes">{nom.votes_count.toLocaleString()} · {pct}%</span>
           </div>

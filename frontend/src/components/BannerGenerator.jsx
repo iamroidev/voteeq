@@ -114,7 +114,8 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
     }
   };
   const canvasRef = useRef(null);
-  const [photoUrl, setPhotoUrl] = useState(null);
+  const [photoUrl, setPhotoUrl] = useState(nominee.photo_url || null);
+  const userPhotoOverride = useRef(false);
   const [imgOffset, setImgOffset] = useState({ x: 0, y: 0, scale: 1 });
   const [accent, setAccent] = useState('#b8986c'); // Default Gold
   const [bgStyle, setBgStyle] = useState('black'); // Background theme key
@@ -124,6 +125,12 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   const [template, setTemplate] = useState('classic'); // 'classic', 'aura', 'glass'
+
+  useEffect(() => {
+    if (!userPhotoOverride.current && nominee.photo_url) {
+      setPhotoUrl(nominee.photo_url);
+    }
+  }, [nominee.photo_url]);
 
   const drawPosterDetails = useCallback((ctx, canvas) => {
     const shareUrl = getNomineeVoteUrl(nominee.code);
@@ -685,6 +692,9 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
 
     if (photoUrl) {
       const img = new Image();
+      if (!photoUrl.startsWith('data:')) {
+        img.crossOrigin = 'anonymous';
+      }
       img.src = photoUrl;
       img.onload = () => {
         ctx.save();
@@ -775,6 +785,7 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
+      userPhotoOverride.current = true;
       const reader = new FileReader();
       reader.onload = () => {
         setPhotoUrl(reader.result);

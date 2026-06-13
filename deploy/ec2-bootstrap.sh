@@ -42,6 +42,10 @@ if [ -f "/home/ubuntu/backend.env" ]; then
   cp /home/ubuntu/backend.env "$APP_DIR/backend/.env"
 fi
 
+echo "==> Ensuring upload directories persist on disk..."
+mkdir -p "$APP_DIR/backend/photos" "$APP_DIR/backend/banners"
+chmod 755 "$APP_DIR/backend/photos" "$APP_DIR/backend/banners"
+
 echo "==> Installing backend dependencies..."
 cd "$APP_DIR/backend"
 npm ci --omit=dev 2>/dev/null || npm install --omit=dev

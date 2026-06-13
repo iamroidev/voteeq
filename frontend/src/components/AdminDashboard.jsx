@@ -2,6 +2,36 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { API_BASE_URL } from '../config';
 import { BRANDING, formatEventDate, formatEventMeta } from '../branding';
 import { authFetch } from '../utils/api';
+import { nomineePhotoSrc } from '../utils/photoUrl';
+
+async function readImageAsDataUrl(file) {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Please choose a valid image file.');
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('Photo must be under 5MB.');
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Could not read photo file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadAdminNomineePhoto(code, image, token) {
+  const res = await fetch(`${API_BASE_URL}/api/admin/nominees/${encodeURIComponent(code)}/upload-photo`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ image }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to upload photo');
+  return data;
+}
 
 export default function AdminDashboard({ token, onLogout, categories, nominees, refreshData, wsTrigger }) {
   const [stats, setStats] = useState(null);
@@ -20,8 +50,13 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
   // Create nominee form states
   const [newNomCode, setNewNomCode] = useState('');
   const [newNomName, setNewNomName] = useState('');
-  const [newNomPhoto, setNewNomPhoto] = useState('');
+  const [newNomPhotoUrl, setNewNomPhotoUrl] = useState('');
+  const [newNomPhotoMode, setNewNomPhotoMode] = useState('url');
+  const [newNomPhotoFile, setNewNomPhotoFile] = useState(null);
   const [newNomCategoryId, setNewNomCategoryId] = useState('');
+  const [creatingNominee, setCreatingNominee] = useState(false);
+  const [photoUploadTargetCode, setPhotoUploadTargetCode] = useState('');
+  const adminPhotoInputRef = useRef(null);
   const [nomError, setNomError] = useState('');
   const [nomSuccess, setNomSuccess] = useState('');
   const [createdActivationCode, setCreatedActivationCode] = useState('');
@@ -310,23 +345,39 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       setNomError('Please select a category');
       return;
     }
+    if (newNomPhotoMode === 'url' && newNomPhotoUrl.trim() && newNomPhotoFile) {
+      setNomError('Choose either a photo URL or file upload, not both.');
+      return;
+    }
+
+    const nomineeCode = newNomCode.trim();
+    setCreatingNominee(true);
     try {
+      const payload = {
+        code: nomineeCode,
+        name: newNomName,
+        category_id: parseInt(newNomCategoryId, 10),
+        event_id: newNomEventId ? parseInt(newNomEventId, 10) : null,
+      };
+      if (newNomPhotoMode === 'url' && newNomPhotoUrl.trim()) {
+        payload.photo_url = newNomPhotoUrl.trim();
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/admin/nominees`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-          body: JSON.stringify({
-          code: newNomCode,
-          name: newNomName,
-          photo_url: newNomPhoto,
-          category_id: parseInt(newNomCategoryId),
-          event_id: newNomEventId ? parseInt(newNomEventId) : null
-        })
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to add nominee');
+
+      if (newNomPhotoMode === 'upload' && newNomPhotoFile) {
+        const image = await readImageAsDataUrl(newNomPhotoFile);
+        await uploadAdminNomineePhoto(nomineeCode, image, token);
+      }
       
       setNomSuccess(data.message);
       if (data.activationCode) {
@@ -334,12 +385,40 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       }
       setNewNomCode('');
       setNewNomName('');
-      setNewNomPhoto('');
+      setNewNomPhotoUrl('');
+      setNewNomPhotoFile(null);
+      setNewNomPhotoMode('url');
       setNewNomCategoryId('');
       setNewNomEventId('');
       refreshData();
     } catch (err) {
       setNomError(err.message);
+    } finally {
+      setCreatingNominee(false);
+    }
+  };
+
+  const handleExistingNomineePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    const code = photoUploadTargetCode;
+    if (!file || !code) return;
+
+    try {
+      const image = await readImageAsDataUrl(file);
+      await uploadAdminNomineePhoto(code, image, token);
+      refreshData();
+      setAlertDialog({
+        title: 'Photo updated',
+        message: `Profile photo updated for nominee ${code}.`,
+      });
+    } catch (err) {
+      setAlertDialog({
+        title: 'Upload failed',
+        message: err.message,
+      });
+    } finally {
+      setPhotoUploadTargetCode('');
     }
   };
 
@@ -633,14 +712,63 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                 </select>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.4rem', color: 'var(--text-secondary)' }}>Photo URL (Optional)</label>
-                <input type="url" placeholder="https://unsplash.com/..." value={newNomPhoto} onChange={e => setNewNomPhoto(e.target.value)} className="luxury-input" style={{ borderRadius: '8px' }} />
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.4rem', color: 'var(--text-secondary)' }}>
+                  Profile Photo (Optional)
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '0.75rem', fontSize: '0.75rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="newNomPhotoMode"
+                      checked={newNomPhotoMode === 'url'}
+                      onChange={() => {
+                        setNewNomPhotoMode('url');
+                        setNewNomPhotoFile(null);
+                      }}
+                    />
+                    Photo URL
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="newNomPhotoMode"
+                      checked={newNomPhotoMode === 'upload'}
+                      onChange={() => {
+                        setNewNomPhotoMode('upload');
+                        setNewNomPhotoUrl('');
+                      }}
+                    />
+                    Upload file
+                  </label>
+                </div>
+                {newNomPhotoMode === 'url' ? (
+                  <input
+                    type="url"
+                    placeholder="https://example.com/photo.jpg"
+                    value={newNomPhotoUrl}
+                    onChange={(e) => setNewNomPhotoUrl(e.target.value)}
+                    className="luxury-input"
+                    style={{ borderRadius: '8px', width: '100%' }}
+                  />
+                ) : (
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setNewNomPhotoFile(e.target.files?.[0] || null)}
+                    className="luxury-input"
+                    style={{ padding: '0.5rem', background: 'var(--bg-primary)', width: '100%' }}
+                  />
+                )}
+                <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0.5rem 0 0' }}>
+                  Leave blank for a placeholder. Nominees can also update from their portal after activation.
+                  {newNomPhotoMode === 'upload' && newNomPhotoFile ? ` Selected: ${newNomPhotoFile.name}` : ''}
+                </p>
               </div>
 
               <div>
-                <button type="submit" className="luxury-btn" style={{ width: '100%', height: '43px', borderRadius: '8px' }}>
-                  Add Nominee
+                <button type="submit" disabled={creatingNominee} className="luxury-btn" style={{ width: '100%', height: '43px', borderRadius: '8px' }}>
+                  {creatingNominee ? 'Adding...' : 'Add Nominee'}
                 </button>
               </div>
             </form>
@@ -648,6 +776,14 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
 
           {/* Nominees Grid Table */}
           <div className="editorial-sheet" style={{ margin: 0, borderRadius: '16px', padding: '2rem', overflowX: 'auto' }}>
+            <input
+              ref={adminPhotoInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleExistingNomineePhotoUpload}
+              style={{ display: 'none' }}
+              aria-hidden="true"
+            />
             <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', letterSpacing: '0.05em' }}>Nominees Directory</h3>
             
             <table className="luxury-table">
@@ -674,7 +810,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                       <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>{n.code}</td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                          <img src={n.photo_url} alt={n.name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
+                          <img src={nomineePhotoSrc(n.photo_url)} alt={n.name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
                           <span style={{ fontWeight: 500 }}>{n.name}</span>
                         </div>
                       </td>
@@ -692,12 +828,24 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                         )}
                       </td>
                       <td>
-                        <button 
-                          onClick={() => handleDeleteNominee(n.id)}
-                          style={{ background: 'none', border: 'none', color: '#e74c3c', textDecoration: 'underline', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 500 }}
-                        >
-                          Delete Nominee
-                        </button>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPhotoUploadTargetCode(n.code);
+                              adminPhotoInputRef.current?.click();
+                            }}
+                            style={{ background: 'none', border: 'none', color: 'var(--accent-dark)', textDecoration: 'underline', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 500 }}
+                          >
+                            Upload Photo
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteNominee(n.id)}
+                            style={{ background: 'none', border: 'none', color: '#e74c3c', textDecoration: 'underline', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 500 }}
+                          >
+                            Delete Nominee
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))

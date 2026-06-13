@@ -103,6 +103,27 @@ function isValidPhotoUrl(url) {
   }
 }
 
+function parseBase64ImageDataUrl(image) {
+  if (!image || typeof image !== 'string') return null;
+  const match = image.match(/^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/i);
+  if (!match) return null;
+  const rawExt = match[1].toLowerCase();
+  const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
+  return { ext, base64: match[2] };
+}
+
+const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+
+function validateProfilePhotoBuffer(buffer, ext) {
+  if (!buffer || buffer.length < 12 || buffer.length > PROFILE_PHOTO_MAX_BYTES) return false;
+  if (ext === 'png') return buffer[0] === 0x89 && buffer[1] === 0x50;
+  if (ext === 'jpg') return buffer[0] === 0xff && buffer[1] === 0xd8;
+  if (ext === 'webp') {
+    return buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP';
+  }
+  return false;
+}
+
 function isValidNomineeCode(code) {
   return typeof code === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(code);
 }
@@ -139,6 +160,9 @@ module.exports = {
   verifyStatusToken,
   escapeHtml,
   isValidPhotoUrl,
+  parseBase64ImageDataUrl,
+  validateProfilePhotoBuffer,
+  PROFILE_PHOTO_MAX_BYTES,
   isValidNomineeCode,
   validateProductionConfig,
   mockPaymentsAllowed,

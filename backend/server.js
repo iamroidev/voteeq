@@ -33,7 +33,7 @@ const {
   completeRegistrationPayment,
   checkInTicket,
 } = require('./payment-completion');
-const { createRateLimiter } = require('./rate-limiter');
+const { prepareProfilePhotoFromDataUrl, buildProfilePhotoUrl } = require('./profile-photo');
 const { validateGhanaPhone } = require('./phone');
 const { initializePaystackTransaction } = require('./paystack');
 const { calculatePaystackCheckout } = require('./paystack-fees');
@@ -277,6 +277,84 @@ if (!fs.existsSync(bannersDir)) {
   fs.mkdirSync(bannersDir);
 }
 app.use('/banners', express.static(bannersDir));
+
+const photosDir = path.resolve(__dirname, 'photos');
+if (!fs.existsSync(photosDir)) {
+  fs.mkdirSync(photosDir);
+}
+app.use('/photos', express.static(photosDir, {
+  maxAge: '7d',
+  setHeaders(res) {
+    res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+  },
+}));
+
+function getServerUrl(req) {
+  const host = req.headers.host || 'localhost:5000';
+  const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  return `${protocol}://${host}`;
+}
+
+function getPublicAssetBaseUrl(req) {
+  const configured = process.env.PUBLIC_ASSET_BASE_URL?.trim();
+  if (configured) return configured.replace(/\/$/, '');
+  return getServerUrl(req);
+}
+
+function verifyNomineeToken(req, code) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { error: 'Unauthorized nominee access', status: 403 };
+  }
+  const token = authHeader.split(' ')[1];
+  const payload = verifyToken(token);
+  if (!payload || payload.role !== 'nominee') {
+    return { error: 'Unauthorized nominee access', status: 403 };
+  }
+  if (code && payload.code !== code) {
+    return { error: 'Forbidden: cannot modify another nominee', status: 403 };
+  }
+  return { payload };
+}
+
+async function saveNomineeProfilePhoto(req, code, image) {
+  if (!isValidNomineeCode(code)) {
+    const err = new Error('Invalid nominee code');
+    err.status = 400;
+    throw err;
+  }
+
+  const db = getDB();
+  const nominee = await db.get('SELECT id FROM nominees WHERE code = ?', [code]);
+  if (!nominee) {
+    const err = new Error('Nominee not found');
+    err.status = 404;
+    throw err;
+  }
+
+  const { buffer } = await prepareProfilePhotoFromDataUrl(image);
+
+  for (const ext of ['jpg', 'png', 'webp']) {
+    const oldPath = path.resolve(photosDir, `${code}.${ext}`);
+    if (oldPath.startsWith(path.resolve(photosDir)) && fs.existsSync(oldPath)) {
+      fs.unlinkSync(oldPath);
+    }
+  }
+
+  const filename = path.resolve(photosDir, `${code}.jpg`);
+  if (!filename.startsWith(path.resolve(photosDir))) {
+    const err = new Error('Invalid photo path');
+    err.status = 400;
+    throw err;
+  }
+
+  fs.writeFileSync(filename, buffer);
+
+  const version = Date.now();
+  const photoUrl = buildProfilePhotoUrl(getPublicAssetBaseUrl(req), code, version);
+  await db.run('UPDATE nominees SET photo_url = ? WHERE code = ?', [photoUrl, code]);
+  return photoUrl;
+}
 
 // In-memory store for active USSD sessions
 const ussdSessions = new Map();
@@ -780,7 +858,7 @@ app.post('/api/admin/nominees', requireAdmin, async (req, res) => {
   }
 
   const defaultPhoto = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80';
-  const resolvedPhoto = photo_url || defaultPhoto;
+  const resolvedPhoto = photo_url?.trim() ? photo_url.trim() : defaultPhoto;
   if (!isValidPhotoUrl(resolvedPhoto)) {
     return res.status(400).json({ error: 'Photo URL must be a valid http(s) URL' });
   }
@@ -833,6 +911,25 @@ app.delete('/api/admin/nominees/:id', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error deleting nominee' });
+  }
+});
+
+// 3h. Admin upload nominee profile photo
+app.post('/api/admin/nominees/:code/upload-photo', requireAdmin, async (req, res) => {
+  const { code } = req.params;
+  const { image } = req.body;
+  if (!image) {
+    return res.status(400).json({ error: 'Image data is required' });
+  }
+
+  try {
+    const photoUrl = await saveNomineeProfilePhoto(req, code, image);
+    await logAdminAction(adminUsername(req), 'UPLOAD_NOMINEE_PHOTO', `Uploaded profile photo for nominee ${code}`);
+    console.log(`Admin uploaded profile photo for nominee ${code}`);
+    res.json({ success: true, photo_url: photoUrl, message: 'Profile photo updated successfully!' });
+  } catch (err) {
+    console.error('Admin upload photo error:', err);
+    res.status(err.status || 500).json({ error: err.message || 'Failed to save profile photo' });
   }
 });
 
@@ -901,7 +998,33 @@ app.get('/api/nominees/dashboard/:code', async (req, res) => {
   }
 });
 
-// 4a. Nominee save customized campaign poster banner to server
+// 4a. Nominee upload profile photo (from phone gallery / camera)
+app.post('/api/nominees/upload-photo', async (req, res) => {
+  const { code, image } = req.body;
+  if (!code || !image) {
+    return res.status(400).json({ error: 'Code and image data are required' });
+  }
+
+  const auth = verifyNomineeToken(req, code);
+  if (auth.error) {
+    return res.status(auth.status).json({ error: auth.error });
+  }
+
+  if (!isValidNomineeCode(code)) {
+    return res.status(400).json({ error: 'Invalid nominee code' });
+  }
+
+  try {
+    const photoUrl = await saveNomineeProfilePhoto(req, code, image);
+    console.log(`Profile photo saved for nominee ${code}`);
+    res.json({ success: true, photo_url: photoUrl, message: 'Profile photo updated successfully!' });
+  } catch (err) {
+    console.error('Upload photo error:', err);
+    res.status(err.status || 500).json({ error: err.message || 'Failed to save profile photo' });
+  }
+});
+
+// 4b. Nominee save customized campaign poster banner to server
 app.post('/api/nominees/save-banner', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -1047,8 +1170,6 @@ app.get('/share/:code', async (req, res) => {
     const host = req.headers.host || 'localhost:5000';
     const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
     const serverUrl = `${protocol}://${host}`;
-    
-    // Check if custom banner exists on disk
     const customBannerPath = path.join(bannersDir, `${code}.png`);
     const hasCustomBanner = fs.existsSync(customBannerPath);
     const bannerUrl = hasCustomBanner 

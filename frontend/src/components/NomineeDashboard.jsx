@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { API_BASE_URL } from '../config';
+import { nomineePhotoSrc } from '../utils/photoUrl';
 
 const BannerGenerator = lazy(() => import('./BannerGenerator'));
 
@@ -10,6 +11,9 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
   const [error, setError] = useState('');
   const [bannerVersion, setBannerVersion] = useState(() => Date.now());
   const [showBannerStudio, setShowBannerStudio] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoMessage, setPhotoMessage] = useState('');
+  const photoInputRef = useRef(null);
   const abortRef = useRef(null);
   const wsTriggerRef = useRef(wsTrigger);
   const onLogoutRef = useRef(onLogout);
@@ -90,6 +94,58 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
     loadDashboardData();
   }, [wsTrigger, loadDashboardData]);
 
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setPhotoMessage('Please choose a photo from your gallery or camera.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoMessage('Photo must be under 5MB. Try a smaller image.');
+      return;
+    }
+
+    setPhotoUploading(true);
+    setPhotoMessage('');
+
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Could not read photo file'));
+        reader.readAsDataURL(file);
+      });
+
+      const response = await fetch(`${API_BASE_URL}/api/nominees/upload-photo`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ code, image: dataUrl }),
+      });
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Failed to update profile photo');
+      }
+
+      setData((prev) => ({
+        ...prev,
+        nominee: { ...prev.nominee, photo_url: resData.photo_url },
+      }));
+      setPhotoMessage('Profile photo updated. Fans will see this on the vote page.');
+      setTimeout(() => setPhotoMessage(''), 5000);
+    } catch (err) {
+      console.error(err);
+      setPhotoMessage(err.message || 'Could not upload photo. Try again.');
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
   if (initialLoading) {
     return (
       <div style={{ textAlign: 'center', padding: '6rem 0' }}>
@@ -127,16 +183,47 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
       {/* Header Profile Info card */}
       <div className="dashboard-profile-card">
         <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <img 
-            src={nominee.photo_url} 
-            alt={nominee.name} 
-            style={{
-              width: '90px',
-              height: '110px',
-              objectFit: 'cover',
-              border: 'var(--border-width) solid var(--border-color)'
-            }}
-          />
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <img 
+              src={nomineePhotoSrc(nominee.photo_url)}
+              alt={nominee.name} 
+              style={{
+                width: '90px',
+                height: '110px',
+                objectFit: 'cover',
+                border: 'var(--border-width) solid var(--border-color)',
+                display: 'block',
+              }}
+            />
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              capture="user"
+              onChange={handlePhotoUpload}
+              style={{ display: 'none' }}
+              aria-hidden="true"
+            />
+            <button
+              type="button"
+              onClick={() => photoInputRef.current?.click()}
+              disabled={photoUploading}
+              className="luxury-btn secondary"
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                padding: '0.35rem 0.5rem',
+                fontSize: '0.55rem',
+                letterSpacing: '0.04em',
+                width: '100%',
+                borderRadius: 0,
+              }}
+            >
+              {photoUploading ? 'UPLOADING...' : 'CHANGE PHOTO'}
+            </button>
+          </div>
           <div>
             <span className="ref-badge" style={{ marginBottom: '0.4rem' }}>
               REF. {nominee.code} // {nominee.category_name}
@@ -166,6 +253,14 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
               >
                 *920*566*{nominee.code}#
               </button>
+            </p>
+            {photoMessage && (
+              <p style={{ fontSize: '0.7rem', marginTop: '0.5rem', color: photoMessage.includes('updated') ? '#4f7c5d' : 'var(--accent-dark)' }}>
+                {photoMessage}
+              </p>
+            )}
+            <p style={{ fontSize: '0.65rem', marginTop: '0.35rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Tap change photo to pick from your gallery or take a new one. This is the picture voters see.
             </p>
           </div>
         </div>

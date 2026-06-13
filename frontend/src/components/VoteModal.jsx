@@ -4,6 +4,7 @@ import { BRANDING } from '../branding';
 import { getGhanaPhoneError, normalizeGhanaPhone } from '../utils/phone';
 import { getEmailError, normalizeEmail } from '../utils/email';
 import { calculatePaystackCheckout } from '../utils/paystackFees';
+import { nomineePhotoSrc } from '../utils/photoUrl';
 
 export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
   const [voteCount, setVoteCount] = useState(10);
@@ -104,7 +105,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
           {/* Nominee Profile summary */}
           <div className="drawer-nominee-summary" style={{ display: 'flex', gap: '1.5rem', marginBottom: '2rem', alignItems: 'center' }}>
             <img 
-              src={nominee.photo_url} 
+              src={nomineePhotoSrc(nominee.photo_url)} 
               alt={nominee.name} 
               style={{
                 width: '70px',

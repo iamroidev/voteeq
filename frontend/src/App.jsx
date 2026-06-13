@@ -20,6 +20,9 @@ import NotFoundPage from './pages/NotFoundPage';
 import { API_BASE_URL, WS_BASE_URL } from './config';
 import { BRANDING, formatEventDate, formatEventMeta } from './branding';
 import { readStoredAuth } from './utils/storage';
+import { nomineePhotoSrc } from './utils/photoUrl';
+
+const VOTE_GRID_PAGE_SIZE = 12;
 
 const MOBILE_MENU_PAGES = [
   { id: 'about', label: 'About' },
@@ -42,6 +45,7 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [voteGridVisibleCount, setVoteGridVisibleCount] = useState(VOTE_GRID_PAGE_SIZE);
   const voteResultsRef = useRef(null);
   const leaderboardResultsRef = useRef(null);
 
@@ -464,6 +468,10 @@ export default function App() {
     }
   }, [toastMessage]);
 
+  useEffect(() => {
+    setVoteGridVisibleCount(VOTE_GRID_PAGE_SIZE);
+  }, [selectedCategory, searchQuery, activeEventId]);
+
   const syncDashboardHash = (path) => {
     const target = `#/${path}`;
     if (window.location.hash !== target) {
@@ -745,6 +753,9 @@ export default function App() {
       nom.code.includes(searchQuery);
     return matchesCategory && matchesSearch;
   });
+
+  const visibleVoteNominees = filteredNominees.slice(0, voteGridVisibleCount);
+  const hasMoreVoteNominees = filteredNominees.length > voteGridVisibleCount;
 
   const isOverlayOpen = Boolean(
     activeVoteNominee ||
@@ -1076,11 +1087,11 @@ export default function App() {
                 </p>
               </div>
             ) : (
-              filteredNominees.map(nom => (
+              visibleVoteNominees.map(nom => (
                 <div key={nom.id} className="editorial-card">
                   {/* Visual Portrait */}
                   <div className="editorial-image-wrapper">
-                    <img src={nom.photo_url} alt={nom.name} loading="lazy" decoding="async" />
+                    <img src={nomineePhotoSrc(nom.photo_url)} alt={nom.name} loading="lazy" decoding="async" />
                     <div style={{
                       position: 'absolute',
                       top: '1rem',
@@ -1151,6 +1162,18 @@ export default function App() {
                   </div>
                 </div>
               ))
+            )}
+            {hasMoreVoteNominees && (
+              <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
+                <button
+                  type="button"
+                  className="luxury-btn secondary"
+                  onClick={() => setVoteGridVisibleCount((count) => count + VOTE_GRID_PAGE_SIZE)}
+                  style={{ padding: '0.85rem 2rem', fontSize: '0.75rem' }}
+                >
+                  LOAD MORE NOMINEES ({filteredNominees.length - voteGridVisibleCount} remaining)
+                </button>
+              </div>
             )}
           </div>
         ) : null}

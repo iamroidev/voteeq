@@ -15,6 +15,8 @@ dist
 *.db-wal
 dist-ssr
 *.local
+photos/
+banners/
 
 # Editor directories and files
 .vscode/*
