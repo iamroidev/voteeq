@@ -327,12 +327,17 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       // 2. Nominee Name Header
       ctx.save();
       ctx.fillStyle = textPrimaryColor;
-      ctx.font = '400 68px "Playfair Display", serif';
+      let nameText = nominee.name.toUpperCase();
+      let nameFontSize = 68;
+      ctx.font = `400 ${nameFontSize}px "Playfair Display", serif`;
+      while (ctx.measureText(nameText).width > 480 && nameFontSize > 24) {
+        nameFontSize -= 2;
+        ctx.font = `400 ${nameFontSize}px "Playfair Display", serif`;
+      }
       ctx.shadowColor = activeBg.isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0,0,0,0.1)';
       ctx.shadowBlur = 6;
       ctx.shadowOffsetX = 2;
       ctx.shadowOffsetY = 2;
-      let nameText = nominee.name.toUpperCase();
       ctx.fillText(nameText, 640, 210);
       ctx.restore();
 
@@ -459,12 +464,18 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
 
       // 3. Nominee Name
       ctx.fillStyle = '#ffffff';
-      ctx.font = '700 96px "Playfair Display", serif';
+      let nameText = nominee.name.toUpperCase();
+      let nameFontSize = 96;
+      ctx.font = `700 ${nameFontSize}px "Playfair Display", serif`;
+      while (ctx.measureText(nameText).width > canvas.width - 120 && nameFontSize > 32) {
+        nameFontSize -= 2;
+        ctx.font = `700 ${nameFontSize}px "Playfair Display", serif`;
+      }
       ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
       ctx.shadowBlur = 18;
       ctx.shadowOffsetX = 3;
       ctx.shadowOffsetY = 3;
-      ctx.fillText(nominee.name.toUpperCase(), canvas.width / 2, 350);
+      ctx.fillText(nameText, canvas.width / 2, 350);
       ctx.restore(); // restore shadows
 
       ctx.save();
@@ -581,12 +592,18 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       // Nominee Name
       ctx.save();
       ctx.fillStyle = textPrimaryColor;
-      ctx.font = '700 72px "Playfair Display", serif';
+      let nameText = nominee.name.toUpperCase();
+      let nameFontSize = 72;
+      ctx.font = `700 ${nameFontSize}px "Playfair Display", serif`;
+      while (ctx.measureText(nameText).width > cardW - 100 && nameFontSize > 24) {
+        nameFontSize -= 2;
+        ctx.font = `700 ${nameFontSize}px "Playfair Display", serif`;
+      }
       ctx.shadowColor = activeBg.isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0,0,0,0.1)';
       ctx.shadowBlur = 8;
       ctx.shadowOffsetX = 2;
       ctx.shadowOffsetY = 2;
-      ctx.fillText(nominee.name.toUpperCase(), cardX + 50, cardY + 185);
+      ctx.fillText(nameText, cardX + 50, cardY + 185);
       ctx.restore();
 
       // Category Details
