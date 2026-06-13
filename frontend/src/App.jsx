@@ -936,10 +936,8 @@ export default function App() {
       {!currentPage && !authAdmin && !authNominee && activeTab === 'leaderboard' && (
         /* PUBLIC LEADERBOARD PAGE */
         <div className="leaderboard-page-container" style={{ animation: 'fadeIn 0.6s ease', maxWidth: '800px', margin: '0 auto', padding: '0 1.5rem 4rem 1.5rem' }}>
-          <button onClick={handleBackToPortal} className="luxury-btn secondary" style={{ marginBottom: '2.5rem', padding: '0.5rem 1.5rem', fontSize: '0.7rem' }}>
-            ← Back to Vote Portal
-          </button>
           <div className="editorial-header-section">
+
             <span className="editorial-tagline">
               {activeEvent ? `${displayEventTitle(activeEvent).toUpperCase()} LIVE STANDINGS` : 'LIVE STANDINGS'}
             </span>
