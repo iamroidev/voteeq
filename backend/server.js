@@ -33,6 +33,7 @@ const {
   completeRegistrationPayment,
   checkInTicket,
 } = require('./payment-completion');
+const { createRateLimiter } = require('./rate-limiter');
 const { prepareProfilePhotoFromDataUrl, buildProfilePhotoUrl } = require('./profile-photo');
 const { validateGhanaPhone } = require('./phone');
 const { initializePaystackTransaction } = require('./paystack');
@@ -221,18 +222,20 @@ Reference: ${ticket.payment_reference}
   }
 }
 
-// CORS: Allow frontend origins from Vercel + local dev
-const allowedOrigins = process.env.CORS_ORIGIN 
-  ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()) 
-  : [
-    'http://localhost:5173',
-    'http://localhost:4173',
-    'https://voteeq.online',
-    'https://www.voteeq.online',
-    'https://voteeq.vercel.app',
-    'https://voteeq-roi-dev.vercel.app',
-    'https://frontend-roi-dev.vercel.app',
-  ];
+// CORS: merge env origins with production frontends (www + apex always allowed)
+const DEFAULT_CORS_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'https://voteeq.online',
+  'https://www.voteeq.online',
+  'https://voteeq.vercel.app',
+  'https://voteeq-roi-dev.vercel.app',
+  'https://frontend-roi-dev.vercel.app',
+];
+const envOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+  : [];
+const allowedOrigins = [...new Set([...DEFAULT_CORS_ORIGINS, ...envOrigins])];
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
