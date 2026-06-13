@@ -9,7 +9,7 @@ function withNormalizedEventDate(row) {
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const http = require('http');
-const { initDB, getDB, reseedACSESAwards, reseedCampusDemo } = require('./database');
+const { initDB, getDB, reseedACSESAwards, reseedCampusDemo, resetAllButCategories } = require('./database');
 const {
   hashPin,
   verifyPin,
@@ -2604,6 +2604,25 @@ app.post('/api/admin/demo/reseed-ACSES', requireAdmin, async (req, res) => {
     });
   }
 });
+
+// Reset catalog but maintain categories (admin only)
+app.post('/api/admin/demo/reset-maintain-categories', requireAdmin, async (req, res) => {
+  try {
+    const db = getDB();
+    await resetAllButCategories(db);
+    await logAdminAction(adminUsername(req), 'RESET_MAINTAIN_CATEGORIES', "Reset catalog but maintained award categories");
+    res.json({
+      success: true,
+      message: "Database reset completed! All nominees, votes, tickets, and registrations cleared. Award categories have been maintained.",
+    });
+  } catch (err) {
+    console.error('Reset maintain categories error:', err);
+    res.status(500).json({
+      error: err.message || 'Failed to reset database while maintaining categories',
+    });
+  }
+});
+
 
 // Legacy campus demo catalog (admin only)
 app.post('/api/admin/demo/reseed-campus', requireAdmin, async (req, res) => {

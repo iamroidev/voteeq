@@ -630,7 +630,42 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
             >
               {reseedLoading ? 'Resetting...' : "Reset for ACSES AWARDS '26"}
             </button>
+            <button
+              type="button"
+              disabled={reseedLoading}
+              className={`luxury-btn secondary ${reseedLoading ? 'disabled' : ''}`}
+              style={{ fontSize: '0.7rem', marginLeft: '1rem' }}
+              onClick={() => {
+                setConfirmDialog({
+                  message: "Reset all but maintain categories? This will clear all nominees, votes, tickets, and registrations, but keep your categories intact.",
+                  onConfirm: async () => {
+                    setReseedLoading(true);
+                    setReseedMessage('');
+                    try {
+                      const res = await fetch(`${API_BASE_URL}/api/admin/demo/reset-maintain-categories`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error || 'Reset failed');
+                      setReseedMessage(data.message || "Database reset completed.");
+                      fetchStats();
+                      fetchRegistrations();
+                      fetchTicketsData();
+                      refreshData();
+                    } catch (err) {
+                      setReseedMessage(err.message || 'Failed to reset database.');
+                    } finally {
+                      setReseedLoading(false);
+                    }
+                  },
+                });
+              }}
+            >
+              {reseedLoading ? 'Resetting...' : "Reset (Maintain Categories)"}
+            </button>
           </div>
+
 
           {/* Metric Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>

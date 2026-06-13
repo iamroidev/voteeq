@@ -468,7 +468,17 @@ async function reseedACSESAwards(db) {
   await normalizeLegacyEventDates(db);
 }
 
+async function resetAllButCategories(db) {
+  await db.run('DELETE FROM votes');
+  await db.run('DELETE FROM tickets');
+  await db.run('DELETE FROM nominees');
+  await db.run('DELETE FROM nominee_registrations');
+  await db.run('DELETE FROM events');
+  await insertACSESEvent(db);
+}
+
 async function reseedCampusDemo(db) {
+
   const hashedPins = await Promise.all(CAMPUS_NOMINEES.map(([, , , , , pin]) => hashPin(pin)));
 
   try {
@@ -492,4 +502,6 @@ module.exports = {
   getDB: () => dbWrapper,
   reseedACSESAwards,
   reseedCampusDemo,
+  resetAllButCategories,
 };
+
