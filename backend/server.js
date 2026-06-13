@@ -36,8 +36,10 @@ const {
 } = require('./payment-completion');
 const { createRateLimiter } = require('./rate-limiter');
 const { prepareProfilePhotoFromDataUrl, buildProfilePhotoUrl } = require('./profile-photo');
-const { validateGhanaPhone } = require('./phone');
-const { initializePaystackTransaction, verifyPaystackTransaction } = require('./paystack');
+const { validateGhanaPhone, getMomoProvider } = require('./phone');
+const { initializePaystackTransaction, verifyPaystackTransaction, chargeMobileMoney } = require('./paystack');
+const { sendSMS } = require('./sms');
+
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
 const {
@@ -206,33 +208,46 @@ async function sendTicketReceipt(ticketId, { force = false } = {}) {
     if (ticket.payment_status !== 'paid') {
       return { ok: false, reason: 'not_paid' };
     }
-    if (!ticket.buyer_email || !isValidEmail(ticket.buyer_email)) {
-      return { ok: false, reason: 'no_email' };
+
+    let smsSent = false;
+    let emailSent = false;
+    let resendId;
+
+    // 1. Send SMS receipt if phone is available
+    if (ticket.buyer_phone) {
+      const smsMessage = `Voteeq Ticket: confirmed ${ticket.quantity} ticket(s) for "${ticket.event_title}". Ticket Code: ${ticket.ticket_code}. Total Paid: GH₵ ${ticket.price_paid.toFixed(2)}. Show code at entrance.`;
+      if (mockPaymentsAllowed()) {
+        console.log(`[SMS MOCK] Ticket purchase receipt SMS: ${smsMessage}`);
+        smsSent = true;
+      } else {
+        smsSent = await sendSMS(ticket.buyer_phone, smsMessage);
+      }
     }
 
-    let resendId;
-    try {
-      const result = await sendTicketReceiptEmail({
-        to: normalizeEmail(ticket.buyer_email),
-        eventTitle: ticket.event_title,
-        venue: ticket.event_venue,
-        date: formatEventDateForDisplay(ticket.event_date),
-        buyerName: ticket.buyer_name,
-        quantity: ticket.quantity,
-        amountGHS: ticket.price_paid,
-        ticketCode: ticket.ticket_code,
-        reference: ticket.payment_reference,
-      });
-      if (result.sent) {
-        resendId = result.id;
-        console.log(`Ticket receipt emailed to ${ticket.buyer_email} (Resend id: ${result.id})`);
-      } else {
-        console.warn(`Ticket receipt not emailed: ${result.reason}`);
-        return { ok: false, reason: result.reason || 'email_not_sent' };
+    // 2. Send Email receipt if email is valid
+    if (ticket.buyer_email && isValidEmail(ticket.buyer_email) && ticket.buyer_email !== 'ussd@voteeq.online') {
+      try {
+        const result = await sendTicketReceiptEmail({
+          to: normalizeEmail(ticket.buyer_email),
+          eventTitle: ticket.event_title,
+          venue: ticket.event_venue,
+          date: formatEventDateForDisplay(ticket.event_date),
+          buyerName: ticket.buyer_name,
+          quantity: ticket.quantity,
+          amountGHS: ticket.price_paid,
+          ticketCode: ticket.ticket_code,
+          reference: ticket.payment_reference,
+        });
+        if (result.sent) {
+          resendId = result.id;
+          emailSent = true;
+          console.log(`Ticket receipt emailed to ${ticket.buyer_email} (Resend id: ${result.id})`);
+        } else {
+          console.warn(`Ticket receipt not emailed: ${result.reason}`);
+        }
+      } catch (mailErr) {
+        console.error('Resend ticket receipt failed:', mailErr.message);
       }
-    } catch (mailErr) {
-      console.error('Resend ticket receipt failed:', mailErr.message);
-      return { ok: false, reason: mailErr.message || 'email_failed' };
     }
 
     const logMsg = `
@@ -240,19 +255,21 @@ async function sendTicketReceipt(ticketId, { force = false } = {}) {
 VOTEEQ TICKET RECEIPT${force ? ' (RESENT BY ADMIN)' : ''}
 Event: ${ticket.event_title}
 Ticket code: ${ticket.ticket_code}
-Buyer: ${ticket.buyer_name} (${ticket.buyer_email})
+Buyer: ${ticket.buyer_name} (${ticket.buyer_email || 'No Email'}, Phone: ${ticket.buyer_phone || 'No Phone'})
 Quantity: ${ticket.quantity}
 Amount: GHS ${ticket.price_paid.toFixed(2)}
 Reference: ${ticket.payment_reference}
+SMS Sent: ${smsSent ? 'Yes' : 'No'}
 ========================================\n\n`;
     fs.appendFileSync(receiptsLogPath, logMsg);
 
-    return { ok: true, email: ticket.buyer_email, resendId };
+    return { ok: smsSent || emailSent, email: ticket.buyer_email, smsSent, emailSent, resendId };
   } catch (err) {
     console.error('Error sending ticket receipt:', err);
     return { ok: false, reason: err.message || 'unknown_error' };
   }
 }
+
 
 // CORS: merge env origins with production frontends (www + apex always allowed)
 const DEFAULT_CORS_ORIGINS = [
@@ -1728,11 +1745,19 @@ and input your Nominee Code and Temporary PIN to set up your personal login PIN.
     fs.appendFileSync(receiptsLogPath, activationMessage, 'utf8');
     console.log(`Nominee onboarding approved! Activation letter printed to receipts.log for Nominee Code: ${assignedCode}`);
 
+    const smsText = `Voteeq: Congratulations ${reg.name.toUpperCase()}! Your nomination interest has been approved. Code: ${assignedCode}, Temp PIN: ${tempPin}. Activate at https://www.voteeq.online/#/nominee`;
+    if (mockPaymentsAllowed()) {
+      console.log(`[SMS MOCK] Not sending real SMS in development/sandbox. Message: ${smsText}`);
+    } else {
+      runInBackground(() => sendSMS(reg.phone, smsText));
+    }
+
     res.json({ 
       success: true, 
-      message: 'Onboarding approved. Nominee must activate using their assigned code and the PIN delivered via your notification channel.',
+      message: 'Onboarding approved. Nominee must activate using their assigned code and the PIN delivered via SMS.',
       assignedCode
     });
+
 
   } catch (err) {
     console.error(err);
@@ -2148,6 +2173,27 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
               console.error('USSD timeout mock process error:', err);
             }
           }, 3000);
+        } else {
+          // Trigger actual Paystack direct MoMo charge
+          runInBackground(async () => {
+            try {
+              const provider = getMomoProvider(session.phone);
+              const secretKey = process.env.PAYSTACK_SECRET_KEY;
+              const amountMinor = session.voteCount * 50; // 0.50 GHS per vote = 50 minor units
+              await chargeMobileMoney({
+                secretKey,
+                email: 'customer@voteeq.online',
+                amountMinor,
+                reference,
+                phone: session.phone,
+                provider
+              });
+              console.log(`Actual USSD MoMo charge triggered for reference: ${reference} (${provider})`);
+            } catch (err) {
+              console.error('Failed to trigger actual USSD MoMo charge:', err);
+              await db.run('UPDATE votes SET status = ? WHERE payment_reference = ?', ['failed', reference]);
+            }
+          });
         }
 
         return res.json({
@@ -2156,6 +2202,7 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
             ? 'Payment prompt sent. Approve MoMo transaction on your phone to complete voting. Thank you!'
             : 'Payment request submitted. Complete MoMo approval on your phone to finish voting.'
         });
+
       } else {
         ussdSessions.delete(sessionID);
         return res.json({
@@ -2279,6 +2326,27 @@ Date/Time: ${new Date().toISOString()}
               console.error('USSD ticket timeout mock error:', err);
             }
           }, 3000);
+        } else {
+          // Trigger actual Paystack direct MoMo charge for tickets
+          runInBackground(async () => {
+            try {
+              const provider = getMomoProvider(session.phone);
+              const secretKey = process.env.PAYSTACK_SECRET_KEY;
+              const amountMinor = totalPrice * 100; // totalPrice is in GHS, minor is in pesewas (GHS * 100)
+              await chargeMobileMoney({
+                secretKey,
+                email: 'customer@voteeq.online',
+                amountMinor,
+                reference,
+                phone: session.phone,
+                provider
+              });
+              console.log(`Actual USSD Ticket MoMo charge triggered for reference: ${reference} (${provider})`);
+            } catch (err) {
+              console.error('Failed to trigger actual USSD Ticket MoMo charge:', err);
+              await db.run("UPDATE tickets SET payment_status = 'failed' WHERE payment_reference = ?", [reference]);
+            }
+          });
         }
 
         return res.json({
@@ -2287,6 +2355,7 @@ Date/Time: ${new Date().toISOString()}
             ? 'Payment prompt sent. Approve MoMo transaction on your phone to complete purchase. Thank you!'
             : 'Payment request submitted. Complete MoMo approval on your phone to finish your purchase.'
         });
+
       } else {
         ussdSessions.delete(sessionID);
         return res.json({

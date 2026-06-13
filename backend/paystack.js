@@ -102,7 +102,66 @@ async function verifyPaystackTransaction(secretKey, reference) {
   };
 }
 
+async function chargeMobileMoney({
+  secretKey,
+  email,
+  amountMinor,
+  reference,
+  phone,
+  provider,
+}) {
+  const key = String(secretKey || '').trim();
+  if (!key) {
+    throw new Error('Paystack secret key is not configured');
+  }
+
+  const payload = {
+    email: email || 'customer@voteeq.online',
+    amount: Math.round(Number(amountMinor)),
+    currency: 'GHS',
+    reference: String(reference),
+    mobile_money: {
+      phone: String(phone),
+      provider: String(provider)
+    }
+  };
+
+  let response;
+  try {
+    response = await fetch('https://api.paystack.co/charge', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    console.error('Paystack charge network error:', err);
+    throw new Error('Could not reach Paystack to trigger mobile money charge.');
+  }
+
+  const raw = await response.text();
+  let parsed;
+  try {
+    parsed = raw ? JSON.parse(raw) : {};
+  } catch (err) {
+    console.error('Paystack charge non-JSON:', response.status, raw.slice(0, 300));
+    throw new Error(`Paystack charge returned unexpected response (HTTP ${response.status})`);
+  }
+
+  if (!response.ok || !parsed.status) {
+    const message = parsed.message || `Paystack charge failed (HTTP ${response.status})`;
+    console.error('Paystack charge failed:', response.status, parsed);
+    throw new Error(message);
+  }
+
+  return parsed.data;
+}
+
 module.exports = {
   initializePaystackTransaction,
   verifyPaystackTransaction,
+  chargeMobileMoney,
 };
+

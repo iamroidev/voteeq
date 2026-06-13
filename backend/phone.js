@@ -32,8 +32,25 @@ function validateGhanaPhone(input, { required = true } = {}) {
   return { valid: true, normalized };
 }
 
+function getMomoProvider(phone) {
+  const norm = normalizeGhanaPhone(phone);
+  if (!norm) return 'mtn'; // default fallback
+  
+  const prefix = norm.slice(0, 3);
+  const mtnPrefixes = ['024', '054', '055', '059', '025', '053'];
+  const vodPrefixes = ['020', '050'];
+  const tgoPrefixes = ['026', '056', '027', '057'];
+  
+  if (mtnPrefixes.includes(prefix)) return 'mtn';
+  if (vodPrefixes.includes(prefix)) return 'vod';
+  if (tgoPrefixes.includes(prefix)) return 'tgo';
+  return 'mtn'; // default fallback
+}
+
 module.exports = {
   normalizeGhanaPhone,
   isValidGhanaPhone,
   validateGhanaPhone,
+  getMomoProvider,
 };
+
