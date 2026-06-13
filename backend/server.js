@@ -1,5 +1,6 @@
 const express = require('express');
 const { formatEventDateForDisplay } = require('./event-date');
+const { fixAscesSpelling } = require('./acses-spelling');
 
 function withNormalizedEventDate(row) {
   if (!row) return row;
@@ -586,6 +587,8 @@ app.get('/api/events', async (req, res) => {
         `);
     const normalizedEvents = events.map((event) => ({
       ...event,
+      title: fixAscesSpelling(event.title),
+      description: fixAscesSpelling(event.description),
       date: formatEventDateForDisplay(event.date),
     }));
     if (!isAdmin) {

@@ -382,6 +382,13 @@ h1, h2, h3, h4 {
   transition: transform 0.75s ease;
 }
 
+.editorial-image-wrapper .editorial-card-ref-wrap {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 10;
+}
+
 .editorial-image-wrapper img {
   width: 100%;
   height: 100%;
@@ -1771,34 +1778,77 @@ h1, h2, h3, h4 {
   }
 
   .editorial-grid {
-    gap: 2rem 1rem;
-  }
-
-  @media (max-width: 420px) {
-    .editorial-grid {
-      grid-template-columns: 1fr;
-    }
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem 0.75rem;
   }
 
   .editorial-card {
-    padding: 1.25rem;
-    border-radius: 12px;
+    padding: 0.75rem;
+    border-radius: 10px;
   }
 
-  .editorial-card-actions {
-    gap: 0.85rem;
+  .editorial-image-wrapper {
+    aspect-ratio: 1 / 1;
+    margin-bottom: 0.6rem;
   }
 
-  .editorial-card-actions .luxury-btn {
-    min-height: 48px;
+  .editorial-image-wrapper .editorial-card-ref-wrap {
+    top: 0.5rem;
+    left: 0.5rem;
+  }
+
+  .editorial-image-wrapper .ref-badge {
+    font-size: 0.5rem;
+    padding: 0.2rem 0.4rem;
+    letter-spacing: 0.06em;
+  }
+
+  .editorial-card-meta {
+    font-size: 0.55rem;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.2rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .editorial-card-title {
-    font-size: 1.4rem;
+    font-size: 0.95rem;
+    margin-bottom: 0.2rem;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .editorial-card-votes {
+    margin-bottom: 0.45rem;
   }
 
   .votes-number {
-    font-size: 1.5rem;
+    font-size: 1.05rem;
+  }
+
+  .votes-label {
+    font-size: 0.5rem;
+    letter-spacing: 0.06em;
+  }
+
+  .editorial-card-actions {
+    gap: 0.35rem;
+    padding-top: 0.55rem;
+  }
+
+  .editorial-card-actions .luxury-btn {
+    min-height: 38px;
+    padding: 0.45rem 0.35rem;
+    font-size: 0.58rem;
+    letter-spacing: 0.08em;
+  }
+
+  .editorial-card-secondary-actions {
+    display: none;
   }
 
   .editorial-sheet {

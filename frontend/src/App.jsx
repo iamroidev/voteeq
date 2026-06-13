@@ -18,7 +18,7 @@ import PublicVoteFilters from './components/PublicVoteFilters';
 import PaymentStatusPage from './pages/PaymentStatusPage';
 import NotFoundPage from './pages/NotFoundPage';
 import { API_BASE_URL, WS_BASE_URL } from './config';
-import { BRANDING, formatEventDate, formatEventMeta, getNomineeShareUrl } from './branding';
+import { BRANDING, formatEventDate, formatEventMeta, getNomineeShareUrl, displayEventTitle } from './branding';
 import { readStoredAuth } from './utils/storage';
 import { nomineePhotoSrc } from './utils/photoUrl';
 import { COLOR_THEMES, applyAccentTheme, getStoredAccent } from './utils/theme';
@@ -941,7 +941,7 @@ export default function App() {
           </button>
           <div className="editorial-header-section">
             <span className="editorial-tagline">
-              {activeEvent ? `${activeEvent.title.toUpperCase()} LIVE STANDINGS` : 'LIVE STANDINGS'}
+              {activeEvent ? `${displayEventTitle(activeEvent).toUpperCase()} LIVE STANDINGS` : 'LIVE STANDINGS'}
             </span>
             <h1 className="editorial-title">LEADERBOARD</h1>
             {formatEventDate(activeEvent) && (
@@ -998,7 +998,7 @@ export default function App() {
             {BRANDING.organizerFullName.toUpperCase()} · {BRANDING.university.toUpperCase()}
           </span>
           <h1 className="editorial-title">
-            {(activeEvent?.title || BRANDING.eventTitle).toUpperCase()}
+            {displayEventTitle(activeEvent).toUpperCase()}
           </h1>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: '560px', margin: '0.75rem auto 0', lineHeight: 1.6 }}>
             Official voting and ticketing by {BRANDING.platformName} for {BRANDING.organizerName}, {BRANDING.campus}.
@@ -1066,12 +1066,7 @@ export default function App() {
                   {/* Visual Portrait */}
                   <div className="editorial-image-wrapper">
                     <img src={nomineePhotoSrc(nom.photo_url)} alt={nom.name} loading="lazy" decoding="async" />
-                    <div style={{
-                      position: 'absolute',
-                      top: '1rem',
-                      left: '1rem',
-                      zIndex: 10
-                    }}>
+                    <div className="editorial-card-ref-wrap">
                       <span className="ref-badge" style={{ background: 'var(--bg-secondary)' }}>
                         REF. {nom.code}
                       </span>
@@ -1102,7 +1097,7 @@ export default function App() {
                       VOTE ONLINE
                     </button>
 
-                    <div style={{ display: 'flex', justifyContent: BRANDING.showUssd ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '0.5rem' }}>
+                    <div className="editorial-card-secondary-actions" style={{ display: 'flex', justifyContent: BRANDING.showUssd ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '0.5rem' }}>
                       {BRANDING.showUssd && (
                         <button
                           onClick={() => dialUssdCode(`*920*566*${nom.code}#`)}

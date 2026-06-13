@@ -62,6 +62,15 @@ export const BRANDING = {
 };
 
 /** Direct link supporters use to open the vote page for this nominee */
+export function fixAscesSpelling(text) {
+  if (text == null || text === '') return text;
+  return String(text).replace(/ASCES/g, 'ACSES');
+}
+
+export function displayEventTitle(event) {
+  return fixAscesSpelling(event?.title) || BRANDING.eventTitle;
+}
+
 export function getNomineeVoteUrl(code, origin) {
   const base = (origin || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
   return `${base}/?nominee=${encodeURIComponent(code)}`;
@@ -106,5 +115,5 @@ export function formatEventDate(event) {
 
 export function eventMatchesTickets(event) {
   if (!event) return false;
-  return event.title === BRANDING.ticketEventTitle;
+  return fixAscesSpelling(event.title) === BRANDING.ticketEventTitle;
 }

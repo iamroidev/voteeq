@@ -1,7 +1,7 @@
 const { createClient } = require('@libsql/client');
 const path = require('path');
 const fs = require('fs');
-const { hashPin, isProduction } = require('./security');
+const { fixAscesSpelling } = require('./acses-spelling');
 const { CAMPUS_EVENTS, CAMPUS_CATEGORIES, CAMPUS_NOMINEES } = require('./seed-campus');
 const { ACSES_EVENT } = require('./seed-acses');
 const { ACSES_AWARD_CATEGORIES } = require('./seed-acses-categories');
@@ -270,6 +270,7 @@ async function initDB() {
   }
 
   await normalizeLegacyEventDates(dbWrapper);
+  await fixLegacyAscesSpelling(dbWrapper);
 
   return dbWrapper;
 }
@@ -431,6 +432,22 @@ async function normalizeLegacyEventDates(db) {
     }
   } catch (err) {
     console.warn('normalizeLegacyEventDates skipped:', err.message);
+  }
+}
+
+async function fixLegacyAscesSpelling(db) {
+  try {
+    const events = await db.all('SELECT id, title, description FROM events');
+    for (const ev of events || []) {
+      const title = fixAscesSpelling(ev.title);
+      const description = fixAscesSpelling(ev.description);
+      if (title !== ev.title || description !== ev.description) {
+        await db.run('UPDATE events SET title = ?, description = ? WHERE id = ?', [title, description, ev.id]);
+        console.log(`Fixed ASCES→ACSES spelling for event #${ev.id}`);
+      }
+    }
+  } catch (err) {
+    console.warn('fixLegacyAscesSpelling skipped:', err.message);
   }
 }
 

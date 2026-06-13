@@ -1,4 +1,5 @@
 import CategoryBrowser from './CategoryBrowser';
+import { displayEventTitle } from '../branding';
 
 /**
  * Compact vote-page filters: optional event picker, category browser, nominee search.
@@ -31,7 +32,7 @@ export default function PublicVoteFilters({
           >
             {events.map((event) => (
               <option key={event.id} value={event.id}>
-                {event.title}
+                {displayEventTitle(event)}
               </option>
             ))}
           </select>
