@@ -929,8 +929,8 @@ app.post('/api/nominees/save-banner', async (req, res) => {
   try {
     const base64Data = image.replace(/^data:image\/png;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
-    if (buffer.length > 1024 * 1024) {
-      return res.status(400).json({ error: 'Banner image must be under 1MB' });
+    if (buffer.length > 10 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Banner image must be under 10MB' });
     }
     if (buffer.length < 8 || buffer[0] !== 0x89 || buffer[1] !== 0x50) {
       return res.status(400).json({ error: 'Banner must be a valid PNG image' });
