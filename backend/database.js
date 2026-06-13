@@ -5,6 +5,7 @@ const { fixAscesSpelling } = require('./acses-spelling');
 const { CAMPUS_EVENTS, CAMPUS_CATEGORIES, CAMPUS_NOMINEES } = require('./seed-campus');
 const { ACSES_EVENT } = require('./seed-acses');
 const { ACSES_AWARD_CATEGORIES } = require('./seed-acses-categories');
+const { isProduction } = require('./security');
 
 // Support local volume fallback (e.g. Railway volume or local dev folder)
 const dbDir = process.env.RAILWAY_VOLUME_MOUNT 
