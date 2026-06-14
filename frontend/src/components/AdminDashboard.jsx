@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { API_BASE_URL } from '../config';
-import { BRANDING, formatEventDate, formatEventMeta } from '../branding';
+import { BRANDING, formatEventDate, formatEventMeta, ACSES_AWARD_CATEGORIES } from '../branding';
 import { authFetch } from '../utils/api';
 import { nomineePhotoSrc } from '../utils/photoUrl';
 
@@ -509,14 +509,14 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
   };
 
   return (
-    <div className="admin-dashboard-container" style={{ animation: 'fadeIn 0.6s ease' }}>
+    <div className="admin-dashboard-container">
       {fetchError && (
         <div style={{ marginBottom: '1.5rem', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(244, 67, 54, 0.3)', color: '#c62828', fontSize: '0.85rem' }}>
           {fetchError}
         </div>
       )}
       {/* Header Panel */}
-      <div className="dashboard-header-card" style={{ marginBottom: '3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.5rem', padding: '2rem', background: 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.5)', borderRadius: '24px' }}>
+      <div className="dashboard-header-card admin-panel-card" style={{ marginBottom: '3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.5rem' }}>
         <div>
           <span className="ref-badge" style={{ marginBottom: '0.5rem' }}>
             System Console
@@ -534,7 +534,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       </div>
 
       {/* Nav Sub-Tabs */}
-      <div className="category-tabs" style={{ marginBottom: '2.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', overflowX: 'auto', display: 'flex', gap: '0.75rem' }}>
+      <div className="category-tabs admin-category-tabs" style={{ marginBottom: '2.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', display: 'flex', gap: '0.75rem' }}>
         <button 
           className={`category-tab-btn ${activeSubTab === 'overview' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('overview')}
@@ -591,7 +591,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
           <div className="editorial-sheet" style={{ margin: 0, padding: '1.5rem 2rem' }}>
             <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', marginBottom: '0.5rem' }}>ACSES AWARDS '26 catalog</h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '1rem' }}>
-              Reset the portal for ACSES AWARDS '26. Clears votes, tickets, and registrations, then loads the ticketed event and 28 award categories. Add nominees per category when ACSES provides the shortlist.
+              Reset the portal for ACSES AWARDS '26. Clears votes, tickets, and registrations, then loads the ticketed event and {ACSES_AWARD_CATEGORIES.length} award categories. Add nominees per category when ACSES provides the shortlist.
             </p>
             {reseedMessage && (
               <p style={{ fontSize: '0.8rem', color: 'var(--accent-dark)', marginBottom: '1rem', fontWeight: 500 }}>{reseedMessage}</p>
@@ -669,7 +669,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
 
           {/* Metric Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>
-            <div className="metric-box-glow" style={{ padding: '1.75rem', background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.5)', borderRadius: '16px', position: 'relative', overflow: 'hidden' }}>
+            <div className="metric-box-glow admin-metric-card">
               <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Categories</span>
               <h2 style={{ fontSize: '2.6rem', marginTop: '0.5rem', color: 'var(--text-primary)', fontFamily: 'var(--font-serif)' }}>
                 {loadingStats ? '...' : (stats?.categoriesCount || 0)}
@@ -677,7 +677,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
               <div style={{ width: '100%', height: '2px', background: 'var(--accent)', opacity: 0.3, position: 'absolute', bottom: 0, left: 0 }} />
             </div>
 
-            <div className="metric-box-glow" style={{ padding: '1.75rem', background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.5)', borderRadius: '16px', position: 'relative', overflow: 'hidden' }}>
+            <div className="metric-box-glow admin-metric-card">
               <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Nominees</span>
               <h2 style={{ fontSize: '2.6rem', marginTop: '0.5rem', color: 'var(--text-primary)', fontFamily: 'var(--font-serif)' }}>
                 {loadingStats ? '...' : (stats?.nomineesCount || 0)}
@@ -685,7 +685,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
               <div style={{ width: '100%', height: '2px', background: 'var(--accent)', opacity: 0.3, position: 'absolute', bottom: 0, left: 0 }} />
             </div>
 
-            <div className="metric-box-glow" style={{ padding: '1.75rem', background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.5)', borderRadius: '16px', position: 'relative', overflow: 'hidden' }}>
+            <div className="metric-box-glow admin-metric-card">
               <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Total Votes</span>
               <h2 style={{ fontSize: '2.6rem', marginTop: '0.5rem', color: 'var(--text-primary)', fontFamily: 'var(--font-serif)' }}>
                 {loadingStats ? '...' : (stats?.totalVotes || 0)}
@@ -693,7 +693,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
               <div style={{ width: '100%', height: '2px', background: 'var(--accent)', opacity: 0.3, position: 'absolute', bottom: 0, left: 0 }} />
             </div>
 
-            <div className="metric-box-glow" style={{ padding: '1.75rem', background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.5)', borderRadius: '16px', position: 'relative', overflow: 'hidden' }}>
+            <div className="metric-box-glow admin-metric-card">
               <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Total Revenue</span>
               <h2 style={{ fontSize: '2.6rem', marginTop: '0.5rem', color: 'var(--accent)', fontFamily: 'var(--font-serif)' }}>
                 {loadingStats ? '...' : `${(stats?.totalRevenue || 0).toFixed(2)} GHS`}
@@ -880,7 +880,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
           </div>
 
           {/* Nominees Grid Table */}
-          <div className="editorial-sheet" style={{ margin: 0, borderRadius: '16px', padding: '2rem', overflowX: 'auto' }}>
+          <div className="editorial-sheet admin-sheet" style={{ margin: 0, borderRadius: '16px', padding: '2rem' }}>
             <input
               ref={adminPhotoInputRef}
               type="file"
@@ -991,7 +991,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
           </div>
 
           {/* Categories List */}
-          <div className="editorial-sheet" style={{ margin: 0, borderRadius: '16px', padding: '2rem', overflowX: 'auto' }}>
+          <div className="editorial-sheet admin-sheet" style={{ margin: 0, borderRadius: '16px', padding: '2rem' }}>
             <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', letterSpacing: '0.05em' }}>Categories Directory</h3>
             
             <table className="luxury-table">
@@ -1042,7 +1042,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
 
       {/* 4. REGISTRATIONS / APPLICATIONS QUEUE */}
       {activeSubTab === 'registrations' && (
-        <div className="editorial-sheet" style={{ margin: 0, borderRadius: '16px', padding: '2rem', overflowX: 'auto' }}>
+        <div className="editorial-sheet admin-sheet" style={{ margin: 0, borderRadius: '16px', padding: '2rem' }}>
           <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', letterSpacing: '0.05em' }}>Nominee Onboarding Queue</h3>
           
           <table className="luxury-table">
@@ -1556,7 +1556,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
           </div>
 
           {/* Attendees check-in list logs */}
-          <div className="editorial-sheet" style={{ margin: 0, padding: '2rem', overflowX: 'auto' }}>
+          <div className="editorial-sheet admin-sheet" style={{ margin: 0, padding: '2rem' }}>
             <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', fontFamily: 'var(--font-serif)', fontWeight: 400 }}>Gate Check-In Logs & Guests List</h3>
             
             <table className="luxury-table">
@@ -1761,7 +1761,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
           </div>
 
           {/* Events List table */}
-          <div className="editorial-sheet" style={{ margin: 0, padding: '2rem', overflowX: 'auto' }}>
+          <div className="editorial-sheet admin-sheet" style={{ margin: 0, padding: '2rem' }}>
             <h3 style={{ fontSize: '1.25rem', marginBottom: '1.5rem', fontFamily: 'var(--font-serif)', fontWeight: 400 }}>Active Event Catalog</h3>
             <table className="luxury-table">
               <thead>
@@ -1849,7 +1849,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
             A verified chronological log of write transactions and staff actions on the VoteEQ database.
           </p>
 
-          <div style={{ overflowX: 'auto' }}>
+          <div className="admin-table-scroll">
             <table className="luxury-table">
               <thead>
                 <tr>

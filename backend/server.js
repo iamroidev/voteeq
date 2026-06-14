@@ -10,6 +10,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const http = require('http');
 const { initDB, getDB, reseedACSESAwards, reseedCampusDemo, resetAllButCategories } = require('./database');
+const { ACSES_AWARD_CATEGORIES } = require('./seed-acses-categories');
 const {
   hashPin,
   verifyPin,
@@ -2664,7 +2665,7 @@ app.post('/api/admin/demo/reseed-ACSES', requireAdmin, async (req, res) => {
     await logAdminAction(adminUsername(req), 'RESEED_ACSES_AWARDS', "Reset catalog for ACSES Awards '26");
     res.json({
       success: true,
-      message: "ACSES AWARDS '26 loaded with 28 award categories. Add shortlisted nominees when ACSES sends the list.",
+      message: `ACSES AWARDS '26 loaded with ${ACSES_AWARD_CATEGORIES.length} award categories. Add shortlisted nominees when ACSES sends the list.`,
     });
   } catch (err) {
     console.error('ACSES reseed error:', err);

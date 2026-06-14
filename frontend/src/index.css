@@ -2185,9 +2185,75 @@ h1, h2, h3, h4 {
   line-height: 1.3;
 }
 
-/* Admin dashboard shell */
+/* Admin dashboard shell — optimized for smooth scrolling (no backdrop-blur compositing) */
+.app-container.admin-mode .ambient-glow-1,
+.app-container.admin-mode .ambient-glow-2 {
+  display: none;
+}
+
 .admin-dashboard-container {
   animation: page-fade-in 0.45s ease both;
+}
+
+.admin-dashboard-container .dashboard-header-card,
+.admin-dashboard-container .admin-panel-card {
+  padding: 2rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 24px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+
+.admin-dashboard-container .admin-metric-card {
+  padding: 1.75rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+}
+
+.admin-dashboard-container .metric-box-glow::before {
+  display: none;
+}
+
+.admin-dashboard-container .editorial-sheet,
+.admin-dashboard-container .admin-sheet {
+  background: var(--bg-secondary);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow-y: visible;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+}
+
+.admin-dashboard-container .editorial-sheet:has(.luxury-table),
+.admin-dashboard-container .admin-sheet:has(.luxury-table) {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.admin-dashboard-container .admin-category-tabs {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.admin-dashboard-container .admin-table-scroll,
+.admin-dashboard-container .table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  max-width: 100%;
+}
+
+.admin-dashboard-container .admin-table-scroll .luxury-table {
+  min-width: 640px;
 }
 
 @media (max-width: 768px) {
@@ -2202,10 +2268,11 @@ h1, h2, h3, h4 {
   }
 
   .admin-dashboard-container table {
-    display: block;
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    min-width: 0;
+  }
+
+  .admin-dashboard-container .admin-table-scroll .luxury-table {
+    min-width: 560px;
   }
 
   .admin-dashboard-container .editorial-sheet {
