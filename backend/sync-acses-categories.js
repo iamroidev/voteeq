@@ -1,5 +1,5 @@
 /**
- * One-off sync: replace ACSES award categories in Turso with seed-acses-categories.js list.
+ * Sync ACSES award categories in Turso with seed-acses-categories.js list.
  * Preserves nominees by remapping category_id where names changed.
  */
 require('dotenv').config();
@@ -7,18 +7,27 @@ const { createClient } = require('@libsql/client');
 const { ACSES_AWARD_CATEGORIES } = require('./seed-acses-categories');
 
 const CATEGORY_RENAMES = {
-  'Most Dedicated Executive': 'Most Dedicated Executive of the Year',
-  'Course Rep of the Year': 'Course Representative of the Year',
-  'Best Programmer': 'Best Programmer of the Year',
-  'Best UI/UX Talent': 'Best UI/UX Talent of the Year',
-  'Leadership Excellence': 'Leadership Excellence Award',
-  'Innovative Student of the Year': 'Most Innovative Student of the Year',
-  'Perfect Gentleman of the Year': 'Gentleman of the Year',
-  'Perfect Lady of the Year': 'Lady of the Year',
-  'Best Cyber Security Talent': 'Best Cybersecurity Talent of the Year',
-  'Best Dancer': 'Best Dancer of the Year',
-  'Most Innovative Fresher': 'Most Innovative Freshman of the Year',
-  'Student Entrepreneur of the Year': 'Male Entrepreneur of the Year',
+  'Most Dedicated Executive of the Year': 'Most Dedicated Executive',
+  'Course Representative of the Year': 'Course Rep of the Year',
+  'Student Leader of the Year': 'Student Politician of the Year',
+  'Leadership Excellence Award': 'Leadership Excellence',
+  'Best Programmer of the Year': 'Best Programmer',
+  'Best Cybersecurity Talent of the Year': 'Best Cyber Security Talent',
+  'Best Information Systems Talent of the Year': 'Best IS Talent',
+  'Best Robotics Talent of the Year': 'Best Robotics Talent',
+  'Best UI/UX Talent of the Year': 'Best UI/UX Talent',
+  'Most Innovative Student of the Year': 'Innovative Student of the Year',
+  'Best Dancer of the Year': 'Best Dancer',
+  'Most Innovative Freshman of the Year': 'Most Innovative Fresher',
+  'Most Popular Freshman (Male)': 'Male Most Popular Student of the Year (Freshman)',
+  'Most Popular Freshman (Female)': 'Female Most Popular Student of the Year (Freshman)',
+  'Gentleman of the Year': 'Perfect Gentleman of the Year',
+  'Lady of the Year': 'Perfect Lady of the Year',
+  'Most Photogenic Male Student of the Year': 'Male Best Photogenic Student of the Year',
+  'Most Photogenic Female Student of the Year': 'Female Best Photogenic Student of the Year',
+  'Student Artist of the Year': 'Artiste of the Year',
+  'Most Eloquent Student of the Year': 'Best Student Personality of the Year',
+  'Personality of the Year': 'Best Student Personality of the Year',
 };
 
 (async () => {
