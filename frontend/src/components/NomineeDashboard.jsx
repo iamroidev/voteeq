@@ -3,15 +3,11 @@ import { API_BASE_URL } from '../config';
 import { getNomineeShareUrl } from '../branding';
 import { nomineePhotoSrc } from '../utils/photoUrl';
 
-const BannerGenerator = lazy(() => import('./BannerGenerator'));
-
 export default function NomineeDashboard({ code, token, onLogout, copyShareLink, dialUssdCode, wsTrigger }) {
   const [data, setData] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [bannerVersion, setBannerVersion] = useState(() => Date.now());
-  const [showBannerStudio, setShowBannerStudio] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoMessage, setPhotoMessage] = useState('');
   const photoInputRef = useRef(null);
@@ -20,7 +16,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
   const onLogoutRef = useRef(onLogout);
   onLogoutRef.current = onLogout;
 
-  const loadDashboardData = useCallback(async ({ isInitial = false, bustBannerCache = false } = {}) => {
+  const loadDashboardData = useCallback(async ({ isInitial = false } = {}) => {
     if (abortRef.current) {
       abortRef.current.abort();
     }
@@ -52,9 +48,6 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
       }
       setData(resData);
       setError('');
-      if (bustBannerCache) {
-        setBannerVersion(Date.now());
-      }
     } catch (err) {
       if (err.name === 'AbortError') {
         if (abortRef.current === controller) {
@@ -75,7 +68,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
   }, [code, token]);
 
   useEffect(() => {
-    loadDashboardData({ isInitial: true, bustBannerCache: true });
+    loadDashboardData({ isInitial: true });
     const interval = setInterval(() => {
       if (!document.hidden) {
         loadDashboardData();
@@ -349,70 +342,8 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
         </div>
       </div>
 
-      {/* Main Grid: Left is Banner generator, Right is recent voters logs */}
-      <div className="dashboard-main-grid">
-        {/* Campaign Banner studio */}
-        <div>
-          {data?.hasCustomBanner && (
-            <div className="editorial-sheet" style={{ marginBottom: '2rem', padding: '2.5rem', textAlign: 'center' }}>
-              <h3 style={{ fontSize: '1.25rem', fontFamily: 'var(--font-serif)', marginBottom: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-                Active Campaign Poster
-              </h3>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
-                This is the live card currently configured as your social media link preview.
-              </p>
-              <div style={{ display: 'flex', justifyContent: 'center', margin: '1rem 0' }}>
-                <img 
-                  src={`${API_BASE_URL}/banners/${code}.png?t=${bannerVersion}`} 
-                  alt="Active Share Card" 
-                  style={{
-                    width: '100%',
-                    maxWidth: '320px',
-                    height: 'auto',
-                    borderRadius: '8px',
-                    boxShadow: '0 15px 35px rgba(0,0,0,0.18)',
-                    border: '1px solid var(--border-color)',
-                  }} 
-                />
-              </div>
-              <div style={{ 
-                background: '#e2f9eb', 
-                borderLeft: '3px solid #2ecc71', 
-                padding: '0.75rem 1rem', 
-                fontSize: '0.8rem', 
-                color: '#27ae60', 
-                marginTop: '1rem', 
-                fontWeight: 500,
-                textAlign: 'left',
-                borderRadius: '4px'
-              }}>
-                Active campaign poster is successfully saved to the server. Create a new poster below to overwrite it.
-              </div>
-            </div>
-          )}
-          {showBannerStudio ? (
-            <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Loading poster studio...</div>}>
-              <BannerGenerator
-                nominee={nominee}
-                token={token}
-                onSaveSuccess={() => {
-                  setData(prev => ({ ...prev, hasCustomBanner: true }));
-                  setBannerVersion(Date.now());
-                }}
-              />
-            </Suspense>
-          ) : (
-            <div className="editorial-sheet" style={{ padding: '2rem', textAlign: 'center' }}>
-              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', marginBottom: '0.75rem' }}>Campaign Poster Studio</h3>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: 1.6 }}>
-                Build and download shareable posters. Opens on demand so your dashboard stays fast.
-              </p>
-              <button type="button" onClick={() => setShowBannerStudio(true)} className="luxury-btn" style={{ padding: '0.75rem 1.5rem', fontSize: '0.7rem' }}>
-                Open Poster Studio
-              </button>
-            </div>
-          )}
-        </div>
+      {/* Main Grid: Shows recent voters logs spanning full width */}
+      <div className="dashboard-main-grid" style={{ gridTemplateColumns: '1fr' }}>
 
         {/* Live Vote Log sheet */}
         <div className="editorial-sheet" style={{ margin: 0, padding: '2.5rem' }}>
