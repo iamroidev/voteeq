@@ -103,6 +103,22 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
   const [reseedMessage, setReseedMessage] = useState('');
   const wsTriggerRef = useRef(wsTrigger);
 
+  const [adminNominees, setAdminNominees] = useState([]);
+
+  const fetchAdminNominees = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/admin/nominees', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }, onLogout);
+      if (res.ok) {
+        const data = await res.json();
+        setAdminNominees(data);
+      }
+    } catch (err) {
+      console.error('Error fetching admin nominees:', err);
+    }
+  }, [token, onLogout]);
+
   const fetchStats = useCallback(async () => {
     try {
       const res = await authFetch('/api/admin/overview', {
@@ -278,18 +294,24 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       if (activeSubTab === 'tickets' || activeSubTab === 'events' || activeSubTab === 'nominees') {
         fetchTicketsData();
       }
+      if (activeSubTab === 'nominees') {
+        fetchAdminNominees();
+      }
       if (activeSubTab === 'audit') {
         fetchAuditLogs();
       }
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, [fetchStats, fetchRegistrations, fetchTicketsData, fetchAuditLogs, activeSubTab]);
+  }, [fetchStats, fetchRegistrations, fetchTicketsData, fetchAuditLogs, fetchAdminNominees, activeSubTab]);
 
   useEffect(() => {
     if (wsTriggerRef.current === wsTrigger) return;
     wsTriggerRef.current = wsTrigger;
     fetchStats();
-  }, [wsTrigger, fetchStats]);
+    if (activeSubTab === 'nominees') {
+      fetchAdminNominees();
+    }
+  }, [wsTrigger, fetchStats, fetchAdminNominees, activeSubTab]);
 
   const handleApproveRegistration = (id) => {
     setConfirmDialog({
@@ -321,6 +343,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
           fetchRegistrations();
           refreshData();
           fetchStats();
+          fetchAdminNominees();
         } catch (err) {
           setAlertDialog({
             title: 'Error',
@@ -455,6 +478,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       setNewNomCategoryId('');
       setNewNomEventId('');
       refreshData();
+      fetchAdminNominees();
     } catch (err) {
       setNomError(err.message);
     } finally {
@@ -472,6 +496,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
       const image = await readImageAsDataUrl(file);
       await uploadAdminNomineePhoto(code, image, token);
       refreshData();
+      fetchAdminNominees();
       setAlertDialog({
         title: 'Photo updated',
         message: `Profile photo updated for nominee ${code}.`,
@@ -498,6 +523,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Failed to delete nominee');
           refreshData();
+          fetchAdminNominees();
         } catch (err) {
           setAlertDialog({
             title: 'Error',
@@ -903,14 +929,14 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                 </tr>
               </thead>
               <tbody>
-                {nominees.length === 0 ? (
+                {(adminNominees.length > 0 ? adminNominees : nominees).length === 0 ? (
                   <tr>
                     <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                       No nominees registered in SQLite database.
                     </td>
                   </tr>
                 ) : (
-                  nominees.map(n => (
+                  (adminNominees.length > 0 ? adminNominees : nominees).map(n => (
                     <tr key={n.id}>
                       <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>{n.code}</td>
                       <td>
@@ -922,7 +948,16 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                       <td style={{ color: 'var(--text-secondary)' }}>{n.category_name}</td>
                       <td style={{ fontWeight: 700, color: 'var(--accent-dark)' }}>{n.votes_count}</td>
                       <td>
-                        {n.passcode === 'PENDING' || (n.passcode && n.passcode.startsWith('PENDING_ACT_')) ? (
+                        {n.passcode && n.passcode.startsWith('PENDING_ACT_') ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                            <span style={{ background: '#fef9e7', color: '#f39c12', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', border: '1px solid rgba(243, 156, 18, 0.2)', display: 'inline-block', width: 'fit-content' }}>
+                              Pending Setup
+                            </span>
+                            <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', fontWeight: 700, color: '#e67e22' }}>
+                              PIN: {n.passcode.replace('PENDING_ACT_', '')}
+                            </span>
+                          </div>
+                        ) : n.passcode === 'PENDING' ? (
                           <span style={{ background: '#fef9e7', color: '#f39c12', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', border: '1px solid rgba(243, 156, 18, 0.2)' }}>
                             Pending Setup
                           </span>

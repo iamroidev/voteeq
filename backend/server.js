@@ -902,6 +902,23 @@ app.delete('/api/admin/categories/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// 3ee. Get Nominees for Admin (includes passcodes / activation codes)
+app.get('/api/admin/nominees', requireAdmin, async (req, res) => {
+  try {
+    const db = getDB();
+    const nominees = await db.all(`
+      SELECT n.id, n.code, n.name, n.photo_url, n.category_id, n.event_id, n.votes_count, n.passcode, n.created_at, c.name as category_name 
+      FROM nominees n 
+      JOIN categories c ON n.category_id = c.id
+      ORDER BY n.id DESC
+    `);
+    res.json(nominees);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error fetching admin nominees' });
+  }
+});
+
 // 3f. Create Nominee
 app.post('/api/admin/nominees', requireAdmin, async (req, res) => {
   const { code, name, photo_url, category_id, event_id } = req.body;
@@ -1688,15 +1705,23 @@ app.post('/api/admin/registrations/:id/approve', requireAdmin, async (req, res) 
       return res.status(400).json({ error: 'Category selection or request is missing' });
     }
 
-    // Generate unique 3-digit candidate code
+    // Generate unique nominee code using category list index and sequence number
+    const categoryRecord = await db.get('SELECT name FROM categories WHERE id = ?', [finalCategoryId]);
+    const categoryName = categoryRecord?.name || '';
+    const listIndex = ACSES_AWARD_CATEGORIES.findIndex(cat => (Array.isArray(cat) ? cat[0] : cat) === categoryName);
+    const prefix = listIndex !== -1 ? (listIndex + 1) : finalCategoryId;
+
     let assignedCode = '';
+    let nomineeSeq = 1;
     while (true) {
-      const candidateCode = Math.floor(100 + Math.random() * 900).toString();
+      const seqStr = nomineeSeq.toString().padStart(2, '0');
+      const candidateCode = `${prefix}${seqStr}`;
       const duplicate = await db.get('SELECT id FROM nominees WHERE code = ?', [candidateCode]);
       if (!duplicate) {
         assignedCode = candidateCode;
         break;
       }
+      nomineeSeq += 1;
     }
 
     // Generate 6-digit random Temporary PIN
