@@ -995,6 +995,17 @@ export default function App() {
           <span className="editorial-tagline">
             {BRANDING.organizerFullName.toUpperCase()} · {BRANDING.university.toUpperCase()}
           </span>
+          <div style={{
+            fontSize: '0.65rem',
+            letterSpacing: '0.3em',
+            textTransform: 'uppercase',
+            color: 'var(--text-secondary)',
+            fontWeight: 500,
+            margin: '0.75rem 0 1rem 0',
+            opacity: 0.8
+          }}>
+            Presents
+          </div>
           <h1 className="editorial-title">
             {displayEventTitle(activeEvent).toUpperCase()}
           </h1>

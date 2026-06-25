@@ -1,8 +1,8 @@
 /** ACSES Awards '26 — UMaT Tarkwa. Single ticketed event; nominees added later by admin. */
 const ACSES_EVENT = {
-  title: "ACSES AWARDS '26",
+  title: "\"Praemia Pro Virtute\" Dinner & Awards Night",
   description:
-    "ACSES Awards Night — celebrating academic dedication, technical excellence, and community impact across the Department of Computer Science and Engineering, UMaT. Public voting opens when the shortlist is published.",
+    "\"Praemia Pro Virtute\" Dinner & Awards Night — celebrating academic dedication, technical excellence, and community impact across the Department of Computer Science and Engineering, UMaT. Public voting opens when the shortlist is published.",
   date: '2026',
   venue: '',
   ticket_price: 25.0,

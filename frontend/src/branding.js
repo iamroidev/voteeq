@@ -47,7 +47,7 @@ export const ACSES_AWARD_CATEGORIES = [
 
 export const BRANDING = {
   platformName: 'VoteEQ',
-  eventTitle: "ACSES AWARDS '26",
+  eventTitle: '"Praemia Pro Virtute" Dinner & Awards Night',
   /** Calendar year shown on tickets/receipts (not the '26 in the event title) */
   eventYear: '2026',
   organizerName: 'ACSES',
@@ -62,7 +62,7 @@ export const BRANDING = {
   votingOpen: false,
   /** Set true when ACSES opens awards night ticket sales */
   ticketsEnabled: false,
-  ticketEventTitle: "ACSES AWARDS '26",
+  ticketEventTitle: '"Praemia Pro Virtute" Dinner & Awards Night',
   defaultTab: 'vote',
   showUssd: false,
   votePriceOnlineGhs: '1.00',
@@ -72,7 +72,7 @@ export const BRANDING = {
   passPaystackFeeToCustomer: true,
   supportEmail: 'support@voteeq.online',
   privacyEmail: 'privacy@voteeq.online',
-  documentTitle: "ACSES AWARDS '26 | VoteEQ",
+  documentTitle: '"Praemia Pro Virtute" Dinner & Awards Night | VoteEQ',
 };
 
 /** Direct link supporters use to open the vote page for this nominee */

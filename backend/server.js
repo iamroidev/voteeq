@@ -2657,15 +2657,15 @@ app.put('/api/admin/events/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// Reset catalog for ACSES Awards '26 — UMaT Tarkwa (admin only)
+// Reset catalog for "Praemia Pro Virtute" Dinner & Awards Night — UMaT Tarkwa (admin only)
 app.post('/api/admin/demo/reseed-ACSES', requireAdmin, async (req, res) => {
   try {
     const db = getDB();
     await reseedACSESAwards(db);
-    await logAdminAction(adminUsername(req), 'RESEED_ACSES_AWARDS', "Reset catalog for ACSES Awards '26");
+    await logAdminAction(adminUsername(req), 'RESEED_ACSES_AWARDS', "Reset catalog for \"Praemia Pro Virtute\" Dinner & Awards Night");
     res.json({
       success: true,
-      message: `ACSES AWARDS '26 loaded with ${ACSES_AWARD_CATEGORIES.length} award categories. Add shortlisted nominees when ACSES sends the list.`,
+      message: `"Praemia Pro Virtute" Dinner & Awards Night loaded with ${ACSES_AWARD_CATEGORIES.length} award categories. Add shortlisted nominees when ACSES sends the list.`,
     });
   } catch (err) {
     console.error('ACSES reseed error:', err);

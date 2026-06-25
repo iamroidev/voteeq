@@ -272,6 +272,7 @@ async function initDB() {
 
   await normalizeLegacyEventDates(dbWrapper);
   await fixLegacyAscesSpelling(dbWrapper);
+  await updateEventNameToPraemia(dbWrapper);
 
   return dbWrapper;
 }
@@ -449,6 +450,25 @@ async function fixLegacyAscesSpelling(db) {
     }
   } catch (err) {
     console.warn('fixLegacyAscesSpelling skipped:', err.message);
+  }
+}
+
+async function updateEventNameToPraemia(db) {
+  try {
+    const events = await db.all('SELECT id, title, description FROM events');
+    for (const ev of events || []) {
+      if (ev.title === "ACSES AWARDS '26") {
+        const newTitle = "\"Praemia Pro Virtute\" Dinner & Awards Night";
+        const newDescription = ev.description.replace(
+          /ACSES Awards Night/g,
+          "\"Praemia Pro Virtute\" Dinner & Awards Night"
+        );
+        await db.run('UPDATE events SET title = ?, description = ? WHERE id = ?', [newTitle, newDescription, ev.id]);
+        console.log(`Updated event #${ev.id} name to ${newTitle}`);
+      }
+    }
+  } catch (err) {
+    console.warn('updateEventNameToPraemia skipped:', err.message);
   }
 }
 
