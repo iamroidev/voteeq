@@ -47,6 +47,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
   const [creatingNominee, setCreatingNominee] = useState(false);
   const [photoUploadTargetCode, setPhotoUploadTargetCode] = useState('');
   const adminPhotoInputRef = useRef(null);
+  const adminPhotoPasteRef = useRef(null);
   const [nomError, setNomError] = useState('');
   const [nomSuccess, setNomSuccess] = useState('');
   const [createdActivationCode, setCreatedActivationCode] = useState('');
@@ -509,6 +510,12 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
     onImage: (file) => uploadPhotoForNominee(file, photoUploadTargetCode),
   });
 
+  useEffect(() => {
+    if (photoUploadTargetCode && activeSubTab === 'nominees') {
+      adminPhotoPasteRef.current?.focus();
+    }
+  }, [photoUploadTargetCode, activeSubTab]);
+
   const handleDeleteNominee = (id) => {
     setConfirmDialog({
       message: 'Are you sure you want to delete this nominee? All their votes will also be deleted.',
@@ -935,29 +942,57 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
               <div
                 style={{
                   marginBottom: '1rem',
-                  padding: '0.75rem 1rem',
-                  borderRadius: '8px',
+                  padding: '1rem',
+                  borderRadius: '12px',
                   background: 'rgba(46, 204, 113, 0.08)',
                   border: '1px solid rgba(46, 204, 113, 0.25)',
-                  fontSize: '0.75rem',
-                  color: '#1e8449',
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '0.75rem',
                 }}
               >
-                <span>
-                  Ready to update <strong style={{ fontFamily: 'monospace' }}>{photoUploadTargetCode}</strong> — choose a file or press <strong>Ctrl+V</strong> to paste.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPhotoUploadTargetCode('')}
-                  style={{ background: 'none', border: 'none', color: 'inherit', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.7rem' }}
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#1e8449', fontWeight: 600 }}>
+                    Update photo for <strong style={{ fontFamily: 'monospace' }}>{photoUploadTargetCode}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPhotoUploadTargetCode('')}
+                    style={{ background: 'none', border: 'none', color: '#1e8449', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.7rem' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <div
+                  ref={adminPhotoPasteRef}
+                  tabIndex={0}
+                  onPaste={(e) => {
+                    handleClipboardImagePaste(e, (file) => uploadPhotoForNominee(file, photoUploadTargetCode));
+                  }}
+                  style={{
+                    border: '2px dashed rgba(46, 204, 113, 0.45)',
+                    borderRadius: '10px',
+                    padding: '1.25rem',
+                    textAlign: 'center',
+                    background: '#fff',
+                    cursor: 'text',
+                    outline: 'none',
+                  }}
                 >
-                  Cancel
-                </button>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-primary)', margin: '0 0 0.35rem', fontWeight: 500 }}>
+                    Click here, then press <strong>Ctrl+V</strong> to paste an image
+                  </p>
+                  <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', margin: 0 }}>
+                    Screenshots and copied photos from WhatsApp work too
+                  </p>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.75rem' }}>
+                  <button
+                    type="button"
+                    className="luxury-btn secondary"
+                    style={{ fontSize: '0.65rem', padding: '0.45rem 1rem' }}
+                    onClick={() => adminPhotoInputRef.current?.click()}
+                  >
+                    Or choose file from computer
+                  </button>
+                </div>
               </div>
             )}
             
@@ -1015,10 +1050,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
                           <button
                             type="button"
-                            onClick={() => {
-                              setPhotoUploadTargetCode(n.code);
-                              adminPhotoInputRef.current?.click();
-                            }}
+                            onClick={() => setPhotoUploadTargetCode(n.code)}
                             style={{ background: 'none', border: 'none', color: 'var(--accent-dark)', textDecoration: 'underline', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 500 }}
                           >
                             Upload Photo
