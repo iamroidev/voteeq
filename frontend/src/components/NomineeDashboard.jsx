@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { API_BASE_URL } from '../config';
 import { getNomineeShareUrl } from '../branding';
 import { nomineePhotoSrc } from '../utils/photoUrl';
+import { readImageAsDataUrl, useClipboardImagePaste } from '../utils/clipboardImage';
 
 export default function NomineeDashboard({ code, token, onLogout, copyShareLink, dialUssdCode, wsTrigger }) {
   const [data, setData] = useState(null);
@@ -88,30 +89,14 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
     loadDashboardData();
   }, [wsTrigger, loadDashboardData]);
 
-  const handlePhotoUpload = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
+  const uploadProfilePhoto = useCallback(async (file) => {
     if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      setPhotoMessage('Please choose a photo from your gallery or camera.');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setPhotoMessage('Photo must be under 5MB. Try a smaller image.');
-      return;
-    }
 
     setPhotoUploading(true);
     setPhotoMessage('');
 
     try {
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(new Error('Could not read photo file'));
-        reader.readAsDataURL(file);
-      });
+      const dataUrl = await readImageAsDataUrl(file);
 
       const response = await fetch(`${API_BASE_URL}/api/nominees/upload-photo`, {
         method: 'POST',
@@ -138,7 +123,18 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
     } finally {
       setPhotoUploading(false);
     }
+  }, [code, token]);
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    await uploadProfilePhoto(file);
   };
+
+  useClipboardImagePaste({
+    active: Boolean(data) && !photoUploading,
+    onImage: uploadProfilePhoto,
+  });
 
   if (initialLoading) {
     return (
@@ -253,6 +249,9 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
                 {photoMessage}
               </p>
             )}
+            <p style={{ fontSize: '0.65rem', marginTop: '0.35rem', color: 'var(--text-secondary)' }}>
+              Tip: copy a photo, then press <strong>Ctrl+V</strong> anywhere on this page to paste it.
+            </p>
             <p style={{ fontSize: '0.65rem', marginTop: '0.35rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               Tap change photo to pick from your gallery or take a new one. This is the picture voters see.
             </p>

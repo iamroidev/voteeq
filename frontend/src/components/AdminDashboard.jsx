@@ -3,21 +3,11 @@ import { API_BASE_URL } from '../config';
 import { BRANDING, formatEventDate, formatEventMeta, ACSES_AWARD_CATEGORIES } from '../branding';
 import { authFetch } from '../utils/api';
 import { nomineePhotoSrc } from '../utils/photoUrl';
-
-async function readImageAsDataUrl(file) {
-  if (!file.type.startsWith('image/')) {
-    throw new Error('Please choose a valid image file.');
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    throw new Error('Photo must be under 5MB.');
-  }
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('Could not read photo file.'));
-    reader.readAsDataURL(file);
-  });
-}
+import {
+  readImageAsDataUrl,
+  useClipboardImagePaste,
+  handleClipboardImagePaste,
+} from '../utils/clipboardImage';
 
 async function uploadAdminNomineePhoto(code, image, token) {
   const res = await fetch(`${API_BASE_URL}/api/admin/nominees/${encodeURIComponent(code)}/upload-photo`, {
@@ -486,10 +476,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
     }
   };
 
-  const handleExistingNomineePhotoUpload = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    const code = photoUploadTargetCode;
+  const uploadPhotoForNominee = useCallback(async (file, code) => {
     if (!file || !code) return;
 
     try {
@@ -509,7 +496,18 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
     } finally {
       setPhotoUploadTargetCode('');
     }
+  }, [token, refreshData, fetchAdminNominees]);
+
+  const handleExistingNomineePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    await uploadPhotoForNominee(file, photoUploadTargetCode);
   };
+
+  useClipboardImagePaste({
+    active: activeSubTab === 'nominees' && Boolean(photoUploadTargetCode),
+    onImage: (file) => uploadPhotoForNominee(file, photoUploadTargetCode),
+  });
 
   const handleDeleteNominee = (id) => {
     setConfirmDialog({
@@ -883,17 +881,33 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                     style={{ borderRadius: '8px', width: '100%' }}
                   />
                 ) : (
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setNewNomPhotoFile(e.target.files?.[0] || null)}
-                    className="luxury-input"
-                    style={{ padding: '0.5rem', background: 'var(--bg-primary)', width: '100%' }}
-                  />
+                  <div
+                    tabIndex={0}
+                    onPaste={(e) => {
+                      handleClipboardImagePaste(e, (file) => setNewNomPhotoFile(file));
+                    }}
+                    style={{
+                      border: '1px dashed var(--border-color)',
+                      borderRadius: '8px',
+                      padding: '0.75rem',
+                      background: 'var(--bg-primary)',
+                    }}
+                  >
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setNewNomPhotoFile(e.target.files?.[0] || null)}
+                      className="luxury-input"
+                      style={{ padding: '0.5rem', background: 'transparent', width: '100%', border: 'none' }}
+                    />
+                    <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', margin: '0.5rem 0 0', lineHeight: 1.5 }}>
+                      Or click here and press <strong>Ctrl+V</strong> to paste from clipboard.
+                      {newNomPhotoFile ? ` Selected: ${newNomPhotoFile.name}` : ''}
+                    </p>
+                  </div>
                 )}
                 <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0.5rem 0 0' }}>
                   Leave blank for a placeholder. Nominees can also update from their portal after activation.
-                  {newNomPhotoMode === 'upload' && newNomPhotoFile ? ` Selected: ${newNomPhotoFile.name}` : ''}
                 </p>
               </div>
 
@@ -916,6 +930,36 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
               aria-hidden="true"
             />
             <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', letterSpacing: '0.05em' }}>Nominees Directory</h3>
+
+            {photoUploadTargetCode && (
+              <div
+                style={{
+                  marginBottom: '1rem',
+                  padding: '0.75rem 1rem',
+                  borderRadius: '8px',
+                  background: 'rgba(46, 204, 113, 0.08)',
+                  border: '1px solid rgba(46, 204, 113, 0.25)',
+                  fontSize: '0.75rem',
+                  color: '#1e8449',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.75rem',
+                }}
+              >
+                <span>
+                  Ready to update <strong style={{ fontFamily: 'monospace' }}>{photoUploadTargetCode}</strong> — choose a file or press <strong>Ctrl+V</strong> to paste.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPhotoUploadTargetCode('')}
+                  style={{ background: 'none', border: 'none', color: 'inherit', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.7rem' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
             
             <table className="luxury-table">
               <thead>
@@ -979,7 +1023,7 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                           >
                             Upload Photo
                           </button>
-                          <button 
+                          <button
                             onClick={() => handleDeleteNominee(n.id)}
                             style={{ background: 'none', border: 'none', color: '#e74c3c', textDecoration: 'underline', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 500 }}
                           >
