@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+
 function isValidEmail(input) {
   const email = String(input || '').trim().toLowerCase();
   if (!email) return false;
@@ -12,10 +15,21 @@ function getFromAddress() {
   return process.env.RESEND_FROM_EMAIL || 'Voteeq <onboarding@resend.dev>';
 }
 
-async function sendResendEmail({ to, subject, html, text }) {
+async function sendResendEmail({ to, subject, html, text, attachments }) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+
+  const payload = {
+    from: getFromAddress(),
+    to: [to],
+    subject,
+    html,
+    text,
+  };
+  if (attachments && attachments.length > 0) {
+    payload.attachments = attachments;
   }
 
   const response = await fetch('https://api.resend.com/emails', {
@@ -24,13 +38,7 @@ async function sendResendEmail({ to, subject, html, text }) {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      from: getFromAddress(),
-      to: [to],
-      subject,
-      html,
-      text,
-    }),
+    body: JSON.stringify(payload),
   });
 
   const raw = await response.text();
@@ -49,9 +57,20 @@ async function sendResendEmail({ to, subject, html, text }) {
   return { sent: true, id: parsed.id };
 }
 
-function getLogoUrl() {
-  const base = process.env.PUBLIC_ASSET_BASE_URL || 'https://api.voteeq.online';
-  return `${base}/photos/logo.png`;
+function getLogoAttachment() {
+  try {
+    const logoPath = path.join(__dirname, 'photos', 'logo.png');
+    if (fs.existsSync(logoPath)) {
+      return {
+        content: fs.readFileSync(logoPath).toString('base64'),
+        filename: 'logo.png',
+        cid: 'logo'
+      };
+    }
+  } catch (err) {
+    console.error('Failed to prepare inline logo attachment:', err.message);
+  }
+  return null;
 }
 
 function buildVoteReceiptHtml({ nomineeName, voteCount, amountGHS, reference, phone }) {
@@ -60,7 +79,7 @@ function buildVoteReceiptHtml({ nomineeName, voteCount, amountGHS, reference, ph
       <div style="max-width: 500px; margin: 0 auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03); border: 1px solid #e2e8f0; overflow: hidden;">
         <!-- Logo Header -->
         <div style="padding: 32px 24px 20px 24px; text-align: center; border-bottom: 1px solid #f1f5f9;">
-          <img src="${getLogoUrl()}" alt="VoteEQ" style="height: 48px; display: block; margin: 0 auto;" />
+          <img src="cid:logo" alt="VoteEQ" style="height: 48px; display: block; margin: 0 auto;" />
         </div>
         
         <!-- Body Content -->
@@ -121,7 +140,7 @@ function buildTicketReceiptHtml({ eventTitle, venue, date, buyerName, quantity, 
       <div style="max-width: 500px; margin: 0 auto; background: #ffffff; border-radius: 16px; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03); border: 1px solid #e2e8f0; overflow: hidden;">
         <!-- Logo Header -->
         <div style="padding: 32px 24px 20px 24px; text-align: center; border-bottom: 1px solid #f1f5f9;">
-          <img src="${getLogoUrl()}" alt="VoteEQ" style="height: 48px; display: block; margin: 0 auto;" />
+          <img src="cid:logo" alt="VoteEQ" style="height: 48px; display: block; margin: 0 auto;" />
         </div>
         
         <!-- Body Content -->
@@ -178,14 +197,24 @@ async function sendVoteReceiptEmail({ to, nomineeName, voteCount, amountGHS, ref
   const subject = `Voteeq vote receipt — ${nomineeName}`;
   const html = buildVoteReceiptHtml({ nomineeName, voteCount, amountGHS, reference, phone });
   const text = `Voteeq vote receipt\nNominee: ${nomineeName}\nVotes: ${voteCount}\nAmount: GH₵ ${amountGHS.toFixed(2)}\nReference: ${reference}`;
-  return sendResendEmail({ to, subject, html, text });
+  
+  const attachments = [];
+  const logo = getLogoAttachment();
+  if (logo) attachments.push(logo);
+
+  return sendResendEmail({ to, subject, html, text, attachments });
 }
 
 async function sendTicketReceiptEmail({ to, eventTitle, venue, date, buyerName, quantity, amountGHS, ticketCode, reference }) {
   const subject = `VoteEQ ticket — ${eventTitle}`;
   const html = buildTicketReceiptHtml({ eventTitle, venue, date, buyerName, quantity, amountGHS, ticketCode, reference });
   const text = `Voteeq ticket receipt\nEvent: ${eventTitle}\nTicket code: ${ticketCode}\nQuantity: ${quantity}\nAmount: GH₵ ${amountGHS.toFixed(2)}\nReference: ${reference}`;
-  return sendResendEmail({ to, subject, html, text });
+  
+  const attachments = [];
+  const logo = getLogoAttachment();
+  if (logo) attachments.push(logo);
+
+  return sendResendEmail({ to, subject, html, text, attachments });
 }
 
 module.exports = {
