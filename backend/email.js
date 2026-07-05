@@ -67,8 +67,8 @@ function buildVoteReceiptHtml({ nomineeName, voteCount, amountGHS, reference, ph
     <div style="background-color: #f8fafc; padding: 16px 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
       <div style="max-width: 500px; width: 100%; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03); border: 1px solid #e2e8f0; overflow: hidden;">
         <!-- Logo Header -->
-        <div style="padding: 24px 16px 16px 16px; text-align: center; border-bottom: 1px solid #f1f5f9;">
-          <img src="${getLogoUrl()}" alt="VoteEQ" width="48" height="48" style="height: 48px; width: 48px; max-width: 48px; display: block; margin: 0 auto;" />
+        <div style="padding: 10px 16px 0px 16px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+          <img src="${getLogoUrl()}" alt="VoteEQ" width="130" height="130" style="height: 130px; width: 130px; max-width: 130px; display: block; margin: 0 auto;" />
         </div>
         
         <!-- Body Content -->
@@ -128,8 +128,8 @@ function buildTicketReceiptHtml({ eventTitle, venue, date, buyerName, quantity, 
     <div style="background-color: #f8fafc; padding: 16px 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
       <div style="max-width: 500px; width: 100%; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03); border: 1px solid #e2e8f0; overflow: hidden;">
         <!-- Logo Header -->
-        <div style="padding: 24px 16px 16px 16px; text-align: center; border-bottom: 1px solid #f1f5f9;">
-          <img src="${getLogoUrl()}" alt="VoteEQ" width="48" height="48" style="height: 48px; width: 48px; max-width: 48px; display: block; margin: 0 auto;" />
+        <div style="padding: 10px 16px 0px 16px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+          <img src="${getLogoUrl()}" alt="VoteEQ" width="130" height="130" style="height: 130px; width: 130px; max-width: 130px; display: block; margin: 0 auto;" />
         </div>
         
         <!-- Body Content -->
