@@ -64,14 +64,43 @@ const dbWrapper = {
   },
 
   async transaction(fn) {
-    await client.execute('BEGIN IMMEDIATE');
+    const txObj = await client.transaction('write');
+    const txWrapper = {
+      async get(sql, params) {
+        const args = Array.isArray(params) ? params : (params ? [params] : []);
+        const result = await txObj.execute({ sql, args });
+        if (result.rows.length === 0) return undefined;
+        return rowToObj(result.rows[0], result.columns);
+      },
+      async all(sql, params) {
+        const args = Array.isArray(params) ? params : (params ? [params] : []);
+        const result = await txObj.execute({ sql, args });
+        return result.rows.map(row => rowToObj(row, result.columns));
+      },
+      async run(sql, params) {
+        const args = Array.isArray(params) ? params : (params ? [params] : []);
+        const result = await txObj.execute({ sql, args });
+        return {
+          lastID: result.lastInsertRowid ? Number(result.lastInsertRowid) : undefined,
+          changes: result.rowsAffected
+        };
+      },
+      async exec(sql) {
+        if (sql.includes(';')) {
+          await txObj.executeMultiple(sql);
+        } else {
+          await txObj.execute(sql);
+        }
+      }
+    };
+
     try {
-      const result = await fn(dbWrapper);
-      await client.execute('COMMIT');
+      const result = await fn(txWrapper);
+      await txObj.commit();
       return result;
     } catch (err) {
       try {
-        await client.execute('ROLLBACK');
+        await txObj.rollback();
       } catch (_) { /* ignore */ }
       throw err;
     }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { API_BASE_URL } from '../config';
-import { getNomineeShareUrl } from '../branding';
+import { getNomineeShareUrl, BRANDING } from '../branding';
 import { nomineePhotoSrc } from '../utils/photoUrl';
 import { readImageAsDataUrl, useClipboardImagePaste } from '../utils/clipboardImage';
 
@@ -221,29 +221,31 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
             <h1 style={{ fontSize: '2.2rem', fontFamily: 'var(--font-serif)', fontWeight: 400, marginTop: '0.1rem' }}>
               {nominee.name}
             </h1>
-            <p style={{ fontSize: '0.75rem', marginTop: '0.4rem', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
-              OFFICIAL USSD SHORTCODE:{' '}
-              <button
-                onClick={() => dialUssdCode && dialUssdCode(`*920*566*${nominee.code}#`)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontFamily: 'monospace',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  color: 'var(--accent-dark)',
-                  cursor: 'pointer',
-                  padding: 0,
-                  textDecoration: 'underline',
-                  transition: 'var(--transition-fast)'
-                }}
-                onMouseEnter={(e) => e.target.style.color = 'var(--text-primary)'}
-                onMouseLeave={(e) => e.target.style.color = 'var(--accent-dark)'}
-                title="Dial shortcode automatically"
-              >
-                *920*566*{nominee.code}#
-              </button>
-            </p>
+            {BRANDING.showUssd && (
+              <p style={{ fontSize: '0.75rem', marginTop: '0.4rem', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
+                OFFICIAL USSD SHORTCODE:{' '}
+                <button
+                  onClick={() => dialUssdCode && dialUssdCode(`*920*566*${nominee.code}#`)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontFamily: 'monospace',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    color: 'var(--accent-dark)',
+                    cursor: 'pointer',
+                    padding: 0,
+                    textDecoration: 'underline',
+                    transition: 'var(--transition-fast)'
+                  }}
+                  onMouseEnter={(e) => e.target.style.color = 'var(--text-primary)'}
+                  onMouseLeave={(e) => e.target.style.color = 'var(--accent-dark)'}
+                  title="Dial shortcode automatically"
+                >
+                  *920*566*{nominee.code}#
+                </button>
+              </p>
+            )}
             {photoMessage && (
               <p style={{ fontSize: '0.7rem', marginTop: '0.5rem', color: photoMessage.includes('updated') ? '#4f7c5d' : 'var(--accent-dark)' }}>
                 {photoMessage}
@@ -326,17 +328,21 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
               <span style={{ color: 'var(--text-secondary)' }}>ONLINE VOTING</span>
               <span>{channelStats.web} ({webPercentage}%)</span>
             </div>
-            <div style={{ height: '4px', background: 'var(--border-color)', marginBottom: '1.25rem', overflow: 'hidden' }}>
+            <div style={{ height: '4px', background: 'var(--border-color)', marginBottom: BRANDING.showUssd ? '1.25rem' : '0', overflow: 'hidden' }}>
               <div className="metric-progress-fill" style={{ height: '100%', background: 'var(--accent)', width: `${webPercentage}%`, transition: 'width 1s cubic-bezier(0.25, 1, 0.5, 1)' }}></div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 500, marginBottom: '0.35rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>MOBILE SHORTCODE</span>
-              <span>{channelStats.ussd} ({ussdPercentage}%)</span>
-            </div>
-            <div style={{ height: '4px', background: 'var(--border-color)', overflow: 'hidden' }}>
-              <div className="metric-progress-fill" style={{ height: '100%', background: 'var(--text-primary)', width: `${ussdPercentage}%`, transition: 'width 1s cubic-bezier(0.25, 1, 0.5, 1)' }}></div>
-            </div>
+            {BRANDING.showUssd && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 500, marginBottom: '0.35rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>MOBILE SHORTCODE</span>
+                  <span>{channelStats.ussd} ({ussdPercentage}%)</span>
+                </div>
+                <div style={{ height: '4px', background: 'var(--border-color)', overflow: 'hidden' }}>
+                  <div className="metric-progress-fill" style={{ height: '100%', background: 'var(--text-primary)', width: `${ussdPercentage}%`, transition: 'width 1s cubic-bezier(0.25, 1, 0.5, 1)' }}></div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -351,7 +357,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
           </h3>
           {recentVotes.length === 0 ? (
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center', padding: '2rem' }}>
-              No votes logged yet. Share your USSD code or voting link to receive votes.
+              No votes logged yet. Share your {BRANDING.showUssd ? 'USSD code or ' : ''}voting link to receive votes.
             </p>
           ) : (
             <div style={{ overflowX: 'auto' }}>
