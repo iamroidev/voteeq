@@ -39,11 +39,11 @@ function getMomoProvider(phone) {
   const prefix = norm.slice(0, 3);
   const mtnPrefixes = ['024', '054', '055', '059', '025', '053'];
   const vodPrefixes = ['020', '050'];
-  const tgoPrefixes = ['026', '056', '027', '057'];
+  const atlPrefixes = ['026', '056', '027', '057'];
   
   if (mtnPrefixes.includes(prefix)) return 'mtn';
   if (vodPrefixes.includes(prefix)) return 'vod';
-  if (tgoPrefixes.includes(prefix)) return 'tgo';
+  if (atlPrefixes.includes(prefix)) return 'atl';
   return 'mtn'; // default fallback
 }
 
