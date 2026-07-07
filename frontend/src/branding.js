@@ -59,7 +59,7 @@ export const BRANDING = {
   campus: 'Tarkwa, Ghana',
   showVenue: false,
   /** Set true when shortlisted nominees are published and voting should be live */
-  votingOpen: false,
+  votingOpen: true,
   /** Set true when ACSES opens awards night ticket sales */
   ticketsEnabled: false,
   ticketEventTitle: '"Praemia Pro Virtute" Dinner & Awards Night',
