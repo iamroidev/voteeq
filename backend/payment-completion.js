@@ -23,6 +23,39 @@ function runInBackground(task) {
     .catch((err) => console.error('Background task failed:', err));
 }
 
+function reservedQuantity(ticket) {
+  const value = Number(ticket?.capacity_reserved || 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+async function ticketHasCapacity(tx, ticket) {
+  const capacity = await tx.get(`
+    SELECT
+      e.tickets_sold,
+      e.total_tickets,
+      COALESCE(SUM(
+        CASE
+          WHEN t.payment_status = 'pending' AND t.id != ? THEN COALESCE(t.capacity_reserved, 0)
+          ELSE 0
+        END
+      ), 0) AS reserved_tickets
+    FROM events e
+    LEFT JOIN tickets t ON t.event_id = e.id
+    WHERE e.id = ?
+    GROUP BY e.id
+  `, [ticket.id, ticket.event_id]);
+
+  if (!capacity) {
+    return false;
+  }
+
+  return (
+    Number(capacity.tickets_sold || 0) +
+    Number(capacity.reserved_tickets || 0) +
+    Number(ticket.quantity || 0)
+  ) <= Number(capacity.total_tickets || 0);
+}
+
 /**
  * Complete a vote payment exactly once (idempotent under concurrent webhooks).
  * @returns {Promise<{ outcome: 'completed'|'already_completed'|'not_found', vote?: object, votesAdded?: number }>}
@@ -75,8 +108,27 @@ async function completeTicketPaymentTx(db, reference) {
       return { outcome: 'not_found' };
     }
 
+    if (ticket.payment_status === 'paid') {
+      return { outcome: 'already_completed', ticket };
+    }
+
+    if (!['pending', 'expired'].includes(ticket.payment_status)) {
+      return { outcome: 'already_completed', ticket };
+    }
+
+    if (reservedQuantity(ticket) === 0) {
+      const hasCapacity = await ticketHasCapacity(tx, ticket);
+      if (!hasCapacity) {
+        await tx.run(
+          "UPDATE tickets SET payment_status = 'failed', capacity_reserved = 0 WHERE id = ? AND payment_status IN ('pending', 'expired')",
+          [ticket.id]
+        );
+        return { outcome: 'sold_out', ticket };
+      }
+    }
+
     const updated = await tx.run(
-      "UPDATE tickets SET payment_status = 'paid' WHERE id = ? AND payment_status = 'pending'",
+      "UPDATE tickets SET payment_status = 'paid', capacity_reserved = 0 WHERE id = ? AND payment_status IN ('pending', 'expired')",
       [ticket.id]
     );
 
@@ -91,6 +143,28 @@ async function completeTicketPaymentTx(db, reference) {
 
     return { outcome: 'completed', ticket };
   });
+}
+
+async function releaseTicketReservation(db, reference, paymentStatus = 'failed') {
+  return dedupeByReference(`release:${reference}`, () => (
+    db.transaction(async (tx) => {
+      const ticket = await tx.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
+      if (!ticket) {
+        return { outcome: 'not_found' };
+      }
+
+      if (ticket.payment_status !== 'pending' || reservedQuantity(ticket) === 0) {
+        return { outcome: 'not_released', ticket };
+      }
+
+      await tx.run(
+        'UPDATE tickets SET payment_status = ?, capacity_reserved = 0 WHERE id = ? AND payment_status = ?',
+        [paymentStatus, ticket.id, 'pending']
+      );
+
+      return { outcome: 'released', ticket, released: reservedQuantity(ticket) };
+    })
+  ));
 }
 
 /**
@@ -175,6 +249,7 @@ module.exports = {
   runInBackground,
   completeVotePayment,
   completeTicketPayment,
+  releaseTicketReservation,
   completeRegistrationPayment,
   checkInTicket,
 };

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   completeVotePayment,
   completeTicketPayment,
+  releaseTicketReservation,
   completeRegistrationPayment,
   checkInTicket,
   runInBackground,
@@ -112,6 +113,80 @@ describe('completeTicketPayment', () => {
 
     const event = await ctx.db.get('SELECT tickets_sold FROM events WHERE id = 1');
     assert.equal(event.tickets_sold, 2);
+  });
+
+  it('converts a reserved pending ticket into a sold ticket once paid', async () => {
+    await destroyTestDb(ctx);
+    ctx = await createTestDb();
+    await ctx.db.run(
+      'INSERT INTO events (title, total_tickets, tickets_sold) VALUES (?, ?, ?)',
+      ['Tiny Event', 2, 1]
+    );
+    await ctx.db.run(
+      `INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status, capacity_reserved)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      [1, 'TIX-RESERVE', 'Reserved Buyer', 'reserved@test.com', '0244000000', 1, 25, 'tix_reserved_001', 1]
+    );
+
+    const result = await completeTicketPayment(ctx.db, 'tix_reserved_001');
+    assert.equal(result.outcome, 'completed');
+
+    const event = await ctx.db.get('SELECT tickets_sold FROM events WHERE id = 1');
+    assert.equal(event.tickets_sold, 2);
+
+    const ticket = await ctx.db.get('SELECT payment_status, capacity_reserved FROM tickets WHERE payment_reference = ?', ['tix_reserved_001']);
+    assert.equal(ticket.payment_status, 'paid');
+    assert.equal(ticket.capacity_reserved, 0);
+  });
+
+  it('does not complete an unreserved ticket when active reservations consume capacity', async () => {
+    await destroyTestDb(ctx);
+    ctx = await createTestDb();
+    await ctx.db.run(
+      'INSERT INTO events (title, total_tickets, tickets_sold) VALUES (?, ?, ?)',
+      ['Tiny Event', 2, 1]
+    );
+    await ctx.db.run(
+      `INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status, capacity_reserved)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      [1, 'TIX-HELD', 'Held Buyer', 'held@test.com', '0244000001', 1, 25, 'tix_held_001', 1]
+    );
+    await ctx.db.run(
+      `INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status, capacity_reserved)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      [1, 'TIX-LATE', 'Late Buyer', 'late@test.com', '0244000002', 1, 25, 'tix_late_001', 0]
+    );
+
+    const result = await completeTicketPayment(ctx.db, 'tix_late_001');
+    assert.equal(result.outcome, 'sold_out');
+
+    const event = await ctx.db.get('SELECT tickets_sold FROM events WHERE id = 1');
+    assert.equal(event.tickets_sold, 1);
+
+    const ticket = await ctx.db.get('SELECT payment_status FROM tickets WHERE payment_reference = ?', ['tix_late_001']);
+    assert.equal(ticket.payment_status, 'failed');
+  });
+
+  it('releases reserved capacity when checkout initialization fails', async () => {
+    await destroyTestDb(ctx);
+    ctx = await createTestDb();
+    await ctx.db.run(
+      'INSERT INTO events (title, total_tickets, tickets_sold) VALUES (?, ?, ?)',
+      ['Reserved Event', 2, 0]
+    );
+    await ctx.db.run(
+      `INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status, capacity_reserved)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      [1, 'TIX-FAIL', 'Failed Buyer', 'failed@test.com', '0244000003', 2, 50, 'tix_failed_001', 2]
+    );
+
+    const result = await releaseTicketReservation(ctx.db, 'tix_failed_001');
+    assert.equal(result.outcome, 'released');
+    assert.equal(result.released, 2);
+
+    const ticket = await ctx.db.get('SELECT payment_status, capacity_reserved FROM tickets WHERE payment_reference = ?', ['tix_failed_001']);
+    assert.equal(ticket.payment_status, 'failed');
+    assert.equal(ticket.capacity_reserved, 0);
   });
 });
 
