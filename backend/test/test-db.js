@@ -99,6 +99,7 @@ const SCHEMA = `
     price_paid REAL NOT NULL,
     payment_reference TEXT UNIQUE NOT NULL,
     payment_status TEXT DEFAULT 'pending',
+    capacity_reserved INTEGER DEFAULT 0,
     scanned INTEGER DEFAULT 0,
     scanned_at DATETIME
   );

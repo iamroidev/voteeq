@@ -32,6 +32,7 @@ const {
   runInBackground,
   completeVotePayment,
   completeTicketPayment,
+  releaseTicketReservation,
   completeRegistrationPayment,
   checkInTicket,
 } = require('./payment-completion');
@@ -600,8 +601,26 @@ app.get('/api/events', async (req, res) => {
     const events = isAdmin
       ? await db.all('SELECT * FROM events ORDER BY date ASC')
       : await db.all(`
-          SELECT id, title, description, date, venue, ticket_price, privacy, total_tickets, tickets_sold, created_at
-          FROM events ORDER BY date ASC
+          SELECT
+            e.id,
+            e.title,
+            e.description,
+            e.date,
+            e.venue,
+            e.ticket_price,
+            e.privacy,
+            e.total_tickets,
+            e.tickets_sold + COALESCE(SUM(
+              CASE
+                WHEN t.payment_status = 'pending' THEN COALESCE(t.capacity_reserved, 0)
+                ELSE 0
+              END
+            ), 0) AS tickets_sold,
+            e.created_at
+          FROM events e
+          LEFT JOIN tickets t ON t.event_id = e.id
+          GROUP BY e.id
+          ORDER BY e.date ASC
         `);
     const normalizedEvents = events.map((event) => ({
       ...event,
@@ -672,17 +691,11 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     const statusToken = generateStatusToken(reference);
 
     await db.transaction(async (tx) => {
-      const capacity = await tx.get(
-        'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
-        [event_id]
-      );
-      if (!capacity || capacity.tickets_sold + qty > capacity.total_tickets) {
-        throw new Error('SOLD_OUT');
-      }
+      await ensureTicketCapacity(tx, event_id, qty);
       await tx.run(`
-        INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-      `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, reference]);
+        INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status, capacity_reserved)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+      `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, reference, qty]);
     });
 
     const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
@@ -722,6 +735,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
       });
     } catch (paystackErr) {
       console.error('Paystack ticket init error:', paystackErr);
+      await releaseTicketReservation(db, reference);
       return res.status(400).json({ error: paystackErr.message || 'Paystack initialization failed' });
     }
   } catch (err) {
@@ -761,6 +775,10 @@ app.post('/api/payment/mock-verify-ticket', rateLimiter(1 * 60 * 1000, 20), asyn
       runInBackground(() => sendTicketReceipt(result.ticket.id));
     }
 
+    if (result.outcome === 'sold_out') {
+      return res.status(409).json({ error: 'Ticket capacity is no longer available for this payment reference.' });
+    }
+
     const ticketDetails = await db.get(`
       SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
       FROM tickets t
@@ -793,16 +811,46 @@ async function logAdminAction(adminUsername, action, details) {
   }
 }
 
+async function ensureTicketCapacity(tx, eventId, quantity) {
+  const capacity = await tx.get(`
+    SELECT
+      e.tickets_sold,
+      e.total_tickets,
+      COALESCE(SUM(
+        CASE
+          WHEN t.payment_status = 'pending' THEN COALESCE(t.capacity_reserved, 0)
+          ELSE 0
+        END
+      ), 0) AS reserved_tickets
+    FROM events e
+    LEFT JOIN tickets t ON t.event_id = e.id
+    WHERE e.id = ?
+    GROUP BY e.id
+  `, [eventId]);
+
+  const requested = Number(quantity || 0);
+  if (
+    !capacity ||
+    Number(capacity.tickets_sold || 0) +
+      Number(capacity.reserved_tickets || 0) +
+      requested > Number(capacity.total_tickets || 0)
+  ) {
+    throw new Error('SOLD_OUT');
+  }
+}
+
 async function cleanupStaleTickets(db) {
   try {
     const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     const result = await db.run(`
-      DELETE FROM tickets 
-      WHERE payment_status = 'pending' 
+      UPDATE tickets
+      SET payment_status = 'expired',
+          capacity_reserved = 0
+      WHERE payment_status = 'pending'
         AND created_at < ?
     `, [thirtyMinsAgo]);
     if (result.changes > 0) {
-      console.log(`Cleaned up ${result.changes} stale pending ticket(s)`);
+      console.log(`Expired ${result.changes} stale pending ticket reservation(s)`);
     }
   } catch (err) {
     console.error('Failed to cleanup stale pending tickets:', err);
@@ -1464,6 +1512,8 @@ app.post('/api/payment/webhook', rateLimiter(1 * 60 * 1000, 100), async (req, re
         if (result.outcome === 'completed') {
           console.log(`Ticket payment confirmed for reference: ${reference}`);
           runInBackground(() => sendTicketReceipt(result.ticket.id));
+        } else if (result.outcome === 'sold_out') {
+          console.error(`Paid ticket reference could not be fulfilled because capacity is exhausted: ${reference}`);
         }
         return res.status(200).send('Webhook processed successfully');
       }
@@ -2296,17 +2346,11 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
 
         try {
           await db.transaction(async (tx) => {
-            const capacity = await tx.get(
-              'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
-              [session.eventId]
-            );
-            if (!capacity || capacity.tickets_sold + session.quantity > capacity.total_tickets) {
-              throw new Error('SOLD_OUT');
-            }
+            await ensureTicketCapacity(tx, session.eventId, session.quantity);
             await tx.run(`
-              INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
-              VALUES (?, ?, 'USSD Buyer', 'ussd@voteeq.online', ?, ?, ?, ?, 'pending')
-            `, [session.eventId, ticketCode, session.phone, session.quantity, totalPrice, reference]);
+              INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status, capacity_reserved)
+              VALUES (?, ?, 'USSD Buyer', 'ussd@voteeq.online', ?, ?, ?, ?, 'pending', ?)
+            `, [session.eventId, ticketCode, session.phone, session.quantity, totalPrice, reference, session.quantity]);
           });
         } catch (txErr) {
           if (txErr.message === 'SOLD_OUT') {
@@ -2324,10 +2368,9 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
         if (mockPaymentsAllowed()) {
           setTimeout(async () => {
             try {
-              const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
-              if (ticketRecord && ticketRecord.payment_status === 'pending') {
-                await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
-                await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
+              const paymentResult = await completeTicketPayment(db, reference);
+              if (paymentResult.outcome === 'completed') {
+                const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
                 console.log(`USSD ticket payment simulation completed for ref: ${reference}`);
                 const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
                 const logMsg = `
@@ -2347,6 +2390,8 @@ Date/Time: ${new Date().toISOString()}
 ========================================
 \n`;
                 fs.appendFileSync(receiptsLogPath, logMsg);
+              } else if (paymentResult.outcome === 'sold_out') {
+                console.error(`USSD ticket mock payment could not be completed due to sold-out capacity: ${reference}`);
               }
             } catch (err) {
               console.error('USSD ticket timeout mock error:', err);
@@ -2370,7 +2415,7 @@ Date/Time: ${new Date().toISOString()}
               console.log(`Actual USSD Ticket MoMo charge triggered for reference: ${reference} (${provider})`);
             } catch (err) {
               console.error('Failed to trigger actual USSD Ticket MoMo charge:', err);
-              await db.run("UPDATE tickets SET payment_status = 'failed' WHERE payment_reference = ?", [reference]);
+              await releaseTicketReservation(db, reference);
             }
           });
         }
@@ -2487,7 +2532,7 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
     }
 
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
-    if (secretKey && (status === 'pending' || status === 'processing')) {
+    if (secretKey && (status === 'pending' || status === 'processing' || status === 'expired')) {
       try {
         const verified = await verifyPaystackTransaction(secretKey, reference);
         if (verified.ok) {
@@ -2526,6 +2571,8 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
             const ticketResult = await completeTicketPayment(db, reference);
             if (ticketResult.outcome === 'completed') {
               runInBackground(() => sendTicketReceipt(ticketResult.ticket.id));
+            } else if (ticketResult.outcome === 'sold_out') {
+              console.error(`Verified ticket payment could not be fulfilled because capacity is exhausted: ${reference}`);
             }
             const freshTicket = await db.get(`
               SELECT t.*, e.title as event_title
@@ -2565,10 +2612,12 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
       }
     }
 
+    const responseStatus = status === 'expired' ? 'failed' : status;
+
     res.json({
       reference,
       type,
-      status,
+      status: responseStatus,
       details
     });
   } catch (err) {

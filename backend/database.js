@@ -230,6 +230,7 @@ async function initDB() {
       price_paid REAL NOT NULL,
       payment_reference TEXT UNIQUE NOT NULL,
       payment_status TEXT DEFAULT 'pending',
+      capacity_reserved INTEGER DEFAULT 0,
       scanned INTEGER DEFAULT 0,
       scanned_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -277,6 +278,21 @@ async function initDB() {
     await dbWrapper.exec('ALTER TABLE nominees ADD COLUMN event_id INTEGER;');
   } catch (e) {
     // Suppress if column already exists
+  }
+  try {
+    await dbWrapper.exec('ALTER TABLE tickets ADD COLUMN capacity_reserved INTEGER DEFAULT 0;');
+  } catch (e) {
+    // Suppress if column already exists
+  }
+  try {
+    await dbWrapper.exec(`
+      UPDATE tickets
+      SET capacity_reserved = quantity
+      WHERE payment_status = 'pending'
+        AND COALESCE(capacity_reserved, 0) = 0;
+    `);
+  } catch (e) {
+    // Suppress for older test databases that do not have ticket tables yet
   }
 
   await dbWrapper.exec('CREATE INDEX IF NOT EXISTS idx_votes_payment_reference ON votes(payment_reference);');
