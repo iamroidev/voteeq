@@ -49,6 +49,11 @@ const {
   sendVoteReceiptEmail,
   sendTicketReceiptEmail,
 } = require('./email');
+const {
+  assignNomineeRegistration,
+  rejectNomineeRegistration,
+  isRegistrationApprovalError,
+} = require('./registration-approval');
 require('dotenv').config();
 
 validateProductionConfig();
@@ -1674,77 +1679,7 @@ app.post('/api/admin/registrations/:id/approve', requireAdmin, async (req, res) 
   const { id } = req.params;
   try {
     const db = getDB();
-    const reg = await db.get('SELECT * FROM nominee_registrations WHERE id = ?', [id]);
-    if (!reg) {
-      return res.status(404).json({ error: 'Registration not found' });
-    }
-
-    if (reg.payment_status !== 'completed') {
-      return res.status(400).json({ error: 'Form fee payment is not completed yet' });
-    }
-
-    if (reg.approval_status !== 'pending') {
-      return res.status(400).json({ error: 'Registration is already processed' });
-    }
-
-    // Assign nominee category
-    let finalCategoryId = reg.category_id;
-    if (!finalCategoryId && reg.custom_category) {
-      // Create custom category automatically if requested and approved
-      const customCatName = reg.custom_category.trim();
-      let existingCat = await db.get('SELECT id FROM categories WHERE name = ?', [customCatName]);
-      if (!existingCat) {
-        const createResult = await db.run('INSERT INTO categories (name, description) VALUES (?, ?)', [customCatName, 'Approved Custom Category']);
-        finalCategoryId = createResult.lastID;
-      } else {
-        finalCategoryId = existingCat.id;
-      }
-    }
-
-    if (!finalCategoryId) {
-      return res.status(400).json({ error: 'Category selection or request is missing' });
-    }
-
-    // Generate unique nominee code using category list index and sequence number
-    const categoryRecord = await db.get('SELECT name FROM categories WHERE id = ?', [finalCategoryId]);
-    const categoryName = categoryRecord?.name || '';
-    const listIndex = ACSES_AWARD_CATEGORIES.findIndex(cat => (Array.isArray(cat) ? cat[0] : cat) === categoryName);
-    const prefix = listIndex !== -1 ? (listIndex + 1) : finalCategoryId;
-
-    let assignedCode = '';
-    let nomineeSeq = 1;
-    while (true) {
-      const seqStr = nomineeSeq.toString().padStart(2, '0');
-      const candidateCode = `${prefix}${seqStr}`;
-      const duplicate = await db.get('SELECT id FROM nominees WHERE code = ?', [candidateCode]);
-      if (!duplicate) {
-        assignedCode = candidateCode;
-        break;
-      }
-      nomineeSeq += 1;
-    }
-
-    // Generate 6-digit random Temporary PIN
-    const tempPin = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // Create nominee in database in pending state
-    await db.run(`
-      INSERT INTO nominees (code, name, photo_url, category_id, passcode, votes_count)
-      VALUES (?, ?, ?, ?, ?, 0)
-    `, [
-      assignedCode,
-      reg.name,
-      reg.photo_url,
-      finalCategoryId,
-      `PENDING_ACT_${tempPin}`
-    ]);
-
-    // Update registration status
-    await db.run(`
-      UPDATE nominee_registrations 
-      SET approval_status = 'approved', nominee_code = ?, activation_pin = ?
-      WHERE id = ?
-    `, [assignedCode, tempPin, id]);
+    const { reg, finalCategoryId, assignedCode, tempPin } = await assignNomineeRegistration(db, id);
 
     await logAdminAction(adminUsername(req), 'APPROVE_REGISTRATION', `Approved registration ID: ${id}, Nominee Name: ${reg.name}, Assigned Code: ${assignedCode}`);
 
@@ -1786,6 +1721,9 @@ and input your Nominee Code and Temporary PIN to set up your personal login PIN.
 
 
   } catch (err) {
+    if (isRegistrationApprovalError(err)) {
+      return res.status(err.status).json({ error: err.message });
+    }
     console.error(err);
     res.status(500).json({ error: 'Failed to approve nominee registration' });
   }
@@ -1796,19 +1734,13 @@ app.post('/api/admin/registrations/:id/reject', requireAdmin, async (req, res) =
   const { id } = req.params;
   try {
     const db = getDB();
-    const reg = await db.get('SELECT id, approval_status FROM nominee_registrations WHERE id = ?', [id]);
-    if (!reg) {
-      return res.status(404).json({ error: 'Registration not found' });
-    }
-
-    if (reg.approval_status !== 'pending') {
-      return res.status(400).json({ error: 'Registration is already processed' });
-    }
-
-    await db.run("UPDATE nominee_registrations SET approval_status = 'rejected' WHERE id = ?", [id]);
+    await rejectNomineeRegistration(db, id);
     await logAdminAction(adminUsername(req), 'REJECT_REGISTRATION', `Rejected registration ID: ${id}`);
     res.json({ success: true, message: 'Nominee registration rejected.' });
   } catch (err) {
+    if (isRegistrationApprovalError(err)) {
+      return res.status(err.status).json({ error: err.message });
+    }
     console.error(err);
     res.status(500).json({ error: 'Failed to reject registration' });
   }
