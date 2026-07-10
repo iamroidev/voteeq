@@ -20,10 +20,13 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
   const voteShortcuts = [5, 10, 25, 50, 100];
   const pricePerVote = parseFloat(BRANDING.votePriceOnlineGhs) || 1;
 
-  const MAX_VOTES = 10000;
-  const parsedVotes = Math.min(parseInt(voteCount) || 0, MAX_VOTES);
+  const MAX_VOTES = 100;
+  const parsedVotes = parseInt(voteCount, 10) || 0;
   const pricing = calculatePaystackCheckout(parsedVotes * pricePerVote);
-  const isInvalidVotes = parsedVotes <= 0 || isNaN(parseInt(voteCount)) || parseFloat(voteCount) !== parseInt(voteCount);
+  const isInvalidVotes = parsedVotes <= 0
+    || parsedVotes > MAX_VOTES
+    || isNaN(parseInt(voteCount, 10))
+    || parseFloat(voteCount) !== parseInt(voteCount, 10);
 
   const handleVoteSubmit = async (e) => {
     e.preventDefault();
@@ -40,7 +43,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
     }
     const normalizedEmail = normalizeEmail(email);
     if (isInvalidVotes) {
-      setError('Please choose a valid whole number of votes (minimum 1)');
+      setError(`Please choose a valid whole number of votes (1-${MAX_VOTES})`);
       return;
     }
     const correctAnswer = numA + numB;
@@ -63,10 +66,9 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
         },
         body: JSON.stringify({
           nomineeId: nominee.id,
-          email,
           phone: normalizedPhone,
           email: normalizedEmail,
-          voteCount,
+          voteCount: parsedVotes,
         }),
       });
 
@@ -179,9 +181,9 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
                   value={voteCount}
                   onChange={(e) => {
                     const val = e.target.value;
-                    // Allow empty for clearing, but cap at MAX_VOTES
+                    // Allow empty for clearing, but cap at the backend transaction limit.
                     if (val === '') { setVoteCount(''); return; }
-                    const num = parseInt(val);
+                    const num = parseInt(val, 10);
                     if (!isNaN(num) && num <= MAX_VOTES) setVoteCount(num);
                   }}
                   className="luxury-input"
@@ -198,7 +200,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
               </div>
               {isInvalidVotes && voteCount !== '' && (
                 <p style={{ color: '#c00', fontSize: '0.65rem', marginTop: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 500 }}>
-                  Please enter a valid whole number of votes (minimum 1).
+                  Please enter a valid whole number of votes (1-{MAX_VOTES}).
                 </p>
               )}
             </div>
