@@ -18,7 +18,7 @@ import PublicVoteFilters from './components/PublicVoteFilters';
 import PaymentStatusPage from './pages/PaymentStatusPage';
 import NotFoundPage from './pages/NotFoundPage';
 import { API_BASE_URL, WS_BASE_URL } from './config';
-import { BRANDING, formatEventDate, formatEventMeta, getNomineeShareUrl, displayEventTitle } from './branding';
+import { BRANDING, formatEventDate, formatEventMeta, getNomineeShareUrl, displayEventTitle, getNomineeUssdCode } from './branding';
 import { readStoredAuth } from './utils/storage';
 import { nomineePhotoSrc } from './utils/photoUrl';
 import { COLOR_THEMES, applyAccentTheme, getStoredAccent } from './utils/theme';
@@ -632,7 +632,7 @@ export default function App() {
     const sId = `ussd_sim_${Date.now()}`;
     setUssdSessionId(sId);
 
-    const dialString = customDial || '*920*566#';
+    const dialString = customDial || BRANDING.ussdShortcode;
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/ussd`, {
@@ -1109,7 +1109,7 @@ export default function App() {
                     <div className="editorial-card-secondary-actions" style={{ display: 'flex', justifyContent: BRANDING.showUssd ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '0.5rem' }}>
                       {BRANDING.showUssd && (
                         <button
-                          onClick={() => dialUssdCode(`*920*566*${nom.code}#`)}
+                          onClick={() => dialUssdCode(getNomineeUssdCode(nom.code))}
                           style={{
                             background: 'none',
                             border: 'none',
@@ -1126,7 +1126,7 @@ export default function App() {
                           onMouseEnter={(e) => e.target.style.color = 'var(--text-primary)'}
                           onMouseLeave={(e) => e.target.style.color = 'var(--accent-dark)'}
                         >
-                          DIAL *920*566*{nom.code}#
+                          DIAL {getNomineeUssdCode(nom.code)}
                         </button>
                       )}
 
@@ -1710,11 +1710,11 @@ export default function App() {
               ) : (
                 <div style={{ color: '#aaa', textAlign: 'center', fontSize: '0.75rem', marginTop: '0.5rem' }}>
                   Dial the official shortcode to begin:<br /><br />
-                  • <strong>*920*566#</strong> (Voteeq Portal)<br />
+                  • <strong>{BRANDING.ussdShortcode}</strong> (Voteeq Portal)<br />
                   {nominees.length > 0 ? (
                     nominees.slice(0, 3).map(nom => (
                       <div key={nom.id} style={{ marginTop: '0.25rem' }}>
-                        • <strong>*920*566*{nom.code}#</strong> (Vote for {nom.name})
+                        • <strong>{getNomineeUssdCode(nom.code)}</strong> (Vote for {nom.name})
                       </div>
                     ))
                   ) : (
@@ -1754,7 +1754,7 @@ export default function App() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
                 <button
-                  onClick={() => initUssdSession('*920*566#')}
+                  onClick={() => initUssdSession(BRANDING.ussdShortcode)}
                   style={{
                     background: '#222',
                     color: '#fff',
@@ -1769,7 +1769,7 @@ export default function App() {
                   DIAL MENU
                 </button>
                 <button
-                  onClick={() => initUssdSession(`*920*566*${nominees[0]?.code || '101'}#`)}
+                  onClick={() => initUssdSession(getNomineeUssdCode(nominees[0]?.code || '101'))}
                   style={{
                     background: '#222',
                     color: '#fff',

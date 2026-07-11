@@ -65,6 +65,7 @@ export const BRANDING = {
   ticketEventTitle: '"Praemia Pro Virtute" Dinner & Awards Night',
   defaultTab: 'vote',
   showUssd: false,
+  ussdShortcode: '*SHORTCODE#',
   votePriceOnlineGhs: '1.00',
   votePriceUssdGhs: '0.50',
   /** Paystack fee gross-up (backend only — not shown as a separate line in checkout UI) */
@@ -74,6 +75,11 @@ export const BRANDING = {
   privacyEmail: 'privacy@voteeq.online',
   documentTitle: '"Praemia Pro Virtute" Dinner & Awards Night | VoteEQ',
 };
+
+export function getNomineeUssdCode(code) {
+  const base = (BRANDING.ussdShortcode || '*SHORTCODE#').replace(/#/g, '');
+  return `${base}*${code}#`;
+}
 
 /** Direct link supporters use to open the vote page for this nominee */
 export function fixAscesSpelling(text) {

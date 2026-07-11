@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { API_BASE_URL } from '../config';
-import { getNomineeShareUrl, BRANDING } from '../branding';
+import { getNomineeShareUrl, BRANDING, getNomineeUssdCode } from '../branding';
 import { nomineePhotoSrc } from '../utils/photoUrl';
 import { readImageAsDataUrl, useClipboardImagePaste } from '../utils/clipboardImage';
 
@@ -225,7 +225,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
               <p style={{ fontSize: '0.75rem', marginTop: '0.4rem', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
                 OFFICIAL USSD SHORTCODE:{' '}
                 <button
-                  onClick={() => dialUssdCode && dialUssdCode(`*920*566*${nominee.code}#`)}
+                  onClick={() => dialUssdCode && dialUssdCode(getNomineeUssdCode(nominee.code))}
                   style={{
                     background: 'none',
                     border: 'none',
@@ -242,7 +242,7 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
                   onMouseLeave={(e) => e.target.style.color = 'var(--accent-dark)'}
                   title="Dial shortcode automatically"
                 >
-                  *920*566*{nominee.code}#
+                  {getNomineeUssdCode(nominee.code)}
                 </button>
               </p>
             )}

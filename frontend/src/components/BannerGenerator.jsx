@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../config';
-import { BRANDING, getNomineeVoteUrl, formatVotePricingLine } from '../branding';
+import { BRANDING, getNomineeVoteUrl, formatVotePricingLine, getNomineeUssdCode } from '../branding';
 
 const WHATSAPP_STATUS_W = 1080;
 const WHATSAPP_STATUS_H = 1920;
@@ -383,15 +383,23 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
         ctx.strokeRect(640, 410, 520, 230);
       }
 
-      ctx.fillStyle = textSecondaryColor;
-      ctx.font = '700 15px "Space Grotesk", sans-serif';
-      ctx.fillText('DIAL MOBILE SHORTCODE TO VOTE', 670, 460);
-      
-      ctx.save();
-      ctx.fillStyle = activeBg.isDark ? getFoilGradient(670, 480, 980, 560) : '#000000';
-      ctx.font = '900 48px "Space Grotesk", sans-serif';
-      ctx.fillText(`*920*566*${nominee.code}#`, 670, 530);
-      ctx.restore();
+      ctx.fillStyle = '#8c8273';
+      ctx.font = '700 13px "Space Grotesk", sans-serif';
+      if (BRANDING.showUssd) {
+        ctx.fillText('DIAL MOBILE SHORTCODE TO VOTE', 670, 460);
+        ctx.save();
+        ctx.fillStyle = activeBg.isDark ? getFoilGradient(670, 480, 980, 560) : '#000000';
+        ctx.font = '900 48px "Space Grotesk", sans-serif';
+        ctx.fillText(getNomineeUssdCode(nominee.code), 670, 530);
+        ctx.restore();
+      } else {
+        ctx.fillText('VOTE ONLINE WITH NOMINEE CODE', 670, 460);
+        ctx.save();
+        ctx.fillStyle = activeBg.isDark ? getFoilGradient(670, 480, 980, 560) : '#000000';
+        ctx.font = '900 48px "Space Grotesk", sans-serif';
+        ctx.fillText(`CODE: ${nominee.code}`, 670, 530);
+        ctx.restore();
+      }
 
       ctx.fillStyle = textPrimaryColor;
       ctx.font = '700 13px "Space Grotesk", sans-serif';
@@ -521,11 +529,17 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
 
       ctx.fillStyle = '#8c8273';
       ctx.font = '700 16px "Space Grotesk", sans-serif';
-      ctx.fillText('DIAL MOBILE SHORTCODE TO VOTE', cardX + 50, cardY + 65);
-
-      ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 90, cardX + 450, cardY + 160);
-      ctx.font = '900 52px "Space Grotesk", sans-serif';
-      ctx.fillText(`*920*566*${nominee.code}#`, cardX + 50, cardY + 145);
+      if (BRANDING.showUssd) {
+        ctx.fillText('DIAL MOBILE SHORTCODE TO VOTE', cardX + 50, cardY + 65);
+        ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 90, cardX + 450, cardY + 160);
+        ctx.font = '900 52px "Space Grotesk", sans-serif';
+        ctx.fillText(getNomineeUssdCode(nominee.code), cardX + 50, cardY + 145);
+      } else {
+        ctx.fillText('VOTE ONLINE WITH NOMINEE CODE', cardX + 50, cardY + 65);
+        ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 90, cardX + 450, cardY + 160);
+        ctx.font = '900 52px "Space Grotesk", sans-serif';
+        ctx.fillText(`CODE: ${nominee.code}`, cardX + 50, cardY + 145);
+      }
 
       ctx.fillStyle = '#c8bfb0';
       ctx.font = '700 13px "Space Grotesk", sans-serif';
@@ -635,13 +649,21 @@ export default function BannerGenerator({ nominee, token, onSaveSuccess }) {
       // Voting Panel inside glass card
       ctx.fillStyle = textSecondaryColor;
       ctx.font = '700 14px "Space Grotesk", sans-serif';
-      ctx.fillText('DIAL MOBILE SHORTCODE TO VOTE', cardX + 50, cardY + 390);
-
-      ctx.save();
-      ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 410, cardX + 450, cardY + 480);
-      ctx.font = '900 58px "Space Grotesk", sans-serif';
-      ctx.fillText(`*920*566*${nominee.code}#`, cardX + 50, cardY + 460);
-      ctx.restore();
+      if (BRANDING.showUssd) {
+        ctx.fillText('DIAL MOBILE SHORTCODE TO VOTE', cardX + 50, cardY + 390);
+        ctx.save();
+        ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 410, cardX + 450, cardY + 480);
+        ctx.font = '900 58px "Space Grotesk", sans-serif';
+        ctx.fillText(getNomineeUssdCode(nominee.code), cardX + 50, cardY + 460);
+        ctx.restore();
+      } else {
+        ctx.fillText('VOTE ONLINE WITH NOMINEE CODE', cardX + 50, cardY + 390);
+        ctx.save();
+        ctx.fillStyle = getFoilGradient(cardX + 50, cardY + 410, cardX + 450, cardY + 480);
+        ctx.font = '900 58px "Space Grotesk", sans-serif';
+        ctx.fillText(`CODE: ${nominee.code}`, cardX + 50, cardY + 460);
+        ctx.restore();
+      }
 
       ctx.fillStyle = textSecondaryColor;
       ctx.font = '700 14px "Space Grotesk", sans-serif';
