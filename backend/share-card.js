@@ -65,8 +65,8 @@ async function generateShareCardImage(nominee, { photosDir, format = 'jpeg' } = 
   <text x="560" y="250" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#8c8273" letter-spacing="2">CATEGORY</text>
   <text x="560" y="295" font-family="Georgia, serif" font-size="28" fill="#dfc49f">${category}</text>
   <rect x="560" y="360" width="550" height="150" rx="12" fill="#14110e" stroke="#b8986c" stroke-width="1.5"/>
-  <text x="590" y="400" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#b8986c" letter-spacing="2">HOW TO VOTE</text>
-  <text x="590" y="470" font-family="Courier New, monospace" font-size="34" font-weight="700" fill="#ffffff">*920*566*${code}#</text>
+  <text x="590" y="400" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#b8986c" letter-spacing="2">VOTE ONLINE AT VOTEEQ.ONLINE</text>
+  <text x="590" y="465" font-family="Courier New, monospace" font-size="32" font-weight="700" fill="#ffffff">NOMINEE CODE: ${code}</text>
 </svg>`);
 
   composites.push({ input: overlaySvg, left: 0, top: 0 });

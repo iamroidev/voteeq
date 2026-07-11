@@ -1236,8 +1236,8 @@ app.get('/api/nominees/share-image/:code', async (req, res) => {
     <!-- USSD Dialer / Instruction Card -->
     <rect x="0" y="380" width="550" height="170" rx="12" fill="#14110e" stroke="url(#goldGrad)" stroke-width="1.5" />
     <text x="30" y="425" font-family="'Inter', sans-serif" font-size="16" font-weight="bold" fill="#b8986c" letter-spacing="2">HOW TO VOTE FOR ME</text>
-    <text x="30" y="470" font-family="'Inter', sans-serif" font-size="14" fill="#8c8273">Dial shortcode on your mobile phone to support:</text>
-    <text x="30" y="522" font-family="'Courier New', monospace" font-size="38" font-weight="bold" fill="#ffffff" letter-spacing="1">*920*566*${nominee.code}#</text>
+    <text x="30" y="470" font-family="'Inter', sans-serif" font-size="14" fill="#8c8273">Vote online and search with candidate code:</text>
+    <text x="30" y="522" font-family="'Courier New', monospace" font-size="38" font-weight="bold" fill="#ffffff" letter-spacing="1">CODE: ${nominee.code}</text>
   </g>
 </svg>`;
 
@@ -1295,7 +1295,7 @@ app.get('/share/:code', async (req, res) => {
   <meta property="og:type" content="website">
   <meta property="og:url" content="${sharePageUrl}">
   <meta property="og:title" content="Vote for ${safeName} - Voteeq Awards">
-  <meta property="og:description" content="Support ${safeName} in the ${safeCategory} category. Dial *920*566*${safeCode}# or vote online!">
+  <meta property="og:description" content="Support ${safeName} in the ${safeCategory} category. Vote online at voteeq.online using candidate code ${safeCode}!">
   <meta property="og:image" content="${safeBannerUrl}">
   <meta property="og:image:type" content="${bannerType}">
   <meta property="og:image:width" content="1200">
@@ -1305,7 +1305,7 @@ app.get('/share/:code', async (req, res) => {
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:url" content="${sharePageUrl}">
   <meta name="twitter:title" content="Vote for ${safeName} - Voteeq Awards">
-  <meta name="twitter:description" content="Support ${safeName} in the ${safeCategory} category. Dial *920*566*${safeCode}# or vote online!">
+  <meta name="twitter:description" content="Support ${safeName} in the ${safeCategory} category. Vote online at voteeq.online using candidate code ${safeCode}!">
   <meta name="twitter:image" content="${safeBannerUrl}">
 
   <!-- Redirect to the React App -->
