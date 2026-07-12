@@ -2008,7 +2008,7 @@ app.post('/api/admin/receipts/tickets/:id/resend', requireAdmin, async (req, res
  *   "userID": "233543210987",
  *   "msisdn": "233543210987",
  *   "newSession": "1", // "1" for new, "0" for response
- *   "userData": "*920*566#", // dial string or user entry
+ *   "userData": "*SHORTCODE#", // dial string or user entry
  *   "network": "MTN"
  * }
  * 
@@ -2032,11 +2032,11 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
   try {
     // If it's a completely new session
     if (newSession === '1' || newSession === 1 || !ussdSessions.has(sessionID)) {
-      // Parse initial dial code: *920*566# or *920*566*101#
+      // Parse initial dial code: *SHORTCODE# or *SHORTCODE*CODE#
       const cleanDial = input.replace(/#/g, '');
-      const parts = cleanDial.split('*'); // ["", "920", "566", "101"] or similar
+      const parts = cleanDial.split('*'); // ["", "SHORTCODE", "566", "101"] or similar
 
-      // Direct nominee vote shortcut: e.g. *920*566*101#
+      // Direct nominee vote shortcut: e.g. *SHORTCODE*101#
       if (parts.length >= 4) {
         const nomineeCode = parts[3];
         const nominee = await findNomineeByCode(nomineeCode);

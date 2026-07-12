@@ -43,6 +43,7 @@ export const ACSES_AWARD_CATEGORIES = [
   'Face of ACSES (Female)',
   'Face of ACSES (Male)',
   'Artiste of the Year',
+  'Male Most Popular Student of the Year',
 ];
 
 export const BRANDING = {

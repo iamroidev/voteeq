@@ -42,6 +42,7 @@ const ACSES_AWARD_CATEGORIES = [
   ['Face of ACSES (Female)', 'Female ambassador representing ACSES with presence and pride'],
   ['Face of ACSES (Male)', 'Male ambassador representing ACSES with presence and pride'],
   ['Artiste of the Year', 'Music, performance, or creative arts excellence'],
+  ['Male Most Popular Student of the Year', 'Most popular male student of the year (General)'],
 ];
 
 module.exports = { ACSES_AWARD_CATEGORIES };
