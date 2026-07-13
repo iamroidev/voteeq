@@ -464,6 +464,15 @@ export default function App() {
     });
   };
 
+  const copyCandidateCode = (code, name) => {
+    navigator.clipboard.writeText(code).then(() => {
+      triggerToast(`Candidate code ${code} for ${name.toUpperCase()} copied to clipboard!`);
+    }).catch(err => {
+      console.error('Copy failed', err);
+      triggerToast('Could not copy code to clipboard');
+    });
+  };
+
   // Payment checkout triggers
   const handlePaymentRedirect = (data) => {
     setActiveVoteNominee(null);
@@ -1143,10 +1152,13 @@ export default function App() {
               visibleVoteNominees.map(nom => (
                 <div key={nom.id} className="editorial-card">
                   {/* Visual Portrait */}
-                  <div className="editorial-image-wrapper">
+                  <div className="editorial-image-wrapper" onClick={() => setActiveVoteNominee(nom)} style={{ cursor: 'pointer' }}>
                     <img src={nomineePhotoSrc(nom.photo_url)} alt={nom.name} loading="lazy" decoding="async" />
-                    <div className="editorial-card-ref-wrap">
-                      <span className="ref-badge" style={{ background: 'var(--bg-secondary)' }}>
+                    <div className="editorial-card-ref-wrap" onClick={(e) => {
+                      e.stopPropagation();
+                      copyCandidateCode(nom.code, nom.name);
+                    }} style={{ cursor: 'pointer' }}>
+                      <span className="ref-badge" style={{ background: 'var(--bg-secondary)' }} title="Click to copy candidate code">
                         REF. {nom.code}
                       </span>
                     </div>
@@ -1662,7 +1674,7 @@ export default function App() {
                   ) : (
                     <>
                       <button
-                        onClick={() => { setMobileMenuOpen(false); setNomineeLoginOpen(true); }}
+                        onClick={() => { setMobileMenuOpen(false); setLoginMode(true); }}
                         className="control-action-card"
                         type="button"
                       >
@@ -1710,6 +1722,7 @@ export default function App() {
           nominee={activeVoteNominee}
           onClose={() => setActiveVoteNominee(null)}
           onPaymentRedirect={handlePaymentRedirect}
+          triggerToast={triggerToast}
         />
       )}
 
