@@ -1631,31 +1631,8 @@ export default function App() {
                 </div>
               )}
 
-              <div className="control-center-section">
-                <span className="section-label">Color Theme</span>
-                <p className="theme-active-banner">
-                  Active: <strong>{activeTheme.name}</strong>
-                </p>
-                <div className="control-theme-picker">
-                  {COLOR_THEMES.map((theme) => (
-                    <button
-                      key={theme.value}
-                      onClick={() => { changeAccent(theme.value); }}
-                      className={`control-theme-btn ${accent === theme.value ? 'active' : ''}`}
-                      aria-label={`${theme.name} theme`}
-                      aria-pressed={accent === theme.value}
-                      type="button"
-                    >
-                      <span className="color-dot" style={{ backgroundColor: theme.value }} />
-                      <span className="color-name">{theme.name}</span>
-                      {accent === theme.value && <span className="theme-check" aria-hidden="true">✓</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* Quick Actions Grid */}
-              <div className="control-center-section" style={{ marginTop: '1.5rem' }}>
+              <div className="control-center-section">
                 <span className="section-label">Account</span>
                 <div className="control-actions-grid">
                   {authAdmin ? (
@@ -1685,7 +1662,7 @@ export default function App() {
                   ) : (
                     <>
                       <button
-                        onClick={() => { setMobileMenuOpen(false); setLoginMode(true); }}
+                        onClick={() => { setMobileMenuOpen(false); setNomineeLoginOpen(true); }}
                         className="control-action-card"
                         type="button"
                       >
@@ -1695,9 +1672,31 @@ export default function App() {
                         <span className="card-title">Nominee Login</span>
                         <span className="card-desc">Dashboard access</span>
                       </button>
-
                     </>
                   )}
+                </div>
+              </div>
+
+              <div className="control-center-section" style={{ marginTop: '1.5rem' }}>
+                <span className="section-label">Color Theme</span>
+                <p className="theme-active-banner">
+                  Active: <strong>{activeTheme.name}</strong>
+                </p>
+                <div className="control-theme-picker">
+                  {COLOR_THEMES.map((theme) => (
+                    <button
+                      key={theme.value}
+                      onClick={() => { changeAccent(theme.value); }}
+                      className={`control-theme-btn ${accent === theme.value ? 'active' : ''}`}
+                      aria-label={`${theme.name} theme`}
+                      aria-pressed={accent === theme.value}
+                      type="button"
+                    >
+                      <span className="color-dot" style={{ backgroundColor: theme.value }} />
+                      <span className="color-name">{theme.name}</span>
+                      {accent === theme.value && <span className="theme-check" aria-hidden="true">✓</span>}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
