@@ -17,6 +17,59 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
   const onLogoutRef = useRef(onLogout);
   onLogoutRef.current = onLogout;
 
+  // PIN Change Form states
+  const [oldPin, setOldPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [pinChangeError, setPinChangeError] = useState('');
+  const [pinChangeSuccess, setPinChangeSuccess] = useState('');
+  const [updatingPin, setUpdatingPin] = useState(false);
+
+  const handlePinChange = async (e) => {
+    e.preventDefault();
+    setPinChangeError('');
+    setPinChangeSuccess('');
+
+    if (!oldPin || !newPin || !confirmPin) {
+      setPinChangeError('All fields are required');
+      return;
+    }
+
+    if (newPin !== confirmPin) {
+      setPinChangeError('New PINs do not match');
+      return;
+    }
+
+    if (!/^\d{4,6}$/.test(newPin)) {
+      setPinChangeError('New PIN must be a 4 to 6 digit number');
+      return;
+    }
+
+    setUpdatingPin(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/nominees/change-pin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ code, oldPin, newPin })
+      });
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Failed to update PIN');
+      }
+      setPinChangeSuccess('PIN updated successfully!');
+      setOldPin('');
+      setNewPin('');
+      setConfirmPin('');
+    } catch (err) {
+      setPinChangeError(err.message || 'Error updating PIN');
+    } finally {
+      setUpdatingPin(false);
+    }
+  };
+
   const loadDashboardData = useCallback(async ({ isInitial = false } = {}) => {
     if (abortRef.current) {
       abortRef.current.abort();
@@ -407,6 +460,74 @@ export default function NomineeDashboard({ code, token, onLogout, copyShareLink,
               </table>
             </div>
           )}
+        </div>
+
+        {/* Reset PIN Card */}
+        <div className="editorial-sheet" style={{ margin: '2rem 0 0 0', padding: '2.5rem' }}>
+          <h3 style={{ marginBottom: '1.5rem', fontFamily: 'var(--font-serif)', fontSize: '1.4rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+            Update Security PIN
+          </h3>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+            Choose a new numerical PIN (4 to 6 digits) to secure your account. Your default PIN is your candidate code.
+          </p>
+          <form onSubmit={handlePinChange} style={{ maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>CURRENT PIN</label>
+              <input
+                type="password"
+                className="luxury-input"
+                placeholder="Enter current PIN"
+                value={oldPin}
+                onChange={(e) => setOldPin(e.target.value.replace(/\D/g, ''))}
+                maxLength={6}
+                required
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>NEW PIN (4-6 digits)</label>
+              <input
+                type="password"
+                className="luxury-input"
+                placeholder="Enter new PIN"
+                value={newPin}
+                onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
+                maxLength={6}
+                required
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>CONFIRM NEW PIN</label>
+              <input
+                type="password"
+                className="luxury-input"
+                placeholder="Confirm new PIN"
+                value={confirmPin}
+                onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                maxLength={6}
+                required
+              />
+            </div>
+
+            {pinChangeError && (
+              <p style={{ fontSize: '0.75rem', color: '#a94442', fontWeight: 500, margin: '0.2rem 0' }}>
+                ⚠️ {pinChangeError}
+              </p>
+            )}
+            {pinChangeSuccess && (
+              <p style={{ fontSize: '0.75rem', color: '#4f7c5d', fontWeight: 500, margin: '0.2rem 0' }}>
+                ✓ {pinChangeSuccess}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={updatingPin}
+              className="luxury-btn"
+              style={{ padding: '0.8rem 2rem', marginTop: '0.5rem', alignSelf: 'flex-start' }}
+            >
+              {updatingPin ? 'UPDATING...' : 'UPDATE SECURITY PIN'}
+            </button>
+          </form>
         </div>
       </div>
     </div>

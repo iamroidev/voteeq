@@ -1111,6 +1111,45 @@ app.post('/api/nominees/upload-photo', async (req, res) => {
   }
 });
 
+// 4aa. Nominee change passcode/PIN
+app.post('/api/nominees/change-pin', async (req, res) => {
+  const { code, oldPin, newPin } = req.body;
+  if (!code || !oldPin || !newPin) {
+    return res.status(400).json({ error: 'Code, current PIN, and new PIN are required' });
+  }
+
+  const auth = verifyNomineeToken(req, code);
+  if (auth.error) {
+    return res.status(auth.status).json({ error: auth.error });
+  }
+
+  // Basic validation of PIN (e.g. numerical 4-6 digits)
+  if (!/^\d{4,6}$/.test(newPin)) {
+    return res.status(400).json({ error: 'New PIN must be a 4 to 6 digit number' });
+  }
+
+  try {
+    const db = getDB();
+    const nominee = await db.get('SELECT * FROM nominees WHERE code = ?', [code]);
+    if (!nominee) {
+      return res.status(404).json({ error: 'Nominee not found' });
+    }
+
+    const pinResult = await verifyPin(oldPin, nominee.passcode);
+    if (!pinResult.valid) {
+      return res.status(401).json({ error: 'Current PIN is incorrect' });
+    }
+
+    const hashedPin = await hashPin(newPin);
+    await db.run('UPDATE nominees SET passcode = ? WHERE code = ?', [hashedPin, code]);
+
+    res.json({ success: true, message: 'PIN updated successfully!' });
+  } catch (err) {
+    console.error('Change PIN error:', err);
+    res.status(500).json({ error: 'Failed to update PIN' });
+  }
+});
+
 // 4b. Nominee save customized campaign poster banner to server
 app.post('/api/nominees/save-banner', async (req, res) => {
   const authHeader = req.headers.authorization;
