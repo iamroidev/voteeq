@@ -1388,15 +1388,7 @@ export default function App() {
                   {loginSubmitting ? 'Signing in...' : 'Unlock Dashboard'}
                 </button>
               </form>
-              <div style={{ marginTop: '1.5rem', textAlign: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>First time logging in? </span>
-                <button
-                  onClick={() => { setLoginMode(false); setRegisterMode(true); }}
-                  style={{ background: 'none', border: 'none', color: 'var(--accent-dark)', textDecoration: 'underline', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
-                >
-                  Activate Nominee PIN
-                </button>
-              </div>
+              {/* No registration link footer */}
             </div>
           </div>
         </div>
