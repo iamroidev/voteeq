@@ -1168,10 +1168,12 @@ export default function App() {
                   <h3 className="editorial-card-title">{nom.name}</h3>
 
                   {/* Vote count tally */}
-                  <div className="editorial-card-votes">
-                    <span className="votes-number">{nom.votes_count}</span>
-                    <span className="votes-label">votes verified</span>
-                  </div>
+                  {!BRANDING.leaderboardLocked && (
+                    <div className="editorial-card-votes">
+                      <span className="votes-number">{nom.votes_count}</span>
+                      <span className="votes-label">votes verified</span>
+                    </div>
+                  )}
 
                   {/* Actions container */}
                   <div className="editorial-card-actions">
