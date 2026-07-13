@@ -951,28 +951,105 @@ export default function App() {
           </div>
 
           <div>
-            {!loading && categories.length > 0 && (
-              <div style={{ marginBottom: '1.5rem' }}>
-                <CategoryBrowser
-                  categories={categories}
-                  selectedCategory={selectedCategory}
-                  onSelectCategory={handleCategorySelect}
-                  getCount={getCategoryCount}
-                  showCounts={hasPublishedNominees}
-                  layout="list"
-                />
+            {BRANDING.leaderboardLocked ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '4rem 2rem',
+                background: 'rgba(255, 255, 255, 0.02)',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+                borderRadius: '12px',
+                textAlign: 'center',
+                marginTop: '1.5rem',
+                boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)'
+              }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  background: 'rgba(212, 175, 55, 0.08)',
+                  border: '1px solid var(--accent)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '1.5rem'
+                }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
+                </div>
+                <h2 style={{
+                  fontFamily: '"Cinzel", serif',
+                  letterSpacing: '0.08em',
+                  color: '#fff',
+                  fontSize: '1.4rem',
+                  marginBottom: '1rem',
+                  textTransform: 'uppercase'
+                }}>
+                  Standings Frozen
+                </h2>
+                <p style={{
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.88rem',
+                  lineHeight: '1.6',
+                  maxWidth: '460px',
+                  margin: '0 auto 1.5rem auto'
+                }}>
+                  Standings and vote counts are currently locked until the official announcement at the dinner and awards night. Supported candidates will receive all votes during this time!
+                </p>
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '0.5rem 1rem',
+                  background: 'rgba(212, 175, 55, 0.04)',
+                  border: '1px dashed rgba(212, 175, 55, 0.25)',
+                  borderRadius: '4px',
+                  fontSize: '0.78rem',
+                  color: 'var(--accent)',
+                  letterSpacing: '0.06em',
+                  fontWeight: 600
+                }}>
+                  <span style={{ marginRight: '0.5rem', display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)' }}></span>
+                  VOTING REMAINS ACTIVE
+                </div>
+                <button 
+                  onClick={() => navigateToTab('vote')}
+                  className="luxury-btn"
+                  style={{ marginTop: '2rem', padding: '0.75rem 2.5rem' }}
+                >
+                  CONTINUE VOTING
+                </button>
               </div>
-            )}
-            {!loading && !hasPublishedNominees && (
-              <AwaitingNomineesPanel compact selectedCategoryName={selectedCategoryName} onViewTickets={() => navigateToTab('tickets')} />
-            )}
-            <div ref={leaderboardResultsRef} className="vote-results-anchor" aria-live="polite" />
-            {hasPublishedNominees && (
-              <LeaderboardPanel
-                categories={categoriesWithNominees}
-                nominees={eventScopedNominees}
-                selectedCategory={selectedCategory}
-              />
+            ) : (
+              <>
+                {!loading && categories.length > 0 && (
+                  <div style={{ marginBottom: '1.5rem' }}>
+                    <CategoryBrowser
+                      categories={categories}
+                      selectedCategory={selectedCategory}
+                      onSelectCategory={handleCategorySelect}
+                      getCount={getCategoryCount}
+                      showCounts={hasPublishedNominees}
+                      layout="list"
+                    />
+                  </div>
+                )}
+                {!loading && !hasPublishedNominees && (
+                  <AwaitingNomineesPanel compact selectedCategoryName={selectedCategoryName} onViewTickets={() => navigateToTab('tickets')} />
+                )}
+                <div ref={leaderboardResultsRef} className="vote-results-anchor" aria-live="polite" />
+                {hasPublishedNominees && (
+                  <LeaderboardPanel
+                    categories={categoriesWithNominees}
+                    nominees={eventScopedNominees}
+                    selectedCategory={selectedCategory}
+                  />
+                )}
+              </>
             )}
           </div>
         </div>

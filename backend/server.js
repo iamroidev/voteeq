@@ -43,6 +43,7 @@ const { sendSMS } = require('./sms');
 
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
+const LEADERBOARD_LOCKED = true;
 const {
   isValidEmail,
   normalizeEmail,
@@ -455,13 +456,27 @@ app.get('/api/nominees', async (req, res) => {
   try {
     const db = getDB();
     const eventId = req.query.event_id ? String(req.query.event_id) : null;
-    const nominees = await db.all(`
-      SELECT n.id, n.code, n.name, n.photo_url, n.category_id, n.event_id, n.votes_count, n.created_at, c.name as category_name 
-      FROM nominees n 
-      JOIN categories c ON n.category_id = c.id
-      ${eventId ? 'WHERE n.event_id = ? OR n.event_id IS NULL' : ''}
-      ORDER BY n.votes_count DESC
-    `, eventId ? [eventId] : []);
+    
+    let query = '';
+    if (LEADERBOARD_LOCKED) {
+      query = `
+        SELECT n.id, n.code, n.name, n.photo_url, n.category_id, n.event_id, 0 as votes_count, n.created_at, c.name as category_name 
+        FROM nominees n 
+        JOIN categories c ON n.category_id = c.id
+        ${eventId ? 'WHERE n.event_id = ? OR n.event_id IS NULL' : ''}
+        ORDER BY c.name ASC, n.code ASC
+      `;
+    } else {
+      query = `
+        SELECT n.id, n.code, n.name, n.photo_url, n.category_id, n.event_id, n.votes_count, n.created_at, c.name as category_name 
+        FROM nominees n 
+        JOIN categories c ON n.category_id = c.id
+        ${eventId ? 'WHERE n.event_id = ? OR n.event_id IS NULL' : ''}
+        ORDER BY n.votes_count DESC
+      `;
+    }
+
+    const nominees = await db.all(query, eventId ? [eventId] : []);
     setShortPublicCache(res);
     res.json(nominees);
   } catch (err) {
@@ -514,7 +529,7 @@ app.post('/api/nominees/login', rateLimiter(15 * 60 * 1000, 10), async (req, res
         photo_url: nominee.photo_url,
         category_id: nominee.category_id,
         event_id: nominee.event_id,
-        votes_count: nominee.votes_count
+        votes_count: LEADERBOARD_LOCKED ? 0 : nominee.votes_count
       }
     });
   } catch (err) {

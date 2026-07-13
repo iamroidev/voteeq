@@ -62,6 +62,8 @@ export const BRANDING = {
   showVenue: false,
   /** Set true when shortlisted nominees are published and voting should be live */
   votingOpen: true,
+  /** Set true to lock the public leaderboard and stand until official announcement */
+  leaderboardLocked: true,
   /** Set true when ACSES opens awards night ticket sales */
   ticketsEnabled: false,
   ticketEventTitle: '"Praemia Pro Virtute" Dinner & Awards Night',
