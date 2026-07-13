@@ -6,7 +6,7 @@ import { getEmailError, normalizeEmail } from '../utils/email';
 import { calculatePaystackCheckout } from '../utils/paystackFees';
 import { nomineePhotoSrc } from '../utils/photoUrl';
 
-export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
+export default function VoteModal({ nominee, onClose, onPaymentRedirect, triggerToast }) {
   const [voteCount, setVoteCount] = useState(10);
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -115,7 +115,18 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect }) {
               }}
             />
             <div>
-              <span className="ref-badge" style={{ marginBottom: '0.4rem' }}>
+              <span
+                className="ref-badge"
+                onClick={() => {
+                  navigator.clipboard.writeText(nominee.code).then(() => {
+                    if (triggerToast) {
+                      triggerToast(`Candidate code ${nominee.code} copied to clipboard!`);
+                    }
+                  }).catch(() => {});
+                }}
+                style={{ marginBottom: '0.4rem', cursor: 'pointer' }}
+                title="Click to copy candidate code"
+              >
                 REF. {nominee.code}
               </span>
               <h3 style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', fontWeight: 400, marginTop: '0.1rem' }}>
