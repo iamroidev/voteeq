@@ -952,25 +952,18 @@ export default function App() {
 
           <div>
             {BRANDING.leaderboardLocked ? (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
+              <div className="editorial-card" style={{
                 alignItems: 'center',
                 justifyContent: 'center',
                 padding: '4rem 2rem',
-                background: 'rgba(255, 255, 255, 0.02)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                borderRadius: '12px',
                 textAlign: 'center',
-                marginTop: '1.5rem',
-                boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)'
+                marginTop: '1.5rem'
               }}>
                 <div style={{
                   width: '64px',
                   height: '64px',
                   borderRadius: '50%',
-                  background: 'rgba(212, 175, 55, 0.08)',
+                  background: 'rgba(184, 152, 108, 0.08)',
                   border: '1px solid var(--accent)',
                   display: 'flex',
                   alignItems: 'center',
@@ -985,7 +978,7 @@ export default function App() {
                 <h2 style={{
                   fontFamily: '"Cinzel", serif',
                   letterSpacing: '0.08em',
-                  color: '#fff',
+                  color: 'var(--text-primary)',
                   fontSize: '1.4rem',
                   marginBottom: '1rem',
                   textTransform: 'uppercase'
@@ -1005,8 +998,8 @@ export default function App() {
                   display: 'inline-flex',
                   alignItems: 'center',
                   padding: '0.5rem 1rem',
-                  background: 'rgba(212, 175, 55, 0.04)',
-                  border: '1px dashed rgba(212, 175, 55, 0.25)',
+                  background: 'rgba(184, 152, 108, 0.06)',
+                  border: '1px dashed rgba(184, 152, 108, 0.3)',
                   borderRadius: '4px',
                   fontSize: '0.78rem',
                   color: 'var(--accent)',
