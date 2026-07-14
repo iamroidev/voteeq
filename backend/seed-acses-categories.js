@@ -44,6 +44,7 @@ const ACSES_AWARD_CATEGORIES = [
   ['Artiste of the Year', 'Music, performance, or creative arts excellence'],
   ['Male Most Popular Student of the Year', 'Most popular male student of the year (General)'],
   ['Female Most Popular Student of the Year', 'Most popular female student of the year (General)'],
+  ['Sportswoman of the Year', 'Outstanding female athlete of the year (General)'],
 ];
 
 module.exports = { ACSES_AWARD_CATEGORIES };
