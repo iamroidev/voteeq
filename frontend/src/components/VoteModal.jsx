@@ -9,13 +9,8 @@ import { nomineePhotoSrc } from '../utils/photoUrl';
 export default function VoteModal({ nominee, onClose, onPaymentRedirect, triggerToast }) {
   const [voteCount, setVoteCount] = useState(10);
   const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const [numA, setNumA] = useState(() => Math.floor(2 + Math.random() * 8));
-  const [numB, setNumB] = useState(() => Math.floor(2 + Math.random() * 8));
-  const [captchaInput, setCaptchaInput] = useState('');
 
   const voteShortcuts = [5, 10, 25, 50, 100];
   const pricePerVote = parseFloat(BRANDING.votePriceOnlineGhs) || 1;
@@ -33,22 +28,12 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
       return;
     }
     const normalizedPhone = normalizeGhanaPhone(phone);
-    const emailError = getEmailError(email);
-    if (emailError) {
-      setError(emailError);
-      return;
-    }
-    const normalizedEmail = normalizeEmail(email);
+    
+    // Automatically generate a fallback email using the phone number for billing
+    const normalizedEmail = `voter-${normalizedPhone.replace(/\D/g, '')}@voteeq.online`;
+    
     if (isInvalidVotes) {
       setError('Please choose a valid whole number of votes (minimum 1)');
-      return;
-    }
-    const correctAnswer = numA + numB;
-    if (parseInt(captchaInput) !== correctAnswer) {
-      setError('Incorrect CAPTCHA verification answer. Please try again.');
-      setNumA(Math.floor(2 + Math.random() * 8));
-      setNumB(Math.floor(2 + Math.random() * 8));
-      setCaptchaInput('');
       return;
     }
 
@@ -63,7 +48,6 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
         },
         body: JSON.stringify({
           nomineeId: nominee.id,
-          email,
           phone: normalizedPhone,
           email: normalizedEmail,
           voteCount,
@@ -229,55 +213,6 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
               />
             </div>
 
-            {/* Invoice email */}
-            <div style={{ marginBottom: '2rem' }}>
-              <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
-                Email Address (Required for receipt)
-              </label>
-              <input
-                type="email"
-                required
-                placeholder="you@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="luxury-input"
-              />
-            </div>
-
-            {/* Anti-Bot Arithmetic Validation */}
-            <div style={{ marginBottom: '2rem' }}>
-              <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
-                Anti-Bot Verification
-              </label>
-              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                <div style={{
-                  padding: '0.6rem 1rem',
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '4px',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  fontFamily: 'monospace',
-                  letterSpacing: '0.05em',
-                  color: 'var(--text-primary)',
-                  userSelect: 'none'
-                }}>
-                  {numA} + {numB} =
-                </div>
-                <input
-                  type="text"
-                  required
-                  pattern="\d*"
-                  inputMode="numeric"
-                  placeholder="Answer"
-                  value={captchaInput}
-                  onChange={(e) => setCaptchaInput(e.target.value)}
-                  className="luxury-input"
-                  style={{ flex: 1, padding: '0.6rem 0.75rem' }}
-                />
-              </div>
-            </div>
-
             {/* Pricing Summary card */}
             <div
               className="vote-pricing-summary"
@@ -311,8 +246,8 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
 
             <button
               type="submit"
-              disabled={loading || isInvalidVotes || !phone || !email.trim()}
-              className={`luxury-btn ${(loading || isInvalidVotes || !phone || !email.trim()) ? 'disabled' : ''}`}
+              disabled={loading || isInvalidVotes || !phone}
+              className={`luxury-btn ${(loading || isInvalidVotes || !phone) ? 'disabled' : ''}`}
               style={{ width: '100%', padding: '1.1rem', fontSize: '0.8rem', letterSpacing: '0.15em' }}
             >
               {loading ? 'PROCESSING TRANSACTION...' : 'PROCEED TO SECURE CHECKOUT'}
