@@ -6,13 +6,14 @@ export default function RushPayWidgetModal({ paymentReference, widgetSessionToke
     const initWidget = () => {
       if (window.RushPayV2) {
         try {
+          const callbackUrl = `${window.location.origin}/#/payment-status?reference=${paymentReference}&token=${statusToken}`;
           window.RushPayV2.init({
             containerId: "rushpay-embedded-widget",
             paymentReference: paymentReference,
             widgetSessionToken: widgetSessionToken,
+            callbackUrl: callbackUrl,
             onCompleted: () => {
-              // Redirect to our standard status verification page upon payment success
-              window.location.href = `/#/payment-status?reference=${paymentReference}&token=${statusToken}`;
+              window.location.href = callbackUrl;
             },
             onClosed: () => {
               onClose();
