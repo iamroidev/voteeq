@@ -69,10 +69,18 @@ echo "==> Nginx site for api.voteeq.online..."
 NGINX_AVAIL=/etc/nginx/sites-available
 NGINX_ENABLED=/etc/nginx/sites-enabled
 if [ -d "$NGINX_AVAIL" ]; then
-  cp "$APP_DIR/deploy/nginx-api.voteeq.online.conf" "$NGINX_AVAIL/voteeq-api"
-  ln -sf "$NGINX_AVAIL/voteeq-api" "$NGINX_ENABLED/voteeq-api"
+  if [ ! -f "$NGINX_AVAIL/voteeq-api" ] || ! grep -q "443 ssl" "$NGINX_AVAIL/voteeq-api"; then
+    cp "$APP_DIR/deploy/nginx-api.voteeq.online.conf" "$NGINX_AVAIL/voteeq-api"
+    ln -sf "$NGINX_AVAIL/voteeq-api" "$NGINX_ENABLED/voteeq-api"
+  else
+    echo "Nginx config already has SSL configured. Skipping overwrite."
+  fi
 else
-  cp "$APP_DIR/deploy/nginx-api.voteeq.online.conf" /etc/nginx/conf.d/voteeq-api.conf
+  if [ ! -f /etc/nginx/conf.d/voteeq-api.conf ] || ! grep -q "443 ssl" /etc/nginx/conf.d/voteeq-api.conf; then
+    cp "$APP_DIR/deploy/nginx-api.voteeq.online.conf" /etc/nginx/conf.d/voteeq-api.conf
+  else
+    echo "Nginx config already has SSL configured. Skipping overwrite."
+  fi
 fi
 nginx -t
 systemctl enable nginx
