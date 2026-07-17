@@ -284,7 +284,7 @@ const DEFAULT_CORS_ORIGINS = [
   'https://frontend-roi-dev.vercel.app',
 ];
 const envOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+  ? process.env.CORS_ORIGIN.replace(/\r/g, '').split(',').map((s) => s.trim()).filter(Boolean)
   : [];
 const allowedOrigins = [...new Set([...DEFAULT_CORS_ORIGINS, ...envOrigins])];
 
