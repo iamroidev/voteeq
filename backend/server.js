@@ -1399,6 +1399,30 @@ app.get('/share/:code', async (req, res) => {
   }
 });
 
+// Proxy endpoint to load RushPay SDK bundle securely with X-API-Key header
+app.get('/api/payment/rushpay-widget.js', async (req, res) => {
+  try {
+    const apiKey = process.env.RUSHPAY_API_KEY;
+    if (!apiKey) {
+      return res.status(500).send('console.error("RUSHPAY_API_KEY is not configured on backend");');
+    }
+    const response = await fetch('https://core.rushpay.cash/widget/payment-widget-v2.js', {
+      headers: {
+        'X-API-Key': apiKey,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch widget script from RushPay: ${response.status}`);
+    }
+    const scriptText = await response.text();
+    res.setHeader('Content-Type', 'application/javascript');
+    res.send(scriptText);
+  } catch (err) {
+    console.error('Error proxying widget script:', err);
+    res.status(500).send('console.error("Failed to load RushPay widget script via backend proxy");');
+  }
+});
+
 // 5. Initialize RushPay Payment / Vote Purchase
 app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, res) => {
   const { nomineeId, email, phone, voteCount } = req.body;

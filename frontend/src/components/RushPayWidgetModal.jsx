@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 export default function RushPayWidgetModal({ paymentReference, widgetSessionToken, onClose, statusToken }) {
   useEffect(() => {
@@ -25,7 +26,7 @@ export default function RushPayWidgetModal({ paymentReference, widgetSessionToke
 
     if (!window.RushPayV2) {
       const script = document.createElement('script');
-      script.src = 'https://core.rushpay.cash/widget/v2.js';
+      script.src = `${API_BASE_URL}/api/payment/rushpay-widget.js`;
       script.async = true;
       script.onload = initWidget;
       document.body.appendChild(script);
