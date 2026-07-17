@@ -111,8 +111,7 @@ async function verifyRushPayTransaction(paymentReference) {
     throw new Error('RUSHPAY_API_KEY is not configured in .env file.');
   }
 
-  // We query the status of the payment reference
-  const url = `${RUSHPAY_API_BASE}/merchant/payments/status/${paymentReference}`;
+  const url = `${RUSHPAY_API_BASE}/merchant/payments/status?payment_reference=${encodeURIComponent(paymentReference)}`;
   const response = await fetch(url, {
     method: 'GET',
     headers: {
@@ -122,21 +121,7 @@ async function verifyRushPayTransaction(paymentReference) {
 
   const data = await response.json();
   if (!response.ok || !data.success) {
-    if (response.status === 404) {
-      // Fallback path check
-      const altUrl = `${RUSHPAY_API_BASE}/merchant/payments/${paymentReference}`;
-      const altResponse = await fetch(altUrl, {
-        method: 'GET',
-        headers: {
-          'X-API-Key': apiKey,
-        },
-      });
-      const altData = await altResponse.json();
-      if (altResponse.ok && altData.success) {
-        return altData.data;
-      }
-    }
-    throw new Error(data.error || 'Failed to query payment status from RushPay');
+    throw new Error(data.error || data.message || 'Failed to query payment status from RushPay');
   }
 
   return data.data; // contains status
