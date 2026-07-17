@@ -39,7 +39,7 @@ const { createRateLimiter } = require('./rate-limiter');
 const { prepareProfilePhotoFromDataUrl, buildProfilePhotoUrl } = require('./profile-photo');
 const { validateGhanaPhone, getMomoProvider } = require('./phone');
 const { createRushPayPayment, createRushPayWidgetSession, verifyRushPayWebhook, verifyRushPayTransaction } = require('./rushpay');
-const { initializePaystackTransaction, verifyPaystackTransaction, verifyPaystackWebhook } = require('./paystack');
+const { initializePaystackTransaction, verifyPaystackTransaction, verifyPaystackWebhook, chargeMobileMoney } = require('./paystack');
 const { sendSMS } = require('./sms');
 
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
@@ -2630,6 +2630,146 @@ Date/Time: ${new Date().toISOString()}
       action: 'release',
       message: 'System error. Please try again later.'
     });
+  }
+});
+
+
+// 7. Arkesel USSD Callback Route
+app.post('/api/ussd/arkesel', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
+  const { sessionID, userID, newSession, msisdn, userData, network } = req.body;
+
+  if (!sessionID || !msisdn) {
+    return res.status(400).json({ error: 'Missing sessionID or msisdn' });
+  }
+
+  const phone = msisdn;
+  const input = userData ? userData.trim() : '';
+
+  const respond = (message, continueSession) => {
+    return res.json({
+      sessionID,
+      userID: userID || 'voteeq',
+      msisdn,
+      message: (continueSession ? 'CON ' : 'END ') + message,
+      continueSession
+    });
+  };
+
+  try {
+    const db = getDB();
+
+    // 1. Initial Dial
+    if (newSession === true || newSession === 'true' || !ussdSessions.has(sessionID)) {
+      ussdSessions.set(sessionID, {
+        state: 'AWAITING_CODE',
+        phone
+      });
+      return respond('Welcome to VoteEQ.\nPlease enter the Nominee Code (e.g. ACT001):', true);
+    }
+
+    const session = ussdSessions.get(sessionID);
+    if (!session) {
+      return respond('Session timeout. Please redial.', false);
+    }
+
+    // 2. Awaiting Code step
+    if (session.state === 'AWAITING_CODE') {
+      if (!input) {
+        return respond('Nominee code cannot be empty. Please enter Nominee Code:', true);
+      }
+      
+      const nominee = await db.get('SELECT * FROM nominees WHERE UPPER(code) = ?', [input.toUpperCase()]);
+      if (!nominee) {
+        return respond(`Nominee not found for code "${input}".\nPlease enter a valid Nominee Code:`, true);
+      }
+
+      session.state = 'AWAITING_VOTES';
+      session.nomineeId = nominee.id;
+      session.nomineeName = nominee.name;
+      session.nomineeCode = nominee.code;
+      ussdSessions.set(sessionID, session);
+
+      return respond(`Voting for ${nominee.name}.\n1 vote = GH₵ 1.00.\nEnter number of votes:`, true);
+    }
+
+    // 3. Awaiting Vote Count step
+    if (session.state === 'AWAITING_VOTES') {
+      const parsedVotes = parseInt(input, 10);
+      if (isNaN(parsedVotes) || parsedVotes <= 0) {
+        return respond('Invalid input. Enter number of votes (e.g. 5):', true);
+      }
+
+      const totalGhs = parsedVotes * 1.00;
+      session.state = 'AWAITING_CONFIRMATION';
+      session.voteCount = parsedVotes;
+      session.totalGhs = totalGhs;
+      ussdSessions.set(sessionID, session);
+
+      return respond(`Confirm GHS ${totalGhs} for ${parsedVotes} vote(s) to ${session.nomineeName}.\n1. Confirm\n2. Cancel`, true);
+    }
+
+    // 4. Awaiting Confirmation step
+    if (session.state === 'AWAITING_CONFIRMATION') {
+      ussdSessions.delete(sessionID);
+
+      if (input === '1') {
+        const reference = generateReference('uv');
+        const statusToken = generateStatusToken(reference);
+        const amountMinor = session.voteCount * 100; // GHS * 100 (pesewas)
+
+        // Save pending vote
+        await db.run(`
+          INSERT INTO votes (nominee_id, voter_phone, email, vote_count, channel, payment_reference, status, amount_base, amount_fee, amount_paid)
+          VALUES (?, ?, ?, ?, 'ussd', ?, 'pending', ?, 0, ?)
+        `, [
+          session.nomineeId,
+          phone,
+          `voter-${phone.replace(/\D/g, '')}@voteeq.online`,
+          session.voteCount,
+          reference,
+          session.totalGhs,
+          session.totalGhs
+        ]);
+
+        // Trigger Mobile Money charge via Paystack in the background
+        runInBackground(async () => {
+          try {
+            const rawProvider = getMomoProvider(phone);
+            const provider = rawProvider === 'tgo' ? 'atl' : rawProvider;
+            const secretKey = process.env.PAYSTACK_SECRET_KEY;
+            if (!secretKey) {
+              console.error('PAYSTACK_SECRET_KEY is missing for USSD charge');
+              return;
+            }
+            await chargeMobileMoney({
+              secretKey,
+              email: `voter-${phone.replace(/\D/g, '')}@voteeq.online`,
+              amountMinor,
+              reference,
+              phone: phone.replace(/^\+/, '').replace(/^233/, '0'), // convert to local format (024...)
+              provider
+            });
+            console.log(`USSD MoMo charge triggered for reference: ${reference} (${provider})`);
+          } catch (err) {
+            console.error('Failed to trigger USSD MoMo charge:', err);
+            await db.run("UPDATE votes SET status = 'failed' WHERE payment_reference = ?", [reference]);
+          }
+        });
+
+        return respond('A prompt has been sent to your phone. Enter your PIN to complete payment. Thank you!', false);
+      } else {
+        return respond('Voting cancelled. Thank you.', false);
+      }
+    }
+
+    // Fallback
+    ussdSessions.delete(sessionID);
+    return respond('Invalid choice. Session closed.', false);
+
+  } catch (err) {
+    console.error('Arkesel USSD Error:', err);
+    ussdSessions.delete(sessionID);
+    return respond('System error. Please try again later.', false);
   }
 });
 
