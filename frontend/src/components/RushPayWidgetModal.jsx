@@ -12,6 +12,7 @@ export default function RushPayWidgetModal({ paymentReference, widgetSessionToke
             paymentReference: paymentReference,
             widgetSessionToken: widgetSessionToken,
             callbackUrl: callbackUrl,
+            apiBase: "https://core.rushpay.cash",
             onCompleted: () => {
               window.location.href = callbackUrl;
             },
