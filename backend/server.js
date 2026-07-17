@@ -39,6 +39,7 @@ const { createRateLimiter } = require('./rate-limiter');
 const { prepareProfilePhotoFromDataUrl, buildProfilePhotoUrl } = require('./profile-photo');
 const { validateGhanaPhone, getMomoProvider } = require('./phone');
 const { createRushPayPayment, createRushPayWidgetSession, verifyRushPayWebhook, verifyRushPayTransaction } = require('./rushpay');
+const { initializePaystackTransaction, verifyPaystackTransaction, verifyPaystackWebhook } = require('./paystack');
 const { sendSMS } = require('./sms');
 
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
@@ -1438,8 +1439,9 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
   const mockRef = generateReference('v');
   const statusToken = generateStatusToken(mockRef);
   const rushpayApiKey = process.env.RUSHPAY_API_KEY;
+  const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
 
-  if (isProduction() && !rushpayApiKey) {
+  if (isProduction() && !rushpayApiKey && !paystackSecret) {
     return res.status(503).json({ error: 'Vote payments are not configured yet. Please try again later.' });
   }
 
@@ -1460,7 +1462,53 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
       return res.status(404).json({ error: 'Nominee not found' });
     }
 
-    if (rushpayApiKey) {
+    if (paystackSecret) {
+      try {
+        const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
+        const paystackData = await initializePaystackTransaction({
+          secretKey: paystackSecret,
+          email: normalizedEmail,
+          amountMinor: pricing.amountMinor,
+          reference: mockRef,
+          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          metadata: {
+            type: 'vote',
+            nomineeId,
+            voteCount: parsedVoteCount,
+            phone: phoneCheck.normalized,
+            email: normalizedEmail
+          }
+        });
+
+        await db.run(`
+          INSERT INTO votes (nominee_id, voter_phone, email, vote_count, channel, payment_reference, status, amount_base, amount_fee, amount_paid)
+          VALUES (?, ?, ?, ?, 'web', ?, 'pending', ?, ?, ?)
+        `, [
+          nomineeId,
+          phoneCheck.normalized,
+          normalizedEmail,
+          parsedVoteCount,
+          mockRef,
+          pricing.baseAmount,
+          pricing.processingFee,
+          pricing.totalDue,
+        ]);
+
+        return res.json({
+          reference: mockRef,
+          statusToken,
+          authorization_url: paystackData.authorization_url,
+          isMock: false,
+          pricing,
+          amount: pricing.totalDue,
+          votes: parsedVoteCount,
+          nominee: nominee.name,
+        });
+      } catch (paystackErr) {
+        console.error('Paystack vote init error:', paystackErr);
+        return res.status(400).json({ error: paystackErr.message || 'Paystack initialization failed' });
+      }
+    } else if (rushpayApiKey) {
       try {
         const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
         
@@ -1549,24 +1597,94 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
 // 6. RushPay Webhook (Verify/Complete Payment)
 app.post('/api/payment/webhook', rateLimiter(1 * 60 * 1000, 100), async (req, res) => {
   const signature = req.headers['x-rushpay-signature'] || req.headers['x-signature'];
+  const paystackSignature = req.headers['x-paystack-signature'];
   const rushpayApiKey = process.env.RUSHPAY_API_KEY;
+  const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
 
   if (isProduction()) {
-    if (!signature) {
-      return res.status(401).send('Missing RushPay signature header');
-    }
-    if (!verifyRushPayWebhook(req, signature)) {
-      console.warn('Invalid webhook signature attempt');
-      return res.status(401).send('Invalid signature');
+    if (paystackSignature) {
+      if (!verifyPaystackWebhook(req, paystackSignature)) {
+        console.warn('Invalid Paystack webhook signature attempt');
+        return res.status(401).send('Invalid signature');
+      }
+    } else if (signature) {
+      if (!verifyRushPayWebhook(req, signature)) {
+        console.warn('Invalid RushPay webhook signature attempt');
+        return res.status(401).send('Invalid signature');
+      }
+    } else {
+      return res.status(401).send('Missing signature header');
     }
   }
 
   const event = req.body;
-  if (!event || !event.event) {
+  if (!event) {
     return res.status(400).send('Invalid webhook payload');
   }
 
-  // Handle payment.completed
+  // 1. Process Paystack Webhook
+  if (paystackSignature) {
+    if (event.event === 'charge.success') {
+      const data = event.data;
+      const reference = data.reference;
+      if (!reference) {
+        return res.status(400).send('Missing payment reference');
+      }
+
+      try {
+        const db = getDB();
+        // Check votes
+        const voteRow = await db.get('SELECT id FROM votes WHERE payment_reference = ?', [reference]);
+        if (voteRow) {
+          const voteResult = await completeVotePayment(db, reference);
+          if (voteResult.outcome === 'completed') {
+            console.log(`Payment confirmed! Added ${voteResult.votesAdded} votes for nominee ID ${voteResult.nomineeId}`);
+            runInBackground(() => sendVoteReceipt(voteResult.vote.id));
+            broadcast({
+              type: 'VOTE_COMPLETED',
+              nomineeId: voteResult.nomineeId,
+              votesCount: voteResult.votesAdded,
+            });
+          }
+          return res.status(200).send('Webhook processed successfully');
+        }
+
+        // Check tickets
+        const ticketRow = await db.get('SELECT id FROM tickets WHERE payment_reference = ?', [reference]);
+        if (ticketRow) {
+          const result = await completeTicketPayment(db, reference);
+          if (result.outcome === 'completed') {
+            console.log(`Ticket payment confirmed for reference: ${reference}`);
+            runInBackground(() => sendTicketReceipt(result.ticket.id));
+          }
+          return res.status(200).send('Webhook processed successfully');
+        }
+
+        // Check registration form
+        const regRow = await db.get('SELECT id FROM nominee_registrations WHERE payment_reference = ?', [reference]);
+        if (regRow) {
+          const result = await completeRegistrationPayment(db, reference);
+          if (result.outcome === 'completed') {
+            console.log(`Registration Form payment confirmed for reference: ${reference}`);
+          }
+          return res.status(200).send('Webhook processed successfully');
+        }
+
+        console.warn(`Unmatched transaction reference in Paystack webhook: ${reference}`);
+        return res.status(404).send('Reference not found');
+      } catch (err) {
+        console.error('Webhook DB Error:', err);
+        return res.status(500).send('Database error inside webhook handler');
+      }
+    }
+    return res.status(200).send('Unhandled Paystack event');
+  }
+
+  // 2. Process RushPay Webhook
+  if (!event.event) {
+    return res.status(400).send('Invalid webhook payload');
+  }
+
   if (event.event === 'payment.completed') {
     const data = event.data;
     const reference = data.payment_reference;
@@ -2593,75 +2711,91 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
       return res.status(404).json({ error: 'Payment reference not found' });
     }
 
+    const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
     const rushpayApiKey = process.env.RUSHPAY_API_KEY;
-    if (rushpayApiKey && (status === 'pending' || status === 'processing')) {
+    let isVerified = false;
+
+    if (paystackSecret && (status === 'pending' || status === 'processing')) {
+      try {
+        const verified = await verifyPaystackTransaction(paystackSecret, reference);
+        if (verified && verified.ok) {
+          isVerified = true;
+        }
+      } catch (verifyErr) {
+        console.warn(`Paystack verify on status check (${reference}):`, verifyErr.message);
+      }
+    } else if (rushpayApiKey && (status === 'pending' || status === 'processing')) {
       try {
         const verified = await verifyRushPayTransaction(reference);
         if (verified && (verified.status === 'completed' || verified.status === 'success' || verified.status === 'paid')) {
-          if (type === 'vote') {
-            const voteResult = await completeVotePayment(db, reference);
-            if (voteResult.outcome === 'completed') {
-              runInBackground(() => sendVoteReceipt(voteResult.vote.id));
-              broadcast({
-                type: 'VOTE_COMPLETED',
-                nomineeId: voteResult.nomineeId,
-                votesCount: voteResult.votesAdded,
-              });
-            }
-            const freshVote = await db.get(`
-              SELECT v.*, n.name as nominee_name
-              FROM votes v
-              JOIN nominees n ON v.nominee_id = n.id
-              WHERE v.payment_reference = ?
-            `, [reference]);
-            if (freshVote) {
-              status = freshVote.status;
-              details = {
-                nominee_name: freshVote.nominee_name,
-                vote_count: freshVote.vote_count,
-                amount: freshVote.amount_paid != null
-                  ? freshVote.amount_paid
-                  : (freshVote.channel === 'web' ? freshVote.vote_count * 1.0 : freshVote.vote_count * 0.5),
-                amount_base: freshVote.amount_base,
-                amount_fee: freshVote.amount_fee,
-                timestamp: freshVote.created_at,
-                email: freshVote.email,
-                phone: freshVote.voter_phone,
-              };
-            }
-          } else if (type === 'ticket') {
-            const ticketResult = await completeTicketPayment(db, reference);
-            if (ticketResult.outcome === 'completed') {
-              runInBackground(() => sendTicketReceipt(ticketResult.ticket.id));
-            }
-            const freshTicket = await db.get(`
-              SELECT t.*, e.title as event_title
-              FROM tickets t
-              JOIN events e ON t.event_id = e.id
-              WHERE t.payment_reference = ?
-            `, [reference]);
-            if (freshTicket) {
-              status = freshTicket.payment_status === 'paid' ? 'completed' : freshTicket.payment_status;
-              details = {
-                event_title: freshTicket.event_title,
-                buyer_name: freshTicket.buyer_name,
-                quantity: freshTicket.quantity,
-                amount: freshTicket.price_paid,
-                timestamp: freshTicket.created_at,
-                ticket_code: freshTicket.ticket_code,
-                email: freshTicket.buyer_email,
-                phone: freshTicket.buyer_phone,
-              };
-            }
-          } else if (type === 'nominee_registration') {
-            const regResult = await completeRegistrationPayment(db, reference);
-            if (regResult.outcome === 'completed') {
-              status = 'completed';
-            }
-          }
+          isVerified = true;
         }
       } catch (verifyErr) {
         console.warn(`RushPay verify on status check (${reference}):`, verifyErr.message);
+      }
+    }
+
+    if (isVerified) {
+      if (type === 'vote') {
+        const voteResult = await completeVotePayment(db, reference);
+        if (voteResult.outcome === 'completed') {
+          runInBackground(() => sendVoteReceipt(voteResult.vote.id));
+          broadcast({
+            type: 'VOTE_COMPLETED',
+            nomineeId: voteResult.nomineeId,
+            votesCount: voteResult.votesAdded,
+          });
+        }
+        const freshVote = await db.get(`
+          SELECT v.*, n.name as nominee_name
+          FROM votes v
+          JOIN nominees n ON v.nominee_id = n.id
+          WHERE v.payment_reference = ?
+        `, [reference]);
+        if (freshVote) {
+          status = freshVote.status;
+          details = {
+            nominee_name: freshVote.nominee_name,
+            vote_count: freshVote.vote_count,
+            amount: freshVote.amount_paid != null
+              ? freshVote.amount_paid
+              : (freshVote.channel === 'web' ? freshVote.vote_count * 1.0 : freshVote.vote_count * 0.5),
+            amount_base: freshVote.amount_base,
+            amount_fee: freshVote.amount_fee,
+            timestamp: freshVote.created_at,
+            email: freshVote.email,
+            phone: freshVote.voter_phone,
+          };
+        }
+      } else if (type === 'ticket') {
+        const ticketResult = await completeTicketPayment(db, reference);
+        if (ticketResult.outcome === 'completed') {
+          runInBackground(() => sendTicketReceipt(ticketResult.ticket.id));
+        }
+        const freshTicket = await db.get(`
+          SELECT t.*, e.title as event_title
+          FROM tickets t
+          JOIN events e ON t.event_id = e.id
+          WHERE t.payment_reference = ?
+        `, [reference]);
+        if (freshTicket) {
+          status = freshTicket.payment_status === 'paid' ? 'completed' : freshTicket.payment_status;
+          details = {
+            event_title: freshTicket.event_title,
+            buyer_name: freshTicket.buyer_name,
+            quantity: freshTicket.quantity,
+            amount: freshTicket.price_paid,
+            timestamp: freshTicket.created_at,
+            ticket_code: freshTicket.ticket_code,
+            email: freshTicket.buyer_email,
+            phone: freshTicket.buyer_phone,
+          };
+        }
+      } else if (type === 'nominee_registration') {
+        const regResult = await completeRegistrationPayment(db, reference);
+        if (regResult.outcome === 'completed') {
+          status = 'completed';
+        }
       }
     }
 

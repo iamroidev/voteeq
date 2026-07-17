@@ -480,6 +480,8 @@ export default function App() {
     setActiveVoteNominee(null);
     if (data.isMock) {
       setCheckoutData(data);
+    } else if (data.authorization_url) {
+      window.location.href = data.authorization_url;
     } else {
       setRushPayData(data);
     }

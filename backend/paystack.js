@@ -159,9 +159,19 @@ async function chargeMobileMoney({
   return parsed.data;
 }
 
+function verifyPaystackWebhook(req, signatureHeader) {
+  const crypto = require('crypto');
+  const secretKey = process.env.PAYSTACK_SECRET_KEY;
+  if (!secretKey) return false;
+  const rawBody = req.rawBody ? req.rawBody.toString('utf8') : '';
+  const hash = crypto.createHmac('sha512', secretKey).update(rawBody).digest('hex');
+  return hash === signatureHeader;
+}
+
 module.exports = {
   initializePaystackTransaction,
   verifyPaystackTransaction,
   chargeMobileMoney,
+  verifyPaystackWebhook,
 };
 
