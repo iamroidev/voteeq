@@ -2444,35 +2444,60 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
 
         ussdSessions.delete(sessionID);
 
-        // Always run simulation for developer console dialer USSD
-        setTimeout(async () => {
-          try {
-            const db = getDB();
-            const voteRecord = await db.get('SELECT * FROM votes WHERE payment_reference = ?', [reference]);
-            if (voteRecord && voteRecord.status === 'pending') {
-              await db.run('UPDATE votes SET status = ? WHERE id = ?', ['completed', voteRecord.id]);
-              await db.run(
-                'UPDATE nominees SET votes_count = votes_count + ? WHERE id = ?',
-                [voteRecord.vote_count, voteRecord.nominee_id]
-              );
-              console.log(`USSD payment simulation completed for ref: ${reference}`);
-              await sendVoteReceipt(voteRecord.id);
-              broadcast({
-                type: 'VOTE_COMPLETED',
-                nomineeId: voteRecord.nominee_id,
-                votesCount: voteRecord.vote_count
+        const secretKey = process.env.PAYSTACK_SECRET_KEY;
+
+        if (isProduction() && secretKey) {
+          // Trigger actual Paystack direct MoMo charge
+          runInBackground(async () => {
+            try {
+              const rawProvider = getMomoProvider(session.phone);
+              const provider = rawProvider === 'tgo' ? 'atl' : rawProvider;
+              const amountMinor = session.voteCount * 50; // 0.50 GHS per vote = 50 minor units
+              const cleanPhone = session.phone.replace(/^\+/, '').replace(/^233/, '0');
+              
+              await chargeMobileMoney({
+                secretKey,
+                email: `voter-${cleanPhone}@voteeq.online`,
+                amountMinor,
+                reference,
+                phone: cleanPhone,
+                provider
               });
+              console.log(`Actual USSD MoMo charge triggered for reference: ${reference} (${provider})`);
+            } catch (err) {
+              console.error('Failed to trigger actual USSD MoMo charge:', err);
+              await db.run('UPDATE votes SET status = ? WHERE payment_reference = ?', ['failed', reference]);
             }
-          } catch (err) {
-            console.error('USSD timeout mock process error:', err);
-          }
-        }, 3000);
+          });
+        } else {
+          // Run simulation for local development / mock dialer
+          setTimeout(async () => {
+            try {
+              const db = getDB();
+              const voteRecord = await db.get('SELECT * FROM votes WHERE payment_reference = ?', [reference]);
+              if (voteRecord && voteRecord.status === 'pending') {
+                await db.run('UPDATE votes SET status = ? WHERE id = ?', ['completed', voteRecord.id]);
+                await db.run(
+                  'UPDATE nominees SET votes_count = votes_count + ? WHERE id = ?',
+                  [voteRecord.vote_count, voteRecord.nominee_id]
+                );
+                console.log(`USSD payment simulation completed for ref: ${reference}`);
+                await sendVoteReceipt(voteRecord.id);
+                broadcast({
+                  type: 'VOTE_COMPLETED',
+                  nomineeId: voteRecord.nominee_id,
+                  votesCount: voteRecord.vote_count
+                });
+              }
+            } catch (err) {
+              console.error('USSD timeout mock process error:', err);
+            }
+          }, 3000);
+        }
 
         return res.json({
           action: 'release',
-          message: mockPaymentsAllowed()
-            ? 'Payment prompt sent. Approve MoMo transaction on your phone to complete voting. Thank you!'
-            : 'Payment request submitted. Complete MoMo approval on your phone to finish voting.'
+          message: 'Payment prompt sent. Approve MoMo transaction on your phone to complete voting. Thank you!'
         });
 
       } else {
@@ -2567,17 +2592,43 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
 
         ussdSessions.delete(sessionID);
 
-        // Always run simulation for developer console dialer USSD
-        setTimeout(async () => {
-          try {
-            const db = getDB();
-            const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
-            if (ticketRecord && ticketRecord.payment_status === 'pending') {
-              await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
-              await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
-              console.log(`USSD ticket payment simulation completed for ref: ${reference}`);
-              const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
-              const logMsg = `
+        const secretKey = process.env.PAYSTACK_SECRET_KEY;
+
+        if (isProduction() && secretKey) {
+          // Trigger actual Paystack direct MoMo charge for tickets
+          runInBackground(async () => {
+            try {
+              const rawProvider = getMomoProvider(session.phone);
+              const provider = rawProvider === 'tgo' ? 'atl' : rawProvider;
+              const amountMinor = totalPrice * 100; // totalPrice is in GHS, minor is GHS * 100
+              const cleanPhone = session.phone.replace(/^\+/, '').replace(/^233/, '0');
+
+              await chargeMobileMoney({
+                secretKey,
+                email: `buyer-${cleanPhone}@voteeq.online`,
+                amountMinor,
+                reference,
+                phone: cleanPhone,
+                provider
+              });
+              console.log(`Actual USSD Ticket MoMo charge triggered for reference: ${reference} (${provider})`);
+            } catch (err) {
+              console.error('Failed to trigger actual USSD Ticket MoMo charge:', err);
+              await db.run("UPDATE tickets SET payment_status = 'failed' WHERE payment_reference = ?", [reference]);
+            }
+          });
+        } else {
+          // Run simulation for local development / mock dialer
+          setTimeout(async () => {
+            try {
+              const db = getDB();
+              const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
+              if (ticketRecord && ticketRecord.payment_status === 'pending') {
+                await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
+                await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
+                console.log(`USSD ticket payment simulation completed for ref: ${reference}`);
+                const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
+                const logMsg = `
 ========================================
 SMS/EMAIL TICKET RECEIPT (USSD MOCK)
 Ticket ID: TIX_${ticketRecord.id}_${ticketRecord.ticket_code}
@@ -2593,18 +2644,17 @@ Status: Completed
 Date/Time: ${new Date().toISOString()}
 ========================================
 \n`;
-              fs.appendFileSync(receiptsLogPath, logMsg);
+                fs.appendFileSync(receiptsLogPath, logMsg);
+              }
+            } catch (err) {
+              console.error('USSD ticket timeout mock error:', err);
             }
-          } catch (err) {
-            console.error('USSD ticket timeout mock error:', err);
-          }
-        }, 3000);
+          }, 3000);
+        }
 
         return res.json({
           action: 'release',
-          message: mockPaymentsAllowed()
-            ? 'Payment prompt sent. Approve MoMo transaction on your phone to complete purchase. Thank you!'
-            : 'Payment request submitted. Complete MoMo approval on your phone to finish your purchase.'
+          message: 'Payment prompt sent. Approve MoMo transaction on your phone to complete purchase. Thank you!'
         });
 
       } else {
@@ -2630,146 +2680,6 @@ Date/Time: ${new Date().toISOString()}
       action: 'release',
       message: 'System error. Please try again later.'
     });
-  }
-});
-
-
-// 7. Arkesel USSD Callback Route
-app.post('/api/ussd/arkesel', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
-  const { sessionID, userID, newSession, msisdn, userData, network } = req.body;
-
-  if (!sessionID || !msisdn) {
-    return res.status(400).json({ error: 'Missing sessionID or msisdn' });
-  }
-
-  const phone = msisdn;
-  const input = userData ? userData.trim() : '';
-
-  const respond = (message, continueSession) => {
-    return res.json({
-      sessionID,
-      userID: userID || 'voteeq',
-      msisdn,
-      message: (continueSession ? 'CON ' : 'END ') + message,
-      continueSession
-    });
-  };
-
-  try {
-    const db = getDB();
-
-    // 1. Initial Dial
-    if (newSession === true || newSession === 'true' || !ussdSessions.has(sessionID)) {
-      ussdSessions.set(sessionID, {
-        state: 'AWAITING_CODE',
-        phone
-      });
-      return respond('Welcome to VoteEQ.\nPlease enter the Nominee Code (e.g. ACT001):', true);
-    }
-
-    const session = ussdSessions.get(sessionID);
-    if (!session) {
-      return respond('Session timeout. Please redial.', false);
-    }
-
-    // 2. Awaiting Code step
-    if (session.state === 'AWAITING_CODE') {
-      if (!input) {
-        return respond('Nominee code cannot be empty. Please enter Nominee Code:', true);
-      }
-      
-      const nominee = await db.get('SELECT * FROM nominees WHERE UPPER(code) = ?', [input.toUpperCase()]);
-      if (!nominee) {
-        return respond(`Nominee not found for code "${input}".\nPlease enter a valid Nominee Code:`, true);
-      }
-
-      session.state = 'AWAITING_VOTES';
-      session.nomineeId = nominee.id;
-      session.nomineeName = nominee.name;
-      session.nomineeCode = nominee.code;
-      ussdSessions.set(sessionID, session);
-
-      return respond(`Voting for ${nominee.name}.\n1 vote = GH₵ 1.00.\nEnter number of votes:`, true);
-    }
-
-    // 3. Awaiting Vote Count step
-    if (session.state === 'AWAITING_VOTES') {
-      const parsedVotes = parseInt(input, 10);
-      if (isNaN(parsedVotes) || parsedVotes <= 0) {
-        return respond('Invalid input. Enter number of votes (e.g. 5):', true);
-      }
-
-      const totalGhs = parsedVotes * 1.00;
-      session.state = 'AWAITING_CONFIRMATION';
-      session.voteCount = parsedVotes;
-      session.totalGhs = totalGhs;
-      ussdSessions.set(sessionID, session);
-
-      return respond(`Confirm GHS ${totalGhs} for ${parsedVotes} vote(s) to ${session.nomineeName}.\n1. Confirm\n2. Cancel`, true);
-    }
-
-    // 4. Awaiting Confirmation step
-    if (session.state === 'AWAITING_CONFIRMATION') {
-      ussdSessions.delete(sessionID);
-
-      if (input === '1') {
-        const reference = generateReference('uv');
-        const statusToken = generateStatusToken(reference);
-        const amountMinor = session.voteCount * 100; // GHS * 100 (pesewas)
-
-        // Save pending vote
-        await db.run(`
-          INSERT INTO votes (nominee_id, voter_phone, email, vote_count, channel, payment_reference, status, amount_base, amount_fee, amount_paid)
-          VALUES (?, ?, ?, ?, 'ussd', ?, 'pending', ?, 0, ?)
-        `, [
-          session.nomineeId,
-          phone,
-          `voter-${phone.replace(/\D/g, '')}@voteeq.online`,
-          session.voteCount,
-          reference,
-          session.totalGhs,
-          session.totalGhs
-        ]);
-
-        // Trigger Mobile Money charge via Paystack in the background
-        runInBackground(async () => {
-          try {
-            const rawProvider = getMomoProvider(phone);
-            const provider = rawProvider === 'tgo' ? 'atl' : rawProvider;
-            const secretKey = process.env.PAYSTACK_SECRET_KEY;
-            if (!secretKey) {
-              console.error('PAYSTACK_SECRET_KEY is missing for USSD charge');
-              return;
-            }
-            await chargeMobileMoney({
-              secretKey,
-              email: `voter-${phone.replace(/\D/g, '')}@voteeq.online`,
-              amountMinor,
-              reference,
-              phone: phone.replace(/^\+/, '').replace(/^233/, '0'), // convert to local format (024...)
-              provider
-            });
-            console.log(`USSD MoMo charge triggered for reference: ${reference} (${provider})`);
-          } catch (err) {
-            console.error('Failed to trigger USSD MoMo charge:', err);
-            await db.run("UPDATE votes SET status = 'failed' WHERE payment_reference = ?", [reference]);
-          }
-        });
-
-        return respond('A prompt has been sent to your phone. Enter your PIN to complete payment. Thank you!', false);
-      } else {
-        return respond('Voting cancelled. Thank you.', false);
-      }
-    }
-
-    // Fallback
-    ussdSessions.delete(sessionID);
-    return respond('Invalid choice. Session closed.', false);
-
-  } catch (err) {
-    console.error('Arkesel USSD Error:', err);
-    ussdSessions.delete(sessionID);
-    return respond('System error. Please try again later.', false);
   }
 });
 
