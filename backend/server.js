@@ -38,7 +38,7 @@ const {
 const { createRateLimiter } = require('./rate-limiter');
 const { prepareProfilePhotoFromDataUrl, buildProfilePhotoUrl } = require('./profile-photo');
 const { validateGhanaPhone, getMomoProvider } = require('./phone');
-const { initializePaystackTransaction, verifyPaystackTransaction, chargeMobileMoney } = require('./paystack');
+const { createRushPayPayment, createRushPayWidgetSession, verifyRushPayWebhook, verifyRushPayTransaction } = require('./rushpay');
 const { sendSMS } = require('./sms');
 
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
@@ -661,8 +661,8 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
   }
   const normalizedBuyerEmail = normalizeEmail(buyer_email);
 
-  const secretKey = process.env.PAYSTACK_SECRET_KEY;
-  if (isProduction() && !secretKey) {
+  const rushpayApiKey = process.env.RUSHPAY_API_KEY;
+  if (isProduction() && !rushpayApiKey) {
     return res.status(503).json({ error: 'Ticket payments are not configured yet. Please try again later.' });
   }
 
@@ -683,61 +683,82 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     const ticketCode = `TIX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     const ticketPricing = calculatePaystackCheckout(event.ticket_price * qty);
     const totalPrice = ticketPricing.totalDue;
-    const reference = generateReference('tix');
-    const statusToken = generateStatusToken(reference);
-
-    await db.transaction(async (tx) => {
-      const capacity = await tx.get(
-        'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
-        [event_id]
-      );
-      if (!capacity || capacity.tickets_sold + qty > capacity.total_tickets) {
-        throw new Error('SOLD_OUT');
-      }
-      await tx.run(`
-        INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-      `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, reference]);
-    });
+    const mockRef = generateReference('tix');
+    const statusToken = generateStatusToken(mockRef);
 
     const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
 
-    if (!secretKey) {
+    if (rushpayApiKey) {
+      try {
+        // 1. Create RushPay payment
+        const rushpayData = await createRushPayPayment({
+          amount: totalPrice,
+          description: `Tickets for ${event.title} (${qty} x ticket)`,
+          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          metadata: {
+            type: 'ticket',
+            event_id,
+            quantity: qty,
+            phone: phoneCheck.normalized,
+            email: normalizedBuyerEmail
+          }
+        });
+
+        const paymentReference = rushpayData.payment_reference;
+
+        // 2. Create widget session token
+        const widgetSession = await createRushPayWidgetSession(paymentReference);
+        const widgetSessionToken = widgetSession.widget_session_token;
+
+        // 3. Save pending ticket using RushPay reference
+        await db.transaction(async (tx) => {
+          const capacity = await tx.get(
+            'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
+            [event_id]
+          );
+          if (!capacity || capacity.tickets_sold + qty > capacity.total_tickets) {
+            throw new Error('SOLD_OUT');
+          }
+          await tx.run(`
+            INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+          `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, paymentReference]);
+        });
+
+        return res.json({
+          paymentReference,
+          widgetSessionToken,
+          statusToken,
+          isMock: false,
+          pricing: ticketPricing,
+        });
+      } catch (rushpayErr) {
+        console.error('RushPay ticket init error:', rushpayErr);
+        return res.status(400).json({ error: rushpayErr.message || 'RushPay initialization failed' });
+      }
+    } else {
+      // Mock payment details
+      await db.transaction(async (tx) => {
+        const capacity = await tx.get(
+          'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
+          [event_id]
+        );
+        if (!capacity || capacity.tickets_sold + qty > capacity.total_tickets) {
+          throw new Error('SOLD_OUT');
+        }
+        await tx.run(`
+          INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, mockRef]);
+      });
+
       return res.json({
-        reference,
+        reference: mockRef,
         statusToken,
-        authorization_url: `/mock-paystack-checkout?reference=${reference}&statusToken=${statusToken}&amount=${totalPrice}&event=${encodeURIComponent(event.title)}&quantity=${qty}&isTicket=true`,
+        authorization_url: `/mock-paystack-checkout?reference=${mockRef}&statusToken=${statusToken}&amount=${totalPrice}&event=${encodeURIComponent(event.title)}&quantity=${qty}&isTicket=true`,
         isMock: true,
         pricing: ticketPricing,
       });
-    }
-
-    try {
-      const paystackData = await initializePaystackTransaction({
-        secretKey,
-        email: normalizedBuyerEmail,
-        amountMinor: ticketPricing.amountMinor,
-        reference,
-        callbackUrl: `${frontendBase}/payment-status?token=${statusToken}&reference=${encodeURIComponent(reference)}`,
-        metadata: {
-          type: 'ticket',
-          event_id,
-          quantity: qty,
-          phone: phoneCheck.normalized,
-        },
-      });
-
-      return res.json({
-        reference,
-        statusToken,
-        authorization_url: paystackData.authorization_url,
-        access_code: paystackData.access_code,
-        isMock: false,
-        pricing: ticketPricing,
-      });
-    } catch (paystackErr) {
-      console.error('Paystack ticket init error:', paystackErr);
-      return res.status(400).json({ error: paystackErr.message || 'Paystack initialization failed' });
     }
   } catch (err) {
     if (err.message === 'SOLD_OUT') {
@@ -1378,7 +1399,7 @@ app.get('/share/:code', async (req, res) => {
   }
 });
 
-// 5. Initialize Paystack Payment / Vote Purchase
+// 5. Initialize RushPay Payment / Vote Purchase
 app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, res) => {
   const { nomineeId, email, phone, voteCount } = req.body;
 
@@ -1387,15 +1408,14 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
     return res.status(400).json({ error: `Invalid nomination id or vote count (max ${MAX_VOTES_PER_TRANSACTION})` });
   }
 
-  const amountPerVote = 1; // 1 GHS per vote (base, before Paystack fee pass-through)
+  const amountPerVote = 1; // 1 GHS per vote
   const pricing = calculatePaystackCheckout(amountPerVote * parsedVoteCount);
-  const amountMinor = pricing.amountMinor;
 
-  const reference = generateReference('v');
-  const statusToken = generateStatusToken(reference);
-  const secretKey = process.env.PAYSTACK_SECRET_KEY;
+  const mockRef = generateReference('v');
+  const statusToken = generateStatusToken(mockRef);
+  const rushpayApiKey = process.env.RUSHPAY_API_KEY;
 
-  if (isProduction() && !secretKey) {
+  if (isProduction() && !rushpayApiKey) {
     return res.status(503).json({ error: 'Vote payments are not configured yet. Please try again later.' });
   }
 
@@ -1405,7 +1425,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
   }
 
   if (!isValidEmail(email)) {
-    return res.status(400).json({ error: 'A valid email is required to send your vote receipt.' });
+    return res.status(400).json({ error: 'A valid email is required.' });
   }
   const normalizedEmail = normalizeEmail(email);
 
@@ -1416,58 +1436,79 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
       return res.status(404).json({ error: 'Nominee not found' });
     }
 
-    await db.run(`
-      INSERT INTO votes (nominee_id, voter_phone, email, vote_count, channel, payment_reference, status, amount_base, amount_fee, amount_paid)
-      VALUES (?, ?, ?, ?, 'web', ?, 'pending', ?, ?, ?)
-    `, [
-      nomineeId,
-      phoneCheck.normalized,
-      normalizedEmail,
-      parsedVoteCount,
-      reference,
-      pricing.baseAmount,
-      pricing.processingFee,
-      pricing.totalDue,
-    ]);
-
-    const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
-
-    if (secretKey) {
+    if (rushpayApiKey) {
       try {
-        const paystackData = await initializePaystackTransaction({
-          secretKey,
-          email: normalizedEmail,
-          amountMinor,
-          reference,
-          callbackUrl: `${frontendBase}/payment-status?token=${statusToken}&reference=${encodeURIComponent(reference)}`,
+        const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
+        
+        // 1. Create RushPay payment
+        const rushpayData = await createRushPayPayment({
+          amount: pricing.totalDue,
+          description: `Votes for ${nominee.name} (${parsedVoteCount} votes)`,
+          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
           metadata: {
             type: 'vote',
             nomineeId,
             voteCount: parsedVoteCount,
             phone: phoneCheck.normalized,
-          },
+            email: normalizedEmail
+          }
         });
 
+        const paymentReference = rushpayData.payment_reference;
+
+        // 2. Create widget session token
+        const widgetSession = await createRushPayWidgetSession(paymentReference);
+        const widgetSessionToken = widgetSession.widget_session_token;
+
+        // 3. Save pending vote using RushPay reference
+        await db.run(`
+          INSERT INTO votes (nominee_id, voter_phone, email, vote_count, channel, payment_reference, status, amount_base, amount_fee, amount_paid)
+          VALUES (?, ?, ?, ?, 'web', ?, 'pending', ?, ?, ?)
+        `, [
+          nomineeId,
+          phoneCheck.normalized,
+          normalizedEmail,
+          parsedVoteCount,
+          paymentReference,
+          pricing.baseAmount,
+          pricing.processingFee,
+          pricing.totalDue,
+        ]);
+
         return res.json({
-          reference,
+          paymentReference,
+          widgetSessionToken,
           statusToken,
-          authorization_url: paystackData.authorization_url,
-          access_code: paystackData.access_code,
           isMock: false,
           pricing,
           amount: pricing.totalDue,
           votes: parsedVoteCount,
           nominee: nominee.name,
         });
-      } catch (paystackErr) {
-        console.error('Paystack vote init error:', paystackErr);
-        return res.status(400).json({ error: paystackErr.message || 'Paystack initialization failed' });
+      } catch (rushpayErr) {
+        console.error('RushPay vote init error:', rushpayErr);
+        return res.status(400).json({ error: rushpayErr.message || 'RushPay initialization failed' });
       }
     } else {
+      // Offline/Development Mock flow
+      await db.run(`
+        INSERT INTO votes (nominee_id, voter_phone, email, vote_count, channel, payment_reference, status, amount_base, amount_fee, amount_paid)
+        VALUES (?, ?, ?, ?, 'web', ?, 'pending', ?, ?, ?)
+      `, [
+        nomineeId,
+        phoneCheck.normalized,
+        normalizedEmail,
+        parsedVoteCount,
+        mockRef,
+        pricing.baseAmount,
+        pricing.processingFee,
+        pricing.totalDue,
+      ]);
+
       res.json({
-        reference,
+        reference: mockRef,
         statusToken,
-        authorization_url: `/mock-paystack-checkout?reference=${reference}&statusToken=${statusToken}&amount=${pricing.totalDue}&nominee=${encodeURIComponent(nominee.name)}&votes=${parsedVoteCount}`,
+        authorization_url: `/mock-paystack-checkout?reference=${mockRef}&statusToken=${statusToken}&amount=${pricing.totalDue}&nominee=${encodeURIComponent(nominee.name)}&votes=${parsedVoteCount}`,
         isMock: true,
         pricing,
         amount: pricing.totalDue,
@@ -1481,22 +1522,18 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
   }
 });
 
-// 6. Paystack Webhook (Verify/Complete Payment)
+// 6. RushPay Webhook (Verify/Complete Payment)
 app.post('/api/payment/webhook', rateLimiter(1 * 60 * 1000, 100), async (req, res) => {
-  const secretKey = process.env.PAYSTACK_SECRET_KEY;
-  if (!secretKey) {
-    if (isProduction()) {
-      return res.status(503).send('Webhook not configured');
-    }
-  } else {
-    const signature = req.headers['x-paystack-signature'];
+  const signature = req.headers['x-rushpay-signature'] || req.headers['x-signature'];
+  const rushpayApiKey = process.env.RUSHPAY_API_KEY;
+
+  if (isProduction()) {
     if (!signature) {
-      return res.status(401).send('Missing Paystack signature header');
+      return res.status(401).send('Missing RushPay signature header');
     }
-    const hash = crypto.createHmac('sha512', secretKey).update(req.rawBody || '').digest('hex');
-    if (!timingSafeEqualStr(hash, signature)) {
+    if (!verifyRushPayWebhook(req, signature)) {
       console.warn('Invalid webhook signature attempt');
-      return res.status(401).send('Invalid Paystack signature');
+      return res.status(401).send('Invalid signature');
     }
   }
 
@@ -1505,15 +1542,37 @@ app.post('/api/payment/webhook', rateLimiter(1 * 60 * 1000, 100), async (req, re
     return res.status(400).send('Invalid webhook payload');
   }
 
-  // Handle charge.success
-  if (event.event === 'charge.success') {
+  // Handle payment.completed
+  if (event.event === 'payment.completed') {
     const data = event.data;
-    const reference = data.reference;
+    const reference = data.payment_reference;
+
+    if (!reference) {
+      return res.status(400).send('Missing payment reference');
+    }
 
     try {
       const db = getDB();
 
-      if (reference && reference.startsWith('tix_')) {
+      // 1. Check if reference belongs to a vote transaction
+      const voteRow = await db.get('SELECT id FROM votes WHERE payment_reference = ?', [reference]);
+      if (voteRow) {
+        const voteResult = await completeVotePayment(db, reference);
+        if (voteResult.outcome === 'completed') {
+          console.log(`Payment confirmed! Added ${voteResult.votesAdded} votes for nominee ID ${voteResult.nomineeId}`);
+          runInBackground(() => sendVoteReceipt(voteResult.vote.id));
+          broadcast({
+            type: 'VOTE_COMPLETED',
+            nomineeId: voteResult.nomineeId,
+            votesCount: voteResult.votesAdded,
+          });
+        }
+        return res.status(200).send('Webhook processed successfully');
+      }
+
+      // 2. Check if reference belongs to a ticket purchase
+      const ticketRow = await db.get('SELECT id FROM tickets WHERE payment_reference = ?', [reference]);
+      if (ticketRow) {
         const result = await completeTicketPayment(db, reference);
         if (result.outcome === 'completed') {
           console.log(`Ticket payment confirmed for reference: ${reference}`);
@@ -1522,7 +1581,9 @@ app.post('/api/payment/webhook', rateLimiter(1 * 60 * 1000, 100), async (req, re
         return res.status(200).send('Webhook processed successfully');
       }
 
-      if (reference && reference.startsWith('reg_')) {
+      // 3. Check if reference belongs to a nominee registration form
+      const regRow = await db.get('SELECT id FROM nominee_registrations WHERE payment_reference = ?', [reference]);
+      if (regRow) {
         const result = await completeRegistrationPayment(db, reference);
         if (result.outcome === 'completed') {
           console.log(`Registration Form payment confirmed for reference: ${reference}`);
@@ -1530,18 +1591,8 @@ app.post('/api/payment/webhook', rateLimiter(1 * 60 * 1000, 100), async (req, re
         return res.status(200).send('Webhook processed successfully');
       }
 
-      const voteResult = await completeVotePayment(db, reference);
-
-      if (voteResult.outcome === 'completed') {
-        console.log(`Payment confirmed! Added ${voteResult.votesAdded} votes for nominee ID ${voteResult.nomineeId}`);
-        runInBackground(() => sendVoteReceipt(voteResult.vote.id));
-        broadcast({
-          type: 'VOTE_COMPLETED',
-          nomineeId: voteResult.nomineeId,
-          votesCount: voteResult.votesAdded,
-        });
-      }
-      res.status(200).send('Webhook processed successfully');
+      console.warn(`Unmatched transaction reference in webhook: ${reference}`);
+      res.status(404).send('Reference not found');
     } catch (err) {
       console.error('Webhook DB Error:', err);
       res.status(500).send('Database error inside webhook handler');
@@ -1636,65 +1687,85 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
   }
 
   const formFee = 10.00;
-  const reference = generateReference('reg');
-  const statusToken = generateStatusToken(reference);
-  const secretKey = process.env.PAYSTACK_SECRET_KEY;
+  const mockRef = generateReference('reg');
+  const statusToken = generateStatusToken(mockRef);
+  const rushpayApiKey = process.env.RUSHPAY_API_KEY;
 
-  if (isProduction() && !secretKey) {
+  if (isProduction() && !rushpayApiKey) {
     return res.status(503).json({ error: 'Registration payments are not configured yet. Please try again later.' });
   }
 
   try {
     const db = getDB();
-    
-    await db.run(`
-      INSERT INTO nominee_registrations (name, email, phone, photo_url, category_id, custom_category, bio, payment_reference, payment_status, form_fee, approval_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'pending')
-    `, [
-      name, 
-      email, 
-      phoneCheck.normalized, 
-      resolvedPhoto,
-      category_id ? parseInt(category_id) : null,
-      custom_category || null,
-      bio || '',
-      reference,
-      formFee
-    ]);
-
     const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
 
-    if (secretKey) {
+    if (rushpayApiKey) {
       try {
-        const paystackData = await initializePaystackTransaction({
-          secretKey,
-          email,
-          amountMinor: Math.round(formFee * 100),
-          reference,
-          callbackUrl: `${frontendBase}/payment-status?token=${statusToken}&reference=${encodeURIComponent(reference)}`,
+        // 1. Create RushPay payment
+        const rushpayData = await createRushPayPayment({
+          amount: formFee,
+          description: `Nominee Application: ${name}`,
+          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
           metadata: {
             type: 'nominee_form',
             name,
             phone: phoneCheck.normalized,
-          },
+            email
+          }
         });
 
+        const paymentReference = rushpayData.payment_reference;
+
+        // 2. Create widget session token
+        const widgetSession = await createRushPayWidgetSession(paymentReference);
+        const widgetSessionToken = widgetSession.widget_session_token;
+
+        // 3. Save pending application using RushPay reference
+        await db.run(`
+          INSERT INTO nominee_registrations (name, email, phone, photo_url, category_id, custom_category, bio, payment_reference, payment_status, form_fee, approval_status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'pending')
+        `, [
+          name, 
+          email, 
+          phoneCheck.normalized, 
+          resolvedPhoto,
+          category_id ? parseInt(category_id) : null,
+          custom_category || null,
+          bio || '',
+          paymentReference,
+          formFee
+        ]);
+
         return res.json({
-          reference,
+          paymentReference,
+          widgetSessionToken,
           statusToken,
-          authorization_url: paystackData.authorization_url,
-          access_code: paystackData.access_code,
           isMock: false,
         });
-      } catch (paystackErr) {
-        console.error('Paystack form init error:', paystackErr);
-        return res.status(400).json({ error: paystackErr.message || 'Form purchase failed to initialize' });
+      } catch (rushpayErr) {
+        console.error('RushPay form init error:', rushpayErr);
+        return res.status(400).json({ error: rushpayErr.message || 'Form purchase failed to initialize' });
       }
     } else {
+      await db.run(`
+        INSERT INTO nominee_registrations (name, email, phone, photo_url, category_id, custom_category, bio, payment_reference, payment_status, form_fee, approval_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'pending')
+      `, [
+        name, 
+        email, 
+        phoneCheck.normalized, 
+        resolvedPhoto,
+        category_id ? parseInt(category_id) : null,
+        custom_category || null,
+        bio || '',
+        mockRef,
+        formFee
+      ]);
+
       res.json({
-        reference,
+        reference: mockRef,
         statusToken,
-        authorization_url: `/mock-paystack-checkout?reference=${reference}&statusToken=${statusToken}&amount=${formFee}&nominee=${encodeURIComponent('Nominee Form Purchase: ' + name)}&votes=1&isForm=true`,
+        authorization_url: `/mock-paystack-checkout?reference=${mockRef}&statusToken=${statusToken}&amount=${formFee}&nominee=${encodeURIComponent('Nominee Form Purchase: ' + name)}&votes=1&isForm=true`,
         isMock: true
       });
     }
@@ -2231,50 +2302,29 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
 
         ussdSessions.delete(sessionID);
 
-        if (mockPaymentsAllowed()) {
-          setTimeout(async () => {
-            try {
-              const voteRecord = await db.get('SELECT * FROM votes WHERE payment_reference = ?', [reference]);
-              if (voteRecord && voteRecord.status === 'pending') {
-                await db.run('UPDATE votes SET status = ? WHERE id = ?', ['completed', voteRecord.id]);
-                await db.run(
-                  'UPDATE nominees SET votes_count = votes_count + ? WHERE id = ?',
-                  [voteRecord.vote_count, voteRecord.nominee_id]
-                );
-                console.log(`USSD payment simulation completed for ref: ${reference}`);
-                await sendVoteReceipt(voteRecord.id);
-                broadcast({
-                  type: 'VOTE_COMPLETED',
-                  nomineeId: voteRecord.nominee_id,
-                  votesCount: voteRecord.vote_count
-                });
-              }
-            } catch (err) {
-              console.error('USSD timeout mock process error:', err);
-            }
-          }, 3000);
-        } else {
-          // Trigger actual Paystack direct MoMo charge
-          runInBackground(async () => {
-            try {
-              const provider = getMomoProvider(session.phone);
-              const secretKey = process.env.PAYSTACK_SECRET_KEY;
-              const amountMinor = session.voteCount * 50; // 0.50 GHS per vote = 50 minor units
-              await chargeMobileMoney({
-                secretKey,
-                email: 'customer@voteeq.online',
-                amountMinor,
-                reference,
-                phone: session.phone,
-                provider
+        // Always run simulation for developer console dialer USSD
+        setTimeout(async () => {
+          try {
+            const db = getDB();
+            const voteRecord = await db.get('SELECT * FROM votes WHERE payment_reference = ?', [reference]);
+            if (voteRecord && voteRecord.status === 'pending') {
+              await db.run('UPDATE votes SET status = ? WHERE id = ?', ['completed', voteRecord.id]);
+              await db.run(
+                'UPDATE nominees SET votes_count = votes_count + ? WHERE id = ?',
+                [voteRecord.vote_count, voteRecord.nominee_id]
+              );
+              console.log(`USSD payment simulation completed for ref: ${reference}`);
+              await sendVoteReceipt(voteRecord.id);
+              broadcast({
+                type: 'VOTE_COMPLETED',
+                nomineeId: voteRecord.nominee_id,
+                votesCount: voteRecord.vote_count
               });
-              console.log(`Actual USSD MoMo charge triggered for reference: ${reference} (${provider})`);
-            } catch (err) {
-              console.error('Failed to trigger actual USSD MoMo charge:', err);
-              await db.run('UPDATE votes SET status = ? WHERE payment_reference = ?', ['failed', reference]);
             }
-          });
-        }
+          } catch (err) {
+            console.error('USSD timeout mock process error:', err);
+          }
+        }, 3000);
 
         return res.json({
           action: 'release',
@@ -2375,16 +2425,17 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
 
         ussdSessions.delete(sessionID);
 
-        if (mockPaymentsAllowed()) {
-          setTimeout(async () => {
-            try {
-              const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
-              if (ticketRecord && ticketRecord.payment_status === 'pending') {
-                await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
-                await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
-                console.log(`USSD ticket payment simulation completed for ref: ${reference}`);
-                const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
-                const logMsg = `
+        // Always run simulation for developer console dialer USSD
+        setTimeout(async () => {
+          try {
+            const db = getDB();
+            const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
+            if (ticketRecord && ticketRecord.payment_status === 'pending') {
+              await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
+              await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
+              console.log(`USSD ticket payment simulation completed for ref: ${reference}`);
+              const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
+              const logMsg = `
 ========================================
 SMS/EMAIL TICKET RECEIPT (USSD MOCK)
 Ticket ID: TIX_${ticketRecord.id}_${ticketRecord.ticket_code}
@@ -2400,34 +2451,12 @@ Status: Completed
 Date/Time: ${new Date().toISOString()}
 ========================================
 \n`;
-                fs.appendFileSync(receiptsLogPath, logMsg);
-              }
-            } catch (err) {
-              console.error('USSD ticket timeout mock error:', err);
+              fs.appendFileSync(receiptsLogPath, logMsg);
             }
-          }, 3000);
-        } else {
-          // Trigger actual Paystack direct MoMo charge for tickets
-          runInBackground(async () => {
-            try {
-              const provider = getMomoProvider(session.phone);
-              const secretKey = process.env.PAYSTACK_SECRET_KEY;
-              const amountMinor = totalPrice * 100; // totalPrice is in GHS, minor is in pesewas (GHS * 100)
-              await chargeMobileMoney({
-                secretKey,
-                email: 'customer@voteeq.online',
-                amountMinor,
-                reference,
-                phone: session.phone,
-                provider
-              });
-              console.log(`Actual USSD Ticket MoMo charge triggered for reference: ${reference} (${provider})`);
-            } catch (err) {
-              console.error('Failed to trigger actual USSD Ticket MoMo charge:', err);
-              await db.run("UPDATE tickets SET payment_status = 'failed' WHERE payment_reference = ?", [reference]);
-            }
-          });
-        }
+          } catch (err) {
+            console.error('USSD ticket timeout mock error:', err);
+          }
+        }, 3000);
 
         return res.json({
           action: 'release',
@@ -2540,11 +2569,11 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
       return res.status(404).json({ error: 'Payment reference not found' });
     }
 
-    const secretKey = process.env.PAYSTACK_SECRET_KEY;
-    if (secretKey && (status === 'pending' || status === 'processing')) {
+    const rushpayApiKey = process.env.RUSHPAY_API_KEY;
+    if (rushpayApiKey && (status === 'pending' || status === 'processing')) {
       try {
-        const verified = await verifyPaystackTransaction(secretKey, reference);
-        if (verified.ok) {
+        const verified = await verifyRushPayTransaction(reference);
+        if (verified && (verified.status === 'completed' || verified.status === 'success' || verified.status === 'paid')) {
           if (type === 'vote') {
             const voteResult = await completeVotePayment(db, reference);
             if (voteResult.outcome === 'completed') {
@@ -2608,7 +2637,7 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
           }
         }
       } catch (verifyErr) {
-        console.warn(`Paystack verify on status check (${reference}):`, verifyErr.message);
+        console.warn(`RushPay verify on status check (${reference}):`, verifyErr.message);
       }
     }
 

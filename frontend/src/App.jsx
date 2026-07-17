@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import VoteModal from './components/VoteModal';
 import MockPaystack from './components/MockPaystack';
+import RushPayWidgetModal from './components/RushPayWidgetModal';
 
 const NomineeDashboard = lazy(() => import('./components/NomineeDashboard'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
@@ -46,6 +47,7 @@ export default function App() {
   // Modals & Action States
   const [activeVoteNominee, setActiveVoteNominee] = useState(null);
   const [checkoutData, setCheckoutData] = useState(null);
+  const [rushPayData, setRushPayData] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
 
   // Nominee Login/Dashboard
@@ -199,7 +201,7 @@ export default function App() {
         if (nomineeCode) {
           const match = nomData.find(n => n.code === nomineeCode);
           if (match) {
-            setActiveVoteNominee(match);
+            handleOpenVoteModal(match);
             setActiveTab('vote');
             setCurrentPage(null);
             window.location.hash = buildPublicHash('vote', eventId ? { eventId } : {});
@@ -479,8 +481,16 @@ export default function App() {
     if (data.isMock) {
       setCheckoutData(data);
     } else {
-      window.location.href = data.authorization_url;
+      setRushPayData(data);
     }
+  };
+
+  const handleOpenVoteModal = (nominee) => {
+    if (!BRANDING.votingOpen) {
+      triggerToast('Voting is temporarily paused while our new payment processor is being reviewed. Please check back soon!');
+      return;
+    }
+    setActiveVoteNominee(nominee);
   };
 
   const handlePaymentSuccess = (success, details) => {
@@ -517,7 +527,7 @@ export default function App() {
       const match = nominees.find(n => n.id === details.nomineeId);
       if (match) {
         setTimeout(() => {
-          setActiveVoteNominee(match);
+          handleOpenVoteModal(match);
         }, 350);
       }
     }
@@ -1152,7 +1162,7 @@ export default function App() {
               visibleVoteNominees.map(nom => (
                 <div key={nom.id} className="editorial-card">
                   {/* Visual Portrait */}
-                  <div className="editorial-image-wrapper" onClick={() => setActiveVoteNominee(nom)} style={{ cursor: 'pointer' }}>
+                  <div className="editorial-image-wrapper" onClick={() => handleOpenVoteModal(nom)} style={{ cursor: 'pointer' }}>
                     <img src={nomineePhotoSrc(nom.photo_url)} alt={nom.name} loading="lazy" decoding="async" />
                     <div className="editorial-card-ref-wrap" onClick={(e) => {
                       e.stopPropagation();
@@ -1183,7 +1193,7 @@ export default function App() {
                   {/* Actions container */}
                   <div className="editorial-card-actions">
                     <button
-                      onClick={() => setActiveVoteNominee(nom)}
+                      onClick={() => handleOpenVoteModal(nom)}
                       className="luxury-btn"
                       style={{ width: '100%' }}
                     >
@@ -1724,6 +1734,16 @@ export default function App() {
           checkoutData={checkoutData}
           onComplete={handlePaymentSuccess}
           onCancel={() => setCheckoutData(null)}
+        />
+      )}
+
+      {/* RushPay Embedded Payment Widget */}
+      {rushPayData && (
+        <RushPayWidgetModal
+          paymentReference={rushPayData.paymentReference}
+          widgetSessionToken={rushPayData.widgetSessionToken}
+          statusToken={rushPayData.statusToken}
+          onClose={() => setRushPayData(null)}
         />
       )}
 
