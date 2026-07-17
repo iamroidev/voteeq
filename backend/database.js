@@ -30,28 +30,51 @@ function rowToObj(row, columns) {
   return obj;
 }
 
+// Retry helper for transient Turso memory errors
+async function withRetry(fn, maxAttempts = 3, delayMs = 150) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isTransient = err.code === 'SQLITE_NOMEM' || (err.message && err.message.includes('out of memory'));
+      if (isTransient && attempt < maxAttempts) {
+        console.warn(`Turso transient error (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms...`);
+        await new Promise(r => setTimeout(r, delayMs * attempt));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 // A wrapper object to emulate the sqlite/sqlite3 api used in server.js
 const dbWrapper = {
   async get(sql, params) {
     const args = Array.isArray(params) ? params : (params ? [params] : []);
-    const result = await client.execute({ sql, args });
-    if (result.rows.length === 0) return undefined;
-    return rowToObj(result.rows[0], result.columns);
+    return withRetry(async () => {
+      const result = await client.execute({ sql, args });
+      if (result.rows.length === 0) return undefined;
+      return rowToObj(result.rows[0], result.columns);
+    });
   },
 
   async all(sql, params) {
     const args = Array.isArray(params) ? params : (params ? [params] : []);
-    const result = await client.execute({ sql, args });
-    return result.rows.map(row => rowToObj(row, result.columns));
+    return withRetry(async () => {
+      const result = await client.execute({ sql, args });
+      return result.rows.map(row => rowToObj(row, result.columns));
+    });
   },
 
   async run(sql, params) {
     const args = Array.isArray(params) ? params : (params ? [params] : []);
-    const result = await client.execute({ sql, args });
-    return {
-      lastID: result.lastInsertRowid ? Number(result.lastInsertRowid) : undefined,
-      changes: result.rowsAffected
-    };
+    return withRetry(async () => {
+      const result = await client.execute({ sql, args });
+      return {
+        lastID: result.lastInsertRowid ? Number(result.lastInsertRowid) : undefined,
+        changes: result.rowsAffected
+      };
+    });
   },
 
   async exec(sql) {
