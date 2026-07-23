@@ -692,7 +692,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     const mockRef = generateReference('tix');
     const statusToken = generateStatusToken(mockRef);
 
-    const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
+    const frontendBase = req.headers.origin || process.env.FRONTEND_URL || 'https://voteeq.online';
 
     if (rushpayApiKey) {
       try {
@@ -1473,7 +1473,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
 
     if (paystackSecret) {
       try {
-        const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
+        const frontendBase = req.headers.origin || process.env.FRONTEND_URL || 'https://voteeq.online';
         const paystackData = await initializePaystackTransaction({
           secretKey: paystackSecret,
           email: normalizedEmail,
@@ -1519,7 +1519,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
       }
     } else if (rushpayApiKey) {
       try {
-        const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
+        const frontendBase = req.headers.origin || process.env.FRONTEND_URL || 'https://voteeq.online';
         
         // 1. Create RushPay payment
         const rushpayData = await createRushPayPayment({
@@ -1848,7 +1848,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
 
   try {
     const db = getDB();
-    const frontendBase = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
+    const frontendBase = req.headers.origin || process.env.FRONTEND_URL || 'https://voteeq.online';
 
     if (rushpayApiKey) {
       try {
