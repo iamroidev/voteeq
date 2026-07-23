@@ -45,6 +45,7 @@ const { sendSMS } = require('./sms');
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
 const LEADERBOARD_LOCKED = true;
+const ELECTIONS_PAUSED = process.env.ELECTIONS_PAUSED !== 'false'; // Default to true (paused) unless explicitly false
 const {
   isValidEmail,
   normalizeEmail,
@@ -637,6 +638,10 @@ app.get('/api/events', async (req, res) => {
 
 // 1c. Purchase event ticket (initialize payment reference)
 app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, res) => {
+  if (ELECTIONS_PAUSED) {
+    return res.status(503).json({ error: 'Ticketing and voting are currently paused. Please check back later.' });
+  }
+
   if (process.env.TICKETS_ENABLED !== 'true') {
     return res.status(503).json({ error: 'Ticket sales are not open yet.' });
   }
@@ -1426,6 +1431,10 @@ app.get('/api/payment/rushpay-widget.js', async (req, res) => {
 
 // 5. Initialize RushPay Payment / Vote Purchase
 app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, res) => {
+  if (ELECTIONS_PAUSED) {
+    return res.status(503).json({ error: 'Voting is currently paused. Please check back later.' });
+  }
+
   const { nomineeId, email, phone, voteCount } = req.body;
 
   const parsedVoteCount = parseInt(voteCount, 10);
@@ -2297,6 +2306,13 @@ app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
   const input = userData ? userData.trim() : '';
 
   try {
+    if (ELECTIONS_PAUSED) {
+      return res.json({
+        action: 'release',
+        message: 'Voting and ticketing are currently paused. Please check back later.'
+      });
+    }
+
     // If it's a completely new session
     if (newSession === '1' || newSession === 1 || !ussdSessions.has(sessionID)) {
       // Parse initial dial code: *SHORTCODE# or *SHORTCODE*CODE#
