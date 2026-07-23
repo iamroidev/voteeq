@@ -45,7 +45,7 @@ const { sendSMS } = require('./sms');
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
 const LEADERBOARD_LOCKED = true;
-const ELECTIONS_PAUSED = process.env.ELECTIONS_PAUSED !== 'false'; // Default to true (paused) unless explicitly false
+const ELECTIONS_PAUSED = process.env.ELECTIONS_PAUSED === 'true';
 const {
   isValidEmail,
   normalizeEmail,
