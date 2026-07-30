@@ -986,7 +986,7 @@ app.post('/api/admin/nominees', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Nominee Code already exists in system' });
     }
 
-    const activationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedPin = await hashPin(code);
 
     await db.run(
       'INSERT INTO nominees (code, name, photo_url, category_id, event_id, passcode, votes_count) VALUES (?, ?, ?, ?, ?, ?, 0)',
@@ -996,14 +996,13 @@ app.post('/api/admin/nominees', requireAdmin, async (req, res) => {
         resolvedPhoto,
         category_id,
         event_id ? parseInt(event_id, 10) : null,
-        `PENDING_ACT_${activationCode}`
+        hashedPin
       ]
     );
     await logAdminAction(adminUsername(req), 'CREATE_NOMINEE', `Created nominee: ${name} (${code})`);
-    res.json({ 
-      success: true, 
-      message: 'Nominee added in PENDING activation state. Save the activation code now — it will not be shown again.',
-      activationCode: activationCode
+    res.json({
+      success: true,
+      message: `Nominee added and activated. Default PIN is the nominee code: ${code}`
     });
   } catch (err) {
     console.error(err);
