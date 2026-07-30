@@ -140,10 +140,14 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
             {/* Votes shortcut buttons and Custom count input */}
             <div style={{ marginBottom: '1.5rem' }}>
               <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
-                Select Vote Count
+                Number of Votes
               </label>
-              
-              <div className="vote-shortcut-buttons" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+
+              {/* Quick-pick shortcuts */}
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', letterSpacing: '0.04em' }}>
+                Quick pick:
+              </div>
+              <div className="vote-shortcut-buttons" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.1rem' }}>
                 {voteShortcuts.map((num) => (
                   <button
                     key={num}
@@ -164,6 +168,10 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
                 ))}
               </div>
 
+              {/* Custom vote count input — clearly labelled */}
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', letterSpacing: '0.04em' }}>
+                Or type any amount:
+              </div>
               <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                 <input
                   type="number"
@@ -171,20 +179,22 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
                   max={MAX_VOTES}
                   step="1"
                   inputMode="numeric"
+                  placeholder="e.g. 75"
                   value={voteCount}
                   onChange={(e) => {
                     const val = e.target.value;
-                    // Allow empty for clearing, but cap at MAX_VOTES
                     if (val === '') { setVoteCount(''); return; }
                     const num = parseInt(val);
                     if (!isNaN(num) && num <= MAX_VOTES) setVoteCount(num);
                   }}
                   className="luxury-input"
                   style={{ 
-                    width: '110px', 
-                    padding: '0.6rem 0.75rem',
-                    borderColor: isInvalidVotes ? 'rgba(230, 0, 0, 0.4)' : 'var(--border-color)',
-                    boxShadow: isInvalidVotes ? '0 0 0 2px rgba(230, 0, 0, 0.05)' : 'none'
+                    width: '130px', 
+                    padding: '0.65rem 0.85rem',
+                    fontSize: '1rem',
+                    fontWeight: 600,
+                    borderColor: isInvalidVotes ? 'rgba(230, 0, 0, 0.4)' : 'var(--accent)',
+                    boxShadow: isInvalidVotes ? '0 0 0 2px rgba(230, 0, 0, 0.05)' : '0 0 0 1px var(--accent)',
                   }}
                 />
                 <span style={{ fontSize: '0.8rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
