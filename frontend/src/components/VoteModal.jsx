@@ -253,6 +253,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
                 <p style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', color: 'var(--accent-dark)', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   GH₵ {pricing.totalDue.toFixed(2)}
                 </p>
+              </div>
             </div>
 
             <button
