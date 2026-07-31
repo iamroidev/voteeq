@@ -412,14 +412,7 @@ async function saveNomineeProfilePhoto(req, code, image) {
   return photoUrl;
 }
 
-// In-memory store for active USSD sessions
-const ussdSessions = new Map();
 
-// Helper: Fetch nominee by code
-async function findNomineeByCode(code) {
-  const db = getDB();
-  return await db.get('SELECT * FROM nominees WHERE code = ?', [code]);
-}
 
 function maskPhone(phone) {
   if (!phone) return 'N/A';
@@ -886,10 +879,14 @@ app.get('/api/admin/overview', requireAdmin, async (req, res) => {
       GROUP BY channel
     `);
 
-    // Revenue calculations: Web = 1.00 GHS, USSD = 0.50 GHS
     const webVotes = channelStats.find(s => s.channel === 'web')?.votes || 0;
-    const ussdVotes = channelStats.find(s => s.channel === 'ussd')?.votes || 0;
-    const totalRevenue = (webVotes * 1.00) + (ussdVotes * 0.50);
+    
+    const revStats = await db.get(`
+      SELECT SUM(amount_base) as total_revenue
+      FROM votes
+      WHERE status = 'completed'
+    `);
+    const totalRevenue = revStats.total_revenue || 0;
 
     res.json({
       categoriesCount: catCount.count,
@@ -898,7 +895,7 @@ app.get('/api/admin/overview', requireAdmin, async (req, res) => {
       totalRevenue: totalRevenue,
       channelStats: {
         web: webVotes,
-        ussd: ussdVotes
+        ussd: 0
       }
     });
   } catch (err) {
@@ -1102,7 +1099,7 @@ app.get('/api/nominees/dashboard/:code', async (req, res) => {
       hasCustomBanner,
       channelStats: {
         web: channelStats.find(s => s.channel === 'web')?.total || 0,
-        ussd: channelStats.find(s => s.channel === 'ussd')?.total || 0
+        ussd: 0
       }
     });
   } catch (err) {
@@ -1313,7 +1310,7 @@ app.get('/api/nominees/share-image/:code', async (req, res) => {
     <!-- Divider -->
     <line x1="0" y1="340" x2="550" y2="340" stroke="#b8986c" stroke-width="1" opacity="0.2" />
 
-    <!-- USSD Dialer / Instruction Card -->
+    <!-- Online Code / Instruction Card -->
     <rect x="0" y="380" width="550" height="170" rx="12" fill="#14110e" stroke="url(#goldGrad)" stroke-width="1.5" />
     <text x="30" y="425" font-family="'Inter', sans-serif" font-size="16" font-weight="bold" fill="#b8986c" letter-spacing="2">HOW TO VOTE FOR ME</text>
     <text x="30" y="470" font-family="'Inter', sans-serif" font-size="14" fill="#8c8273">Vote online and search with candidate code:</text>
@@ -1444,8 +1441,7 @@ function getVoteBasePrice(votes) {
   const numVotes = parseInt(votes, 10) || 0;
   if (numVotes <= 0) return 0;
   const pkg = VOTE_PACKAGES.find(p => p.votes === numVotes);
-  if (pkg) return pkg.price;
-  return Math.round(numVotes * 0.60 * 100) / 100;
+  return pkg ? pkg.price : 0;
 }
 
 app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, res) => {
@@ -1456,11 +1452,12 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
   const { nomineeId, email, phone, voteCount } = req.body;
 
   const parsedVoteCount = parseInt(voteCount, 10);
-  if (!nomineeId || isNaN(parsedVoteCount) || parsedVoteCount <= 0 || parsedVoteCount > MAX_VOTES_PER_TRANSACTION) {
-    return res.status(400).json({ error: `Invalid nomination id or vote count (max ${MAX_VOTES_PER_TRANSACTION})` });
+  const basePrice = getVoteBasePrice(parsedVoteCount);
+
+  if (!nomineeId || isNaN(parsedVoteCount) || basePrice <= 0 || parsedVoteCount > MAX_VOTES_PER_TRANSACTION) {
+    return res.status(400).json({ error: `Invalid nomination id or vote package count` });
   }
 
-  const basePrice = getVoteBasePrice(parsedVoteCount);
   const pricing = calculatePaystackCheckout(basePrice);
 
   const mockRef = generateReference('v');
@@ -2292,430 +2289,6 @@ app.post('/api/admin/receipts/tickets/:id/resend', requireAdmin, async (req, res
   }
 });
 
-// ----------------------------------------------------
-// USSD GATEWAY WEBHOOK (Arkesel / Hubtel style)
-// ----------------------------------------------------
-/**
- * Arkesel sends a POST request with:
- * {
- *   "sessionID": "12345678",
- *   "userID": "233543210987",
- *   "msisdn": "233543210987",
- *   "newSession": "1", // "1" for new, "0" for response
- *   "userData": "*SHORTCODE#", // dial string or user entry
- *   "network": "MTN"
- * }
- * 
- * Response expected is PLAINTEXT or JSON content-type.
- * For Arkesel, it expects:
- * {
- *    "action": "prompt" or "release",
- *    "message": "Text display content"
- * }
- */
-app.post('/api/ussd', rateLimiter(1 * 60 * 1000, 60), async (req, res) => {
-  const { sessionID, msisdn, newSession, userData } = req.body;
-
-  if (!sessionID || !msisdn) {
-    return res.status(400).json({ error: 'Missing sessionID or msisdn' });
-  }
-
-  const phone = msisdn;
-  const input = userData ? userData.trim() : '';
-
-  try {
-    if (ELECTIONS_PAUSED) {
-      return res.json({
-        action: 'release',
-        message: 'Voting and ticketing are currently paused. Please check back later.'
-      });
-    }
-
-    // If it's a completely new session
-    if (newSession === '1' || newSession === 1 || !ussdSessions.has(sessionID)) {
-      // Parse initial dial code: *SHORTCODE# or *SHORTCODE*CODE#
-      const cleanDial = input.replace(/#/g, '');
-      const parts = cleanDial.split('*'); // ["", "SHORTCODE", "566", "101"] or similar
-
-      // Direct nominee vote shortcut: e.g. *SHORTCODE*101#
-      if (parts.length >= 4) {
-        const nomineeCode = parts[3];
-        const nominee = await findNomineeByCode(nomineeCode);
-
-        if (!nominee) {
-          return res.json({
-            action: 'release',
-            message: `Nominee not found for code ${nomineeCode}. Please dial shortcode menu again.`
-          });
-        }
-
-        ussdSessions.set(sessionID, {
-          state: 'AWAITING_VOTES',
-          nomineeId: nominee.id,
-          nomineeName: nominee.name,
-          nomineeCode: nominee.code,
-          phone
-        });
-
-        return res.json({
-          action: 'prompt',
-          message: `Vote for ${nominee.name} (${nominee.code}).\nEnter number of votes (1 vote = GH₵ 0.50):`
-        });
-      }
-
-      // Show Main Menu: Choice 1 = Vote, Choice 2 = Buy Ticket
-      ussdSessions.set(sessionID, {
-        state: 'MAIN_MENU',
-        phone
-      });
-
-      return res.json({
-        action: 'prompt',
-        message: 'Welcome to Voteeq.\n1. Vote Awards\n2. Buy Event Tickets'
-      });
-    }
-
-    // Retrieve active session
-    const session = ussdSessions.get(sessionID);
-
-    // 1. Main Menu handling
-    if (session.state === 'MAIN_MENU') {
-      if (input === '1') {
-        session.state = 'AWAITING_NOMINEE_CODE';
-        ussdSessions.set(sessionID, session);
-        return res.json({
-          action: 'prompt',
-          message: 'Enter Nominee Code (e.g. 101):'
-        });
-      } else if (input === '2') {
-        const db = getDB();
-        const events = await db.all("SELECT * FROM events WHERE privacy = 'public' ORDER BY date ASC");
-        
-        if (events.length === 0) {
-          ussdSessions.delete(sessionID);
-          return res.json({
-            action: 'release',
-            message: 'No public events currently available for ticketing.'
-          });
-        }
-
-        session.state = 'AWAITING_EVENT_SELECTION';
-        session.events = events.map(e => ({ id: e.id, title: e.title, price: e.ticket_price }));
-        ussdSessions.set(sessionID, session);
-
-        let menuMsg = 'Select Event:\n';
-        events.forEach((ev, idx) => {
-          menuMsg += `${idx + 1}. ${ev.title} (GH₵ ${ev.ticket_price})\n`;
-        });
-        return res.json({
-          action: 'prompt',
-          message: menuMsg.trim()
-        });
-      } else {
-        return res.json({
-          action: 'prompt',
-          message: 'Invalid option.\nWelcome to Voteeq.\n1. Vote Awards\n2. Buy Event Tickets'
-        });
-      }
-    }
-
-    // 2. Awaiting nominee code (for voting)
-    if (session.state === 'AWAITING_NOMINEE_CODE') {
-      const nomineeCode = input;
-      const nominee = await findNomineeByCode(nomineeCode);
-
-      if (!nominee) {
-        ussdSessions.delete(sessionID);
-        return res.json({
-          action: 'release',
-          message: `Nominee code ${nomineeCode} not found. Dial again.`
-        });
-      }
-
-      session.state = 'AWAITING_VOTES';
-      session.nomineeId = nominee.id;
-      session.nomineeName = nominee.name;
-      session.nomineeCode = nominee.code;
-      ussdSessions.set(sessionID, session);
-
-      return res.json({
-        action: 'prompt',
-        message: `Vote for ${nominee.name} (${nominee.code}).\nEnter number of votes (1 vote = GH₵ 0.50):`
-      });
-    }
-
-    // 3. Awaiting voting count
-    if (session.state === 'AWAITING_VOTES') {
-      const voteCount = parseInt(input, 10);
-      if (isNaN(voteCount) || voteCount <= 0) {
-        return res.json({
-          action: 'prompt',
-          message: `Invalid number of votes.\nEnter number of votes (1 vote = GH₵ 0.50):`
-        });
-      }
-
-      session.state = 'AWAITING_CONFIRMATION';
-      session.voteCount = voteCount;
-      ussdSessions.set(sessionID, session);
-
-      const totalCost = voteCount * 0.5;
-      return res.json({
-        action: 'prompt',
-        message: `Confirm ${voteCount} votes for ${session.nomineeName} costing GH₵ ${totalCost.toFixed(2)}?\n1. Confirm & Pay\n2. Cancel`
-      });
-    }
-
-    // 4. Awaiting vote confirmation
-    if (session.state === 'AWAITING_CONFIRMATION') {
-      if (input === '1') {
-        const db = getDB();
-        const reference = generateReference('u');
-
-        await db.run(`
-          INSERT INTO votes (nominee_id, voter_phone, vote_count, channel, payment_reference, status)
-          VALUES (?, ?, ?, 'ussd', ?, 'pending')
-        `, [session.nomineeId, session.phone, session.voteCount, reference]);
-
-        ussdSessions.delete(sessionID);
-
-        const secretKey = process.env.PAYSTACK_SECRET_KEY;
-
-        if (isProduction() && secretKey) {
-          // Trigger actual Paystack direct MoMo charge
-          runInBackground(async () => {
-            try {
-              const rawProvider = getMomoProvider(session.phone);
-              const provider = rawProvider === 'tgo' ? 'atl' : rawProvider;
-              const amountMinor = session.voteCount * 50; // 0.50 GHS per vote = 50 minor units
-              const cleanPhone = session.phone.replace(/^\+/, '').replace(/^233/, '0');
-              
-              await chargeMobileMoney({
-                secretKey,
-                email: `voter-${cleanPhone}@voteeq.online`,
-                amountMinor,
-                reference,
-                phone: cleanPhone,
-                provider
-              });
-              console.log(`Actual USSD MoMo charge triggered for reference: ${reference} (${provider})`);
-            } catch (err) {
-              console.error('Failed to trigger actual USSD MoMo charge:', err);
-              await db.run('UPDATE votes SET status = ? WHERE payment_reference = ?', ['failed', reference]);
-            }
-          });
-        } else {
-          // Run simulation for local development / mock dialer
-          setTimeout(async () => {
-            try {
-              const db = getDB();
-              const voteRecord = await db.get('SELECT * FROM votes WHERE payment_reference = ?', [reference]);
-              if (voteRecord && voteRecord.status === 'pending') {
-                await db.run('UPDATE votes SET status = ? WHERE id = ?', ['completed', voteRecord.id]);
-                await db.run(
-                  'UPDATE nominees SET votes_count = votes_count + ? WHERE id = ?',
-                  [voteRecord.vote_count, voteRecord.nominee_id]
-                );
-                console.log(`USSD payment simulation completed for ref: ${reference}`);
-                await sendVoteReceipt(voteRecord.id);
-                broadcast({
-                  type: 'VOTE_COMPLETED',
-                  nomineeId: voteRecord.nominee_id,
-                  votesCount: voteRecord.vote_count
-                });
-              }
-            } catch (err) {
-              console.error('USSD timeout mock process error:', err);
-            }
-          }, 3000);
-        }
-
-        return res.json({
-          action: 'release',
-          message: 'Payment prompt sent. Approve MoMo transaction on your phone to complete voting. Thank you!'
-        });
-
-      } else {
-        ussdSessions.delete(sessionID);
-        return res.json({
-          action: 'release',
-          message: 'Voting cancelled. Thank you.'
-        });
-      }
-    }
-
-    // 5. Awaiting Event selection (for tickets)
-    if (session.state === 'AWAITING_EVENT_SELECTION') {
-      const idx = parseInt(input, 10) - 1;
-      if (isNaN(idx) || idx < 0 || idx >= session.events.length) {
-        let menuMsg = 'Invalid selection. Select Event:\n';
-        session.events.forEach((ev, i) => {
-          menuMsg += `${i + 1}. ${ev.title} (GH₵ ${ev.price})\n`;
-        });
-        return res.json({
-          action: 'prompt',
-          message: menuMsg.trim()
-        });
-      }
-
-      const selectedEvent = session.events[idx];
-      session.state = 'AWAITING_TICKET_QUANTITY';
-      session.eventId = selectedEvent.id;
-      session.eventTitle = selectedEvent.title;
-      session.eventPrice = selectedEvent.price;
-      ussdSessions.set(sessionID, session);
-
-      return res.json({
-        action: 'prompt',
-        message: `Buy tickets for ${selectedEvent.title} (GH₵ ${selectedEvent.price}/each).\nEnter quantity (1-5):`
-      });
-    }
-
-    // 6. Awaiting ticket quantity
-    if (session.state === 'AWAITING_TICKET_QUANTITY') {
-      const qty = parseInt(input, 10);
-      if (isNaN(qty) || qty <= 0 || qty > 5) {
-        return res.json({
-          action: 'prompt',
-          message: 'Invalid quantity. Enter quantity of tickets (1-5):'
-        });
-      }
-
-      session.state = 'AWAITING_TICKET_CONFIRMATION';
-      session.quantity = qty;
-      ussdSessions.set(sessionID, session);
-
-      const totalCost = qty * session.eventPrice;
-      return res.json({
-        action: 'prompt',
-        message: `Confirm ${qty} tickets for ${session.eventTitle} costing GH₵ ${totalCost.toFixed(2)}?\n1. Confirm & Pay\n2. Cancel`
-      });
-    }
-
-    // 7. Awaiting ticket confirmation
-    if (session.state === 'AWAITING_TICKET_CONFIRMATION') {
-      if (input === '1') {
-        const db = getDB();
-        const ticketCode = `TIX-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-        const totalPrice = session.quantity * session.eventPrice;
-        const reference = generateReference('tix_ussd');
-
-        try {
-          await db.transaction(async (tx) => {
-            const capacity = await tx.get(
-              'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
-              [session.eventId]
-            );
-            if (!capacity || capacity.tickets_sold + session.quantity > capacity.total_tickets) {
-              throw new Error('SOLD_OUT');
-            }
-            await tx.run(`
-              INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
-              VALUES (?, ?, 'USSD Buyer', 'ussd@voteeq.online', ?, ?, ?, ?, 'pending')
-            `, [session.eventId, ticketCode, session.phone, session.quantity, totalPrice, reference]);
-          });
-        } catch (txErr) {
-          if (txErr.message === 'SOLD_OUT') {
-            ussdSessions.delete(sessionID);
-            return res.json({
-              action: 'release',
-              message: 'Sorry, this event is sold out or has insufficient tickets remaining.'
-            });
-          }
-          throw txErr;
-        }
-
-        ussdSessions.delete(sessionID);
-
-        const secretKey = process.env.PAYSTACK_SECRET_KEY;
-
-        if (isProduction() && secretKey) {
-          // Trigger actual Paystack direct MoMo charge for tickets
-          runInBackground(async () => {
-            try {
-              const rawProvider = getMomoProvider(session.phone);
-              const provider = rawProvider === 'tgo' ? 'atl' : rawProvider;
-              const amountMinor = totalPrice * 100; // totalPrice is in GHS, minor is GHS * 100
-              const cleanPhone = session.phone.replace(/^\+/, '').replace(/^233/, '0');
-
-              await chargeMobileMoney({
-                secretKey,
-                email: `buyer-${cleanPhone}@voteeq.online`,
-                amountMinor,
-                reference,
-                phone: cleanPhone,
-                provider
-              });
-              console.log(`Actual USSD Ticket MoMo charge triggered for reference: ${reference} (${provider})`);
-            } catch (err) {
-              console.error('Failed to trigger actual USSD Ticket MoMo charge:', err);
-              await db.run("UPDATE tickets SET payment_status = 'failed' WHERE payment_reference = ?", [reference]);
-            }
-          });
-        } else {
-          // Run simulation for local development / mock dialer
-          setTimeout(async () => {
-            try {
-              const db = getDB();
-              const ticketRecord = await db.get('SELECT * FROM tickets WHERE payment_reference = ?', [reference]);
-              if (ticketRecord && ticketRecord.payment_status === 'pending') {
-                await db.run("UPDATE tickets SET payment_status = 'paid' WHERE id = ?", [ticketRecord.id]);
-                await db.run("UPDATE events SET tickets_sold = tickets_sold + ? WHERE id = ?", [ticketRecord.quantity, ticketRecord.event_id]);
-                console.log(`USSD ticket payment simulation completed for ref: ${reference}`);
-                const event = await db.get('SELECT * FROM events WHERE id = ?', [ticketRecord.event_id]);
-                const logMsg = `
-========================================
-SMS/EMAIL TICKET RECEIPT (USSD MOCK)
-Ticket ID: TIX_${ticketRecord.id}_${ticketRecord.ticket_code}
-Event: ${event ? event.title : 'Event'}
-Venue: ${event ? event.venue : 'TBA'}
-Date: ${event ? formatEventDateForDisplay(event.date) : 'TBA'}
-Buyer: ${ticketRecord.buyer_name} (${ticketRecord.buyer_phone})
-Quantity: ${ticketRecord.quantity}
-Price Paid: GH₵ ${ticketRecord.price_paid.toFixed(2)}
-Verification Ticket Code: ${ticketRecord.ticket_code}
-Payment Reference: ${ticketRecord.payment_reference}
-Status: Completed
-Date/Time: ${new Date().toISOString()}
-========================================
-\n`;
-                fs.appendFileSync(receiptsLogPath, logMsg);
-              }
-            } catch (err) {
-              console.error('USSD ticket timeout mock error:', err);
-            }
-          }, 3000);
-        }
-
-        return res.json({
-          action: 'release',
-          message: 'Payment prompt sent. Approve MoMo transaction on your phone to complete purchase. Thank you!'
-        });
-
-      } else {
-        ussdSessions.delete(sessionID);
-        return res.json({
-          action: 'release',
-          message: 'Ticket purchase cancelled. Thank you.'
-        });
-      }
-    }
-
-    // Default catch-all
-    ussdSessions.delete(sessionID);
-    return res.json({
-      action: 'release',
-      message: 'System error. Please try again.'
-    });
-
-  } catch (err) {
-    console.error('USSD Error:', err);
-    ussdSessions.delete(sessionID);
-    res.json({
-      action: 'release',
-      message: 'System error. Please try again later.'
-    });
-  }
-});
 
 
 // GET payment transaction status (requires status token from checkout)

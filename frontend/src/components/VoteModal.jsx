@@ -208,44 +208,6 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
                 })}
               </div>
 
-              {/* Custom vote count input — clearly labelled */}
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', letterSpacing: '0.04em' }}>
-                Or type any custom amount:
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                <input
-                  type="number"
-                  min="1"
-                  max={MAX_VOTES}
-                  step="1"
-                  inputMode="numeric"
-                  placeholder="e.g. 75"
-                  value={voteCount}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '') { setVoteCount(''); return; }
-                    const num = parseInt(val);
-                    if (!isNaN(num) && num <= MAX_VOTES) setVoteCount(num);
-                  }}
-                  className="luxury-input"
-                  style={{ 
-                    width: '130px', 
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '1rem',
-                    fontWeight: 600,
-                    borderColor: isInvalidVotes ? 'rgba(230, 0, 0, 0.4)' : 'var(--accent)',
-                    boxShadow: isInvalidVotes ? '0 0 0 2px rgba(230, 0, 0, 0.05)' : 'none',
-                  }}
-                />
-                <span style={{ fontSize: '0.8rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
-                  votes
-                </span>
-              </div>
-              {isInvalidVotes && voteCount !== '' && (
-                <p style={{ color: '#c00', fontSize: '0.65rem', marginTop: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 500 }}>
-                  Please enter a valid whole number of votes (minimum 1).
-                </p>
-              )}
             </div>
 
             {/* Mobile Money Details */}

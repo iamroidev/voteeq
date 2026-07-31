@@ -748,16 +748,6 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
                     <div className="metric-progress-fill" style={{ height: '100%', background: 'var(--accent)', width: `${stats?.totalVotes ? ((stats.channelStats?.web || 0) / stats.totalVotes) * 100 : 0}%`, transition: 'width 1s ease' }} />
                   </div>
                 </div>
-
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>USSD Dialer</span>
-                    <span style={{ color: 'var(--text-secondary)' }}>{stats?.channelStats?.ussd || 0} votes ({((stats?.channelStats?.ussd || 0) * 0.50).toFixed(2)} GHS)</span>
-                  </div>
-                  <div style={{ width: '100%', height: '6px', background: 'var(--bg-tertiary)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div className="metric-progress-fill" style={{ height: '100%', background: 'var(--accent-dark)', width: `${stats?.totalVotes ? ((stats.channelStats?.ussd || 0) / stats.totalVotes) * 100 : 0}%`, transition: 'width 1s ease' }} />
-                  </div>
-                </div>
               </div>
             </div>
 

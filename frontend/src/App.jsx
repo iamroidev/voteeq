@@ -19,7 +19,7 @@ import PublicVoteFilters from './components/PublicVoteFilters';
 import PaymentStatusPage from './pages/PaymentStatusPage';
 import NotFoundPage from './pages/NotFoundPage';
 import { API_BASE_URL, WS_BASE_URL } from './config';
-import { BRANDING, formatEventDate, formatEventMeta, getNomineeShareUrl, displayEventTitle, getNomineeUssdCode } from './branding';
+import { BRANDING, formatEventDate, formatEventMeta, getNomineeShareUrl, displayEventTitle } from './branding';
 import { readStoredAuth } from './utils/storage';
 import { nomineePhotoSrc } from './utils/photoUrl';
 import { COLOR_THEMES, applyAccentTheme, getStoredAccent } from './utils/theme';
@@ -145,14 +145,7 @@ export default function App() {
     window.location.hash = buildPublicHash(previousTab, activeEventId ? { eventId: activeEventId } : {});
   };
 
-  // USSD Simulator State (Device Widget)
-  const [ussdOpen, setUssdOpen] = useState(false);
-  const [ussdPhone, setUssdPhone] = useState('0244112233');
-  const [ussdSessionId, setUssdSessionId] = useState('');
-  const [ussdScreen, setUssdScreen] = useState('');
-  const [ussdInput, setUssdInput] = useState('');
-  const [ussdLoading, setUssdLoading] = useState(false);
-  const [ussdAction, setUssdAction] = useState('release'); // 'prompt' or 'release'
+
 
   const loadData = async () => {
     setLoadError('');
@@ -251,7 +244,6 @@ export default function App() {
         setAdminLoginMode(false);
         setActiveVoteNominee(null);
         setCheckoutData(null);
-        setUssdOpen(false);
       }
     };
     document.addEventListener('keydown', handleKeyDown);
@@ -647,75 +639,7 @@ export default function App() {
     }
   };
 
-  // USSD Sandbox Logic
-  const initUssdSession = async (customDial = '') => {
-    setUssdLoading(true);
-    const sId = `ussd_sim_${Date.now()}`;
-    setUssdSessionId(sId);
 
-    const dialString = customDial || BRANDING.ussdShortcode;
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/ussd`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionID: sId,
-          msisdn: ussdPhone,
-          newSession: 1,
-          userData: dialString
-        }),
-      });
-
-      const data = await response.json();
-      setUssdScreen(data.message);
-      setUssdAction(data.action);
-    } catch {
-      setUssdScreen('Connection error during USSD dial.');
-      setUssdAction('release');
-    } finally {
-      setUssdLoading(false);
-    }
-  };
-
-  const submitUssdInput = async (e) => {
-    e.preventDefault();
-    if (!ussdInput.trim() || ussdLoading) return;
-    setUssdLoading(true);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/ussd`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionID: ussdSessionId,
-          msisdn: ussdPhone,
-          newSession: 0,
-          userData: ussdInput
-        }),
-      });
-
-      const data = await response.json();
-      setUssdScreen(data.message);
-      setUssdAction(data.action);
-      setUssdInput('');
-
-      if (data.action === 'release') {
-        setTimeout(loadData, 3500);
-      }
-    } catch {
-      setUssdScreen('USSD communication interrupted.');
-      setUssdAction('release');
-    } finally {
-      setUssdLoading(false);
-    }
-  };
-
-  const dialUssdCode = (code) => {
-    setUssdOpen(true);
-    initUssdSession(code);
-    triggerToast(`Dialing shortcode: ${code}`);
-  };
 
   const eventScopedNominees = activeEventId
     ? nominees.filter(nom => !nom.event_id || String(nom.event_id) === String(activeEventId))
@@ -873,15 +797,7 @@ export default function App() {
             </div>
           </div>
 
-          {import.meta.env.DEV && BRANDING.showUssd && (
-            <button
-              onClick={() => setUssdOpen(!ussdOpen)}
-              className="luxury-btn secondary"
-              style={{ padding: '0.5rem 1rem', fontSize: '0.65rem', letterSpacing: '0.1em' }}
-            >
-              SHORTCODE DIALER
-            </button>
-          )}
+
 
           {authAdmin ? (
             <button
@@ -948,7 +864,6 @@ export default function App() {
             token={authNominee.token}
             onLogout={handleLogout}
             copyShareLink={copyShareLink}
-            dialUssdCode={dialUssdCode}
             wsTrigger={wsTrigger}
           />
         </Suspense>
@@ -1202,30 +1117,7 @@ export default function App() {
                       VOTE ONLINE
                     </button>
 
-                    <div className="editorial-card-secondary-actions" style={{ display: 'flex', justifyContent: BRANDING.showUssd ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '0.5rem' }}>
-                      {BRANDING.showUssd && (
-                        <button
-                          onClick={() => dialUssdCode(getNomineeUssdCode(nom.code))}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            fontFamily: 'monospace',
-                            fontSize: '0.7rem',
-                            color: 'var(--accent-dark)',
-                            cursor: 'pointer',
-                            padding: 0,
-                            letterSpacing: '0.05em',
-                            textDecoration: 'underline',
-                            transition: 'var(--transition-fast)'
-                          }}
-                          title="Dial USSD code automatically"
-                          onMouseEnter={(e) => e.target.style.color = 'var(--text-primary)'}
-                          onMouseLeave={(e) => e.target.style.color = 'var(--accent-dark)'}
-                        >
-                          DIAL {getNomineeUssdCode(nom.code)}
-                        </button>
-                      )}
-
+                    <div className="editorial-card-secondary-actions" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '0.5rem' }}>
                       <button
                         onClick={() => copyShareLink(nom.code, nom.name)}
                         className="luxury-btn text-link"
@@ -1749,131 +1641,7 @@ export default function App() {
         />
       )}
 
-      {/* FLOATING SHORTCODE DIALER WIDGET (dev only) */}
-      {import.meta.env.DEV && BRANDING.showUssd && ussdOpen && (
-        <div className="ussd-device-frame">
-          <div className="ussd-device-header">
-            <span>SHORTCODE DIALER</span>
-            <button
-              onClick={() => setUssdOpen(false)}
-              style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '0.9rem' }}
-              aria-label="Close"
-            >
-              ✕
-            </button>
-          </div>
 
-          <div style={{ padding: '0.75rem' }}>
-            <div style={{ marginBottom: '0.75rem' }}>
-              <label style={{ display: 'block', fontSize: '0.6rem', textTransform: 'uppercase', color: '#888', marginBottom: '0.25rem', fontWeight: 700 }}>
-                Phone Number
-              </label>
-              <input
-                type="text"
-                value={ussdPhone}
-                onChange={(e) => setUssdPhone(e.target.value)}
-                style={{
-                  width: '100%',
-                  background: '#1c1c1c',
-                  color: '#fff',
-                  border: '1px solid #333',
-                  padding: '0.4rem',
-                  fontFamily: 'monospace',
-                  outline: 'none',
-                  fontSize: '0.75rem'
-                }}
-              />
-            </div>
-
-            {/* Simulated LCD Screen */}
-            <div className="ussd-device-screen">
-              {ussdLoading ? (
-                <div style={{ textAlign: 'center', marginTop: '2.5rem', color: '#666' }}>
-                  Connecting...
-                </div>
-              ) : ussdScreen ? (
-                <div>{ussdScreen}</div>
-              ) : (
-                <div style={{ color: '#aaa', textAlign: 'center', fontSize: '0.75rem', marginTop: '0.5rem' }}>
-                  Dial the official shortcode to begin:<br /><br />
-                  • <strong>{BRANDING.ussdShortcode}</strong> (Voteeq Portal)<br />
-                  {nominees.length > 0 ? (
-                    nominees.slice(0, 3).map(nom => (
-                      <div key={nom.id} style={{ marginTop: '0.25rem' }}>
-                        • <strong>{getNomineeUssdCode(nom.code)}</strong> (Vote for {nom.name})
-                      </div>
-                    ))
-                  ) : (
-                    <div style={{ marginTop: '0.25rem' }}>Loading nominee codes...</div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Dial Console input */}
-            {ussdScreen && ussdAction === 'prompt' ? (
-              <form onSubmit={submitUssdInput} style={{ display: 'flex', gap: '0.4rem' }}>
-                <input
-                  type="text"
-                  placeholder="Option..."
-                  value={ussdInput}
-                  onChange={(e) => setUssdInput(e.target.value)}
-                  className="ussd-device-input"
-                  autoFocus
-                />
-                <button
-                  type="submit"
-                  style={{
-                    background: 'var(--accent)',
-                    color: '#000',
-                    fontWeight: 700,
-                    border: 'none',
-                    padding: '0 0.75rem',
-                    cursor: 'pointer',
-                    fontSize: '0.7rem',
-                    textTransform: 'uppercase'
-                  }}
-                >
-                  SEND
-                </button>
-              </form>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
-                <button
-                  onClick={() => initUssdSession(BRANDING.ussdShortcode)}
-                  style={{
-                    background: '#222',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '0.4rem',
-                    cursor: 'pointer',
-                    fontSize: '0.65rem',
-                    fontWeight: 500,
-                    textTransform: 'uppercase'
-                  }}
-                >
-                  DIAL MENU
-                </button>
-                <button
-                  onClick={() => initUssdSession(getNomineeUssdCode(nominees[0]?.code || '101'))}
-                  style={{
-                    background: '#222',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '0.4rem',
-                    cursor: 'pointer',
-                    fontSize: '0.65rem',
-                    fontWeight: 500,
-                    textTransform: 'uppercase'
-                  }}
-                >
-                  DIAL *{nominees[0]?.code || '101'}#
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
