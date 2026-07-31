@@ -1429,6 +1429,25 @@ app.get('/api/payment/rushpay-widget.js', async (req, res) => {
 });
 
 // 5. Initialize RushPay Payment / Vote Purchase
+const VOTE_PACKAGES = [
+  { votes: 50, price: 30 },
+  { votes: 100, price: 60 },
+  { votes: 200, price: 120 },
+  { votes: 400, price: 200 },
+  { votes: 600, price: 350 },
+  { votes: 800, price: 450 },
+  { votes: 1000, price: 500 },
+  { votes: 2000, price: 1000 }
+];
+
+function getVoteBasePrice(votes) {
+  const numVotes = parseInt(votes, 10) || 0;
+  if (numVotes <= 0) return 0;
+  const pkg = VOTE_PACKAGES.find(p => p.votes === numVotes);
+  if (pkg) return pkg.price;
+  return Math.round(numVotes * 0.60 * 100) / 100;
+}
+
 app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, res) => {
   if (ELECTIONS_PAUSED) {
     return res.status(503).json({ error: 'Voting is currently paused. Please check back later.' });
@@ -1441,8 +1460,8 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
     return res.status(400).json({ error: `Invalid nomination id or vote count (max ${MAX_VOTES_PER_TRANSACTION})` });
   }
 
-  const amountPerVote = 1; // 1 GHS per vote
-  const pricing = calculatePaystackCheckout(amountPerVote * parsedVoteCount);
+  const basePrice = getVoteBasePrice(parsedVoteCount);
+  const pricing = calculatePaystackCheckout(basePrice);
 
   const mockRef = generateReference('v');
   const statusToken = generateStatusToken(mockRef);

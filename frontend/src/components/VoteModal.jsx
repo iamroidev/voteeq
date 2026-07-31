@@ -6,18 +6,35 @@ import { getEmailError, normalizeEmail } from '../utils/email';
 import { calculatePaystackCheckout } from '../utils/paystackFees';
 import { nomineePhotoSrc } from '../utils/photoUrl';
 
+const VOTE_PACKAGES = [
+  { votes: 50, price: 30 },
+  { votes: 100, price: 60 },
+  { votes: 200, price: 120 },
+  { votes: 400, price: 200 },
+  { votes: 600, price: 350 },
+  { votes: 800, price: 450 },
+  { votes: 1000, price: 500 },
+  { votes: 2000, price: 1000 }
+];
+
+export function getVoteBasePrice(votes) {
+  const numVotes = parseInt(votes, 10) || 0;
+  if (numVotes <= 0) return 0;
+  const pkg = VOTE_PACKAGES.find(p => p.votes === numVotes);
+  if (pkg) return pkg.price;
+  return Math.round(numVotes * 0.60 * 100) / 100;
+}
+
 export default function VoteModal({ nominee, onClose, onPaymentRedirect, triggerToast }) {
-  const [voteCount, setVoteCount] = useState(10);
+  const [voteCount, setVoteCount] = useState(50);
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const voteShortcuts = [5, 10, 25, 50, 100];
-  const pricePerVote = parseFloat(BRANDING.votePriceOnlineGhs) || 1;
-
   const MAX_VOTES = 10000;
   const parsedVotes = Math.min(parseInt(voteCount) || 0, MAX_VOTES);
-  const pricing = calculatePaystackCheckout(parsedVotes * pricePerVote);
+  const basePrice = getVoteBasePrice(parsedVotes);
+  const pricing = calculatePaystackCheckout(basePrice);
   const isInvalidVotes = parsedVotes <= 0 || isNaN(parseInt(voteCount)) || parseFloat(voteCount) !== parseInt(voteCount);
 
   const handleVoteSubmit = async (e) => {
@@ -50,7 +67,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
           nomineeId: nominee.id,
           phone: normalizedPhone,
           email: normalizedEmail,
-          voteCount,
+          voteCount: parsedVotes,
         }),
       });
 
@@ -137,40 +154,63 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
           )}
 
           <form onSubmit={handleVoteSubmit}>
-            {/* Votes shortcut buttons and Custom count input */}
             <div style={{ marginBottom: '1.5rem' }}>
               <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
-                Number of Votes
+                Select Voting Package
               </label>
 
-              {/* Quick-pick shortcuts */}
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', letterSpacing: '0.04em' }}>
-                Quick pick:
-              </div>
-              <div className="vote-shortcut-buttons" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.1rem' }}>
-                {voteShortcuts.map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => setVoteCount(num)}
-                    className="luxury-btn secondary"
-                    style={{
-                      padding: '0.4rem 0.8rem',
-                      fontSize: '0.75rem',
-                      background: voteCount === num ? 'var(--accent)' : 'transparent',
-                      color: voteCount === num ? '#fff' : 'var(--text-primary)',
-                      borderColor: voteCount === num ? 'var(--accent)' : 'var(--border-color)',
-                      letterSpacing: '0.05em'
-                    }}
-                  >
-                    +{num}
-                  </button>
-                ))}
+              {/* Grid of bulk packages */}
+              <div className="vote-package-grid" style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '0.6rem',
+                marginBottom: '1.25rem'
+              }}>
+                {VOTE_PACKAGES.map((pkg) => {
+                  const isSelected = voteCount === pkg.votes;
+                  return (
+                    <button
+                      key={pkg.votes}
+                      type="button"
+                      onClick={() => setVoteCount(pkg.votes)}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0.75rem 0.5rem',
+                        background: isSelected ? 'var(--accent-light)' : 'var(--bg-secondary, #ffffff)',
+                        border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        boxShadow: isSelected ? '0 4px 10px rgba(var(--accent-rgb), 0.12)' : 'none',
+                        textAlign: 'center'
+                      }}
+                    >
+                      <span style={{
+                        fontSize: '0.95rem',
+                        fontWeight: 700,
+                        color: isSelected ? 'var(--accent-dark)' : 'var(--text-primary)',
+                        marginBottom: '0.15rem'
+                      }}>
+                        GH₵ {pkg.price.toFixed(2)}
+                      </span>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        color: 'var(--text-secondary)',
+                        fontWeight: 500
+                      }}>
+                        {pkg.votes} votes
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Custom vote count input — clearly labelled */}
               <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', letterSpacing: '0.04em' }}>
-                Or type any amount:
+                Or type any custom amount:
               </div>
               <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                 <input
@@ -194,7 +234,7 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
                     fontSize: '1rem',
                     fontWeight: 600,
                     borderColor: isInvalidVotes ? 'rgba(230, 0, 0, 0.4)' : 'var(--accent)',
-                    boxShadow: isInvalidVotes ? '0 0 0 2px rgba(230, 0, 0, 0.05)' : '0 0 0 1px var(--accent)',
+                    boxShadow: isInvalidVotes ? '0 0 0 2px rgba(230, 0, 0, 0.05)' : 'none',
                   }}
                 />
                 <span style={{ fontSize: '0.8rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
@@ -238,10 +278,10 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
             }}>
               <div style={{ flexShrink: 0 }}>
                 <span style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-                  Rate per vote
+                  Base Amount
                 </span>
                 <p style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
-                  GH₵ {pricePerVote.toFixed(2)}
+                  GH₵ {pricing.baseAmount.toFixed(2)}
                 </p>
               </div>
               <div style={{ textAlign: 'right', minWidth: 0 }}>
@@ -251,7 +291,6 @@ export default function VoteModal({ nominee, onClose, onPaymentRedirect, trigger
                 <p style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', color: 'var(--accent-dark)', marginTop: '0.15rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   GH₵ {pricing.totalDue.toFixed(2)}
                 </p>
-              </div>
             </div>
 
             <button

@@ -111,11 +111,11 @@ export function getNomineeShareUrl(code, apiBase) {
 }
 
 export function formatVotePricingLine() {
-  const online = `ONLINE GH₵ ${BRANDING.votePriceOnlineGhs}`;
+  const online = `ONLINE BULK VOTING FROM GH₵ 30.00`;
   if (BRANDING.showUssd) {
     return `${online} · USSD GH₵ ${BRANDING.votePriceUssdGhs} PER VOTE`;
   }
-  return `${online} PER VOTE`;
+  return online;
 }
 
 export function formatEventMeta(event) {
