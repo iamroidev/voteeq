@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 
 const PIN_PREFIX = 'scrypt:';
-const MAX_VOTES_PER_TRANSACTION = 100;
+const MAX_VOTES_PER_TRANSACTION = 10000;
 
 function isProduction() {
   return process.env.NODE_ENV === 'production';
