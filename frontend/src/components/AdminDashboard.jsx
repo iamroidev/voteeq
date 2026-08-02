@@ -559,9 +559,6 @@ export default function AdminDashboard({ token, onLogout, categories, nominees, 
             Manage Categories and Nominees
           </p>
         </div>
-        <button onClick={onLogout} className="luxury-btn secondary" style={{ padding: '0.6rem 1.2rem', fontSize: '0.65rem' }}>
-          Logout
-        </button>
       </div>
 
       {/* Nav Sub-Tabs */}
