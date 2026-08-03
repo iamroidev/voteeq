@@ -62,7 +62,7 @@ export const BRANDING = {
   campus: 'Tarkwa, Ghana',
   showVenue: false,
   /** Set true when shortlisted nominees are published and voting should be live */
-  votingOpen: true,
+  votingOpen: false,
   /** Set true to lock the public leaderboard and stand until official announcement */
   leaderboardLocked: true,
   /** Set true when ACSES opens awards night ticket sales */
