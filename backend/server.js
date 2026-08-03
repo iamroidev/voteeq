@@ -632,7 +632,7 @@ app.get('/api/events', async (req, res) => {
 // 1c. Purchase event ticket (initialize payment reference)
 app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, res) => {
   if (ELECTIONS_PAUSED) {
-    return res.status(503).json({ error: 'Ticketing and voting are currently paused. Please check back later.' });
+    return res.status(503).json({ error: 'Ticketing and voting have officially ended. Thank you for participating!' });
   }
 
   if (process.env.TICKETS_ENABLED !== 'true') {
@@ -1446,7 +1446,7 @@ function getVoteBasePrice(votes) {
 
 app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, res) => {
   if (ELECTIONS_PAUSED) {
-    return res.status(503).json({ error: 'Voting is currently paused. Please check back later.' });
+    return res.status(503).json({ error: 'Voting has officially ended. Thank you for participating!' });
   }
 
   const { nomineeId, email, phone, voteCount } = req.body;

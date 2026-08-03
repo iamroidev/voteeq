@@ -481,7 +481,7 @@ export default function App() {
 
   const handleOpenVoteModal = (nominee) => {
     if (!BRANDING.votingOpen) {
-      triggerToast('Voting is temporarily paused while our new payment processor is being reviewed. Please check back soon!');
+      triggerToast('Voting has officially ended. Thank you for participating!');
       return;
     }
     setActiveVoteNominee(nominee);
