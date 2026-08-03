@@ -631,9 +631,7 @@ app.get('/api/events', async (req, res) => {
 
 // 1c. Purchase event ticket (initialize payment reference)
 app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, res) => {
-  if (ELECTIONS_PAUSED) {
-    return res.status(503).json({ error: 'Ticketing and voting have officially ended. Thank you for participating!' });
-  }
+
 
   if (process.env.TICKETS_ENABLED !== 'true') {
     return res.status(503).json({ error: 'Ticket sales are not open yet.' });
