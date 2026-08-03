@@ -1,6 +1,6 @@
 const { exec } = require('child_process');
 
-const host = 'ubuntu@54.215.75.184';
+const host = 'ubuntu@54.67.26.59';
 const key = 'C:\\Users\\richi\\Desktop\\ovistocks\\ovistocks-key.pem';
 
 function runCommand(command) {
@@ -16,7 +16,7 @@ function runCommand(command) {
 }
 
 async function main() {
-  console.log('Deploying backend configuration and logo to new EC2 instance (54.215.75.184)...');
+  console.log('Deploying backend configuration and logo to new EC2 instance (54.67.26.59)...');
 
   console.log('1. Uploading backend .env file...');
   const uploadEnv = await runCommand(`scp -i "${key}" -o StrictHostKeyChecking=no "../backend/.env" "${host}:/home/ubuntu/backend.env"`);
