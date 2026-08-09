@@ -677,7 +677,8 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
   const normalizedBuyerEmail = normalizeEmail(buyer_email);
 
   const rushpayApiKey = process.env.RUSHPAY_API_KEY;
-  if (isProduction() && !rushpayApiKey) {
+  const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
+  if (isProduction() && !rushpayApiKey && !paystackSecret) {
     return res.status(503).json({ error: 'Ticket payments are not configured yet. Please try again later.' });
   }
 
@@ -744,6 +745,43 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
       } catch (rushpayErr) {
         console.error('RushPay ticket init error:', rushpayErr);
         return res.status(400).json({ error: rushpayErr.message || 'RushPay initialization failed' });
+      }
+    } else if (paystackSecret) {
+      try {
+        const statusToken = generateStatusToken(mockRef);
+        const paystackData = await initializePaystackTransaction({
+          secretKey: paystackSecret,
+          email: normalizedBuyerEmail,
+          amountMinor: ticketPricing.amountMinor,
+          reference: mockRef,
+          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          metadata: {
+            type: 'ticket',
+            event_id,
+            quantity: qty,
+            phone: phoneCheck.normalized,
+            email: normalizedBuyerEmail
+          }
+        });
+
+        await db.transaction(async (tx) => {
+          await ensureTicketCapacity(tx, event_id, qty);
+          await tx.run(`
+            INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status, capacity_reserved)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+          `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, mockRef, qty]);
+        });
+
+        return res.json({
+          reference: mockRef,
+          statusToken,
+          authorization_url: paystackData.authorization_url,
+          isMock: false,
+          pricing: ticketPricing,
+        });
+      } catch (paystackErr) {
+        console.error('Paystack ticket init error:', paystackErr);
+        return res.status(400).json({ error: paystackErr.message || 'Paystack initialization failed' });
       }
     } else {
       // Mock payment details
