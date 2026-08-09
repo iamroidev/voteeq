@@ -610,8 +610,26 @@ app.get('/api/events', async (req, res) => {
     const events = isAdmin
       ? await db.all('SELECT * FROM events ORDER BY date ASC')
       : await db.all(`
-          SELECT id, title, description, date, venue, ticket_price, privacy, total_tickets, tickets_sold, created_at
-          FROM events ORDER BY date ASC
+          SELECT
+            e.id,
+            e.title,
+            e.description,
+            e.date,
+            e.venue,
+            e.ticket_price,
+            e.privacy,
+            e.total_tickets,
+            e.tickets_sold + COALESCE(SUM(
+              CASE
+                WHEN t.payment_status = 'pending' THEN COALESCE(NULLIF(t.capacity_reserved, 0), t.quantity)
+                ELSE 0
+              END
+            ), 0) AS tickets_sold,
+            e.created_at
+          FROM events e
+          LEFT JOIN tickets t ON t.event_id = e.id
+          GROUP BY e.id
+          ORDER BY e.date ASC
         `);
     const normalizedEvents = events.map((event) => ({
       ...event,
@@ -659,7 +677,8 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
   const normalizedBuyerEmail = normalizeEmail(buyer_email);
 
   const rushpayApiKey = process.env.RUSHPAY_API_KEY;
-  if (isProduction() && !rushpayApiKey) {
+  const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
+  if (isProduction() && !rushpayApiKey && !paystackSecret) {
     return res.status(503).json({ error: 'Ticket payments are not configured yet. Please try again later.' });
   }
 
@@ -681,7 +700,6 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     const ticketPricing = calculatePaystackCheckout(event.ticket_price * qty);
     const totalPrice = ticketPricing.totalDue;
     const mockRef = generateReference('tix');
-    const statusToken = generateStatusToken(mockRef);
 
     const frontendBase = req.headers.origin || process.env.FRONTEND_URL || 'https://voteeq.online';
 
@@ -691,7 +709,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
         const rushpayData = await createRushPayPayment({
           amount: totalPrice,
           description: `Tickets for ${event.title} (${qty} x ticket)`,
-          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/#/payment-status`,
           metadata: {
             type: 'ticket',
             event_id,
@@ -702,6 +720,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
         });
 
         const paymentReference = rushpayData.payment_reference;
+        const statusToken = generateStatusToken(paymentReference);
 
         // 2. Create widget session token
         const widgetSession = await createRushPayWidgetSession(paymentReference);
@@ -709,17 +728,11 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
 
         // 3. Save pending ticket using RushPay reference
         await db.transaction(async (tx) => {
-          const capacity = await tx.get(
-            'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
-            [event_id]
-          );
-          if (!capacity || capacity.tickets_sold + qty > capacity.total_tickets) {
-            throw new Error('SOLD_OUT');
-          }
+          await ensureTicketCapacity(tx, event_id, qty);
           await tx.run(`
-            INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-          `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, paymentReference]);
+            INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status, capacity_reserved)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+          `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, paymentReference, qty]);
         });
 
         return res.json({
@@ -733,20 +746,52 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
         console.error('RushPay ticket init error:', rushpayErr);
         return res.status(400).json({ error: rushpayErr.message || 'RushPay initialization failed' });
       }
+    } else if (paystackSecret) {
+      try {
+        const statusToken = generateStatusToken(mockRef);
+        const paystackData = await initializePaystackTransaction({
+          secretKey: paystackSecret,
+          email: normalizedBuyerEmail,
+          amountMinor: ticketPricing.amountMinor,
+          reference: mockRef,
+          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          metadata: {
+            type: 'ticket',
+            event_id,
+            quantity: qty,
+            phone: phoneCheck.normalized,
+            email: normalizedBuyerEmail
+          }
+        });
+
+        await db.transaction(async (tx) => {
+          await ensureTicketCapacity(tx, event_id, qty);
+          await tx.run(`
+            INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status, capacity_reserved)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+          `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, mockRef, qty]);
+        });
+
+        return res.json({
+          reference: mockRef,
+          statusToken,
+          authorization_url: paystackData.authorization_url,
+          isMock: false,
+          pricing: ticketPricing,
+        });
+      } catch (paystackErr) {
+        console.error('Paystack ticket init error:', paystackErr);
+        return res.status(400).json({ error: paystackErr.message || 'Paystack initialization failed' });
+      }
     } else {
       // Mock payment details
+      const statusToken = generateStatusToken(mockRef);
       await db.transaction(async (tx) => {
-        const capacity = await tx.get(
-          'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
-          [event_id]
-        );
-        if (!capacity || capacity.tickets_sold + qty > capacity.total_tickets) {
-          throw new Error('SOLD_OUT');
-        }
+        await ensureTicketCapacity(tx, event_id, qty);
         await tx.run(`
-          INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-        `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, mockRef]);
+          INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status, capacity_reserved)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+        `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, mockRef, qty]);
       });
 
       return res.json({
@@ -794,6 +839,10 @@ app.post('/api/payment/mock-verify-ticket', rateLimiter(1 * 60 * 1000, 20), asyn
       runInBackground(() => sendTicketReceipt(result.ticket.id));
     }
 
+    if (result.outcome === 'sold_out') {
+      return res.status(409).json({ error: 'Ticket capacity is no longer available for this payment reference.' });
+    }
+
     const ticketDetails = await db.get(`
       SELECT t.*, e.title as event_title, e.date as event_date, e.venue as event_venue
       FROM tickets t
@@ -826,16 +875,45 @@ async function logAdminAction(adminUsername, action, details) {
   }
 }
 
+async function ensureTicketCapacity(tx, eventId, quantity) {
+  const capacity = await tx.get(`
+    SELECT
+      e.tickets_sold,
+      e.total_tickets,
+      COALESCE(SUM(
+        CASE
+          WHEN t.payment_status = 'pending' THEN COALESCE(NULLIF(t.capacity_reserved, 0), t.quantity)
+          ELSE 0
+        END
+      ), 0) AS reserved_tickets
+    FROM events e
+    LEFT JOIN tickets t ON t.event_id = e.id
+    WHERE e.id = ?
+    GROUP BY e.id
+  `, [eventId]);
+
+  if (
+    !capacity ||
+    Number(capacity.tickets_sold || 0) +
+      Number(capacity.reserved_tickets || 0) +
+      Number(quantity || 0) > Number(capacity.total_tickets || 0)
+  ) {
+    throw new Error('SOLD_OUT');
+  }
+}
+
 async function cleanupStaleTickets(db) {
   try {
     const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     const result = await db.run(`
-      DELETE FROM tickets 
-      WHERE payment_status = 'pending' 
+      UPDATE tickets
+      SET payment_status = 'expired',
+          capacity_reserved = 0
+      WHERE payment_status = 'pending'
         AND created_at < ?
     `, [thirtyMinsAgo]);
     if (result.changes > 0) {
-      console.log(`Cleaned up ${result.changes} stale pending ticket(s)`);
+      console.log(`Expired ${result.changes} stale pending ticket reservation(s)`);
     }
   } catch (err) {
     console.error('Failed to cleanup stale pending tickets:', err);
@@ -1538,7 +1616,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
         const rushpayData = await createRushPayPayment({
           amount: pricing.totalDue,
           description: `Votes for ${nominee.name} (${parsedVoteCount} votes)`,
-          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/#/payment-status`,
           metadata: {
             type: 'vote',
             nomineeId,
@@ -1549,6 +1627,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
         });
 
         const paymentReference = rushpayData.payment_reference;
+        const statusToken = generateStatusToken(paymentReference);
 
         // 2. Create widget session token
         const widgetSession = await createRushPayWidgetSession(paymentReference);
@@ -1678,6 +1757,8 @@ app.post('/api/payment/webhook', rateLimiter(1 * 60 * 1000, 100), async (req, re
           if (result.outcome === 'completed') {
             console.log(`Ticket payment confirmed for reference: ${reference}`);
             runInBackground(() => sendTicketReceipt(result.ticket.id));
+          } else if (result.outcome === 'sold_out') {
+            console.error(`Paid ticket reference could not be fulfilled because capacity is exhausted: ${reference}`);
           }
           return res.status(200).send('Webhook processed successfully');
         }
@@ -1741,6 +1822,8 @@ app.post('/api/payment/webhook', rateLimiter(1 * 60 * 1000, 100), async (req, re
         if (result.outcome === 'completed') {
           console.log(`Ticket payment confirmed for reference: ${reference}`);
           runInBackground(() => sendTicketReceipt(result.ticket.id));
+        } else if (result.outcome === 'sold_out') {
+          console.error(`Paid ticket reference could not be fulfilled because capacity is exhausted: ${reference}`);
         }
         return res.status(200).send('Webhook processed successfully');
       }
@@ -1869,7 +1952,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
         const rushpayData = await createRushPayPayment({
           amount: formFee,
           description: `Nominee Application: ${name}`,
-          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/#/payment-status`,
           metadata: {
             type: 'nominee_form',
             name,
@@ -1879,6 +1962,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
         });
 
         const paymentReference = rushpayData.payment_reference;
+        const statusToken = generateStatusToken(paymentReference);
 
         // 2. Create widget session token
         const widgetSession = await createRushPayWidgetSession(paymentReference);
@@ -2370,7 +2454,7 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
     const rushpayApiKey = process.env.RUSHPAY_API_KEY;
     let isVerified = false;
 
-    if (paystackSecret && (status === 'pending' || status === 'processing')) {
+    if (paystackSecret && (status === 'pending' || status === 'processing' || status === 'expired')) {
       try {
         const verified = await verifyPaystackTransaction(paystackSecret, reference);
         if (verified && verified.ok) {
@@ -2379,7 +2463,7 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
       } catch (verifyErr) {
         console.warn(`Paystack verify on status check (${reference}):`, verifyErr.message);
       }
-    } else if (rushpayApiKey && (status === 'pending' || status === 'processing')) {
+    } else if (rushpayApiKey && (status === 'pending' || status === 'processing' || status === 'expired')) {
       try {
         const verified = await verifyRushPayTransaction(reference);
         if (verified && (verified.status === 'completed' || verified.status === 'success' || verified.status === 'paid')) {
@@ -2426,6 +2510,8 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
         const ticketResult = await completeTicketPayment(db, reference);
         if (ticketResult.outcome === 'completed') {
           runInBackground(() => sendTicketReceipt(ticketResult.ticket.id));
+        } else if (ticketResult.outcome === 'sold_out') {
+          console.error(`Verified ticket payment could not be fulfilled because capacity is exhausted: ${reference}`);
         }
         const freshTicket = await db.get(`
           SELECT t.*, e.title as event_title
@@ -2461,10 +2547,12 @@ app.get('/api/payment/status/:reference', rateLimiter(1 * 60 * 1000, 30), async 
       }
     }
 
+    const responseStatus = status === 'expired' ? 'failed' : status;
+
     res.json({
       reference,
       type,
-      status,
+      status: responseStatus,
       details
     });
   } catch (err) {
