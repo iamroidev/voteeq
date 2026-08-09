@@ -99,6 +99,7 @@ const SCHEMA = `
     price_paid REAL NOT NULL,
     payment_reference TEXT UNIQUE NOT NULL,
     payment_status TEXT DEFAULT 'pending',
+    capacity_reserved INTEGER DEFAULT 0,
     scanned INTEGER DEFAULT 0,
     scanned_at DATETIME
   );
@@ -155,9 +156,9 @@ async function seedTicketFixture(db, { totalTickets = 10, ticketsSold = 0, quant
     ['Test Event', totalTickets, ticketsSold]
   );
   await db.run(
-    `INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-    [1, 'TIX-TEST01', 'Buyer', 'buyer@test.com', '0244000000', quantity, 50, 'tix_test_ref_001']
+    `INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status, capacity_reserved)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    [1, 'TIX-TEST01', 'Buyer', 'buyer@test.com', '0244000000', quantity, 50, 'tix_test_ref_001', quantity]
   );
   return { eventId: 1, reference: 'tix_test_ref_001', ticketCode: 'TIX-TEST01', quantity };
 }
