@@ -41,6 +41,10 @@ const { validateGhanaPhone, getMomoProvider } = require('./phone');
 const { createRushPayPayment, createRushPayWidgetSession, verifyRushPayWebhook, verifyRushPayTransaction } = require('./rushpay');
 const { initializePaystackTransaction, verifyPaystackTransaction, verifyPaystackWebhook, chargeMobileMoney } = require('./paystack');
 const { sendSMS } = require('./sms');
+const {
+  cleanupStaleTicketReservations,
+  ensureTicketCapacityAvailable,
+} = require('./ticket-reservations');
 
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
@@ -709,13 +713,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
 
         // 3. Save pending ticket using RushPay reference
         await db.transaction(async (tx) => {
-          const capacity = await tx.get(
-            'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
-            [event_id]
-          );
-          if (!capacity || capacity.tickets_sold + qty > capacity.total_tickets) {
-            throw new Error('SOLD_OUT');
-          }
+          await ensureTicketCapacityAvailable(tx, event_id, qty);
           await tx.run(`
             INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
@@ -736,13 +734,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     } else {
       // Mock payment details
       await db.transaction(async (tx) => {
-        const capacity = await tx.get(
-          'SELECT tickets_sold, total_tickets FROM events WHERE id = ?',
-          [event_id]
-        );
-        if (!capacity || capacity.tickets_sold + qty > capacity.total_tickets) {
-          throw new Error('SOLD_OUT');
-        }
+        await ensureTicketCapacityAvailable(tx, event_id, qty);
         await tx.run(`
           INSERT INTO tickets (event_id, ticket_code, buyer_name, buyer_email, buyer_phone, quantity, price_paid, payment_reference, payment_status)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
@@ -828,14 +820,9 @@ async function logAdminAction(adminUsername, action, details) {
 
 async function cleanupStaleTickets(db) {
   try {
-    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    const result = await db.run(`
-      DELETE FROM tickets 
-      WHERE payment_status = 'pending' 
-        AND created_at < ?
-    `, [thirtyMinsAgo]);
+    const result = await cleanupStaleTicketReservations(db);
     if (result.changes > 0) {
-      console.log(`Cleaned up ${result.changes} stale pending ticket(s)`);
+      console.log(`Expired ${result.changes} stale pending ticket reservation(s)`);
     }
   } catch (err) {
     console.error('Failed to cleanup stale pending tickets:', err);
