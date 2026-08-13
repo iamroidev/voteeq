@@ -61,6 +61,10 @@ export const BRANDING = {
   university: 'University of Mines and Technology (UMaT)',
   campus: 'Tarkwa, Ghana',
   showVenue: false,
+  /** Set true to show a site-wide maintenance page and block public access */
+  siteLocked: true,
+  maintenanceMessage:
+    'VoteEQ is temporarily unavailable while we perform scheduled maintenance. We will be back online shortly. Thank you for your patience.',
   /** Set true when shortlisted nominees are published and voting should be live */
   votingOpen: false,
   /** Set true to lock the public leaderboard and stand until official announcement */
