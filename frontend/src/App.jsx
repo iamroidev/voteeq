@@ -52,7 +52,9 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState('');
 
   // Nominee Login/Dashboard
-  const [authNominee, setAuthNominee] = useState(() => readStoredAuth('voteeq_auth'));
+  const [authNominee, setAuthNominee] = useState(() => (
+    BRANDING.siteLocked ? null : readStoredAuth('voteeq_auth')
+  ));
   const [loginMode, setLoginMode] = useState(false);
   const [loginCode, setLoginCode] = useState('');
   const [loginPasscode, setLoginPasscode] = useState('');
@@ -60,7 +62,9 @@ export default function App() {
   const [loginSubmitting, setLoginSubmitting] = useState(false);
 
   // Admin Login/Dashboard States
-  const [authAdmin, setAuthAdmin] = useState(() => readStoredAuth('voteeq_admin_auth'));
+  const [authAdmin, setAuthAdmin] = useState(() => (
+    BRANDING.siteLocked ? null : readStoredAuth('voteeq_admin_auth')
+  ));
   const [adminLoginMode, setAdminLoginMode] = useState(false);
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -96,17 +100,10 @@ export default function App() {
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
 
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive && !authAdmin;
+  const showMaintenance = maintenanceActive;
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
-    if (cleanPath === '/admin') {
-      if (!authAdmin) {
-        setAdminLoginMode(true);
-      }
-      window.history.replaceState({}, document.title, '/');
-      return;
-    }
     if (window.location.hash || window.location.search) {
       window.history.replaceState({}, document.title, cleanPath === '/' ? '/' : cleanPath);
     }
@@ -122,6 +119,16 @@ export default function App() {
     setCheckoutData(null);
     setRushPayData(null);
     setCurrentPage(null);
+  };
+
+  const clearAllSessions = () => {
+    clearPublicSession();
+    setAuthAdmin(null);
+    localStorage.removeItem('voteeq_admin_auth');
+    setAdminLoginMode(false);
+    setAdminUsername('');
+    setAdminPassword('');
+    setAdminLoginError('');
   };
 
   const parseHashRoute = () => {
@@ -273,8 +280,8 @@ export default function App() {
   useEffect(() => {
     if (!showMaintenance) return undefined;
 
-    if (authNominee) {
-      clearPublicSession();
+    if (authNominee || authAdmin) {
+      clearAllSessions();
     } else {
       resetPublicUrl();
     }
@@ -332,10 +339,6 @@ export default function App() {
     const timeoutId = setTimeout(() => {
       if (showMaintenance) {
         setLoading(false);
-        const cleanPath = window.location.pathname.replace(/\/$/, '');
-        if (cleanPath === '/admin' && !authAdmin) {
-          setAdminLoginMode(true);
-        }
         resetPublicUrl();
         return;
       }
@@ -378,10 +381,6 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       if (showMaintenance) {
-        const { path } = parseHashRoute();
-        if (path === 'admin' && !authAdmin) {
-          setAdminLoginMode(true);
-        }
         resetPublicUrl();
         return;
       }
@@ -676,6 +675,10 @@ export default function App() {
   // Admin Login Flow
   const handleAdminLogin = async (e) => {
     e.preventDefault();
+    if (showMaintenance) {
+      setAdminLoginError('The site is under maintenance. Admin access is unavailable.');
+      return;
+    }
     setAdminLoginError('');
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/login`, {
@@ -793,7 +796,7 @@ export default function App() {
       <div className="ambient-glow-2" />
 
       {showMaintenance ? (
-        <MaintenancePage onAdminLogin={() => setAdminLoginMode(true)} />
+        <MaintenancePage />
       ) : (
       <>
 
@@ -1519,7 +1522,7 @@ export default function App() {
       )}
 
       {/* Admin Login Modal */}
-      {adminLoginMode && (
+      {!showMaintenance && adminLoginMode && (
         <div className="luxury-modal-overlay" role="dialog" aria-modal="true">
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">

@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { BRANDING } from './branding'
 
 // Handle Vite's dynamic import preload failures (due to new deployment/modified asset hashes)
 window.addEventListener('vite:preloadError', (event) => {
@@ -18,14 +19,17 @@ window.addEventListener('error', (event) => {
   }
 }, true);
 
-
 // Paystack and other external redirects land on path URLs — map to hash routes before React boots
 const legacyPath = window.location.pathname.replace(/\/$/, '')
-if (legacyPath === '/payment-status') {
-  const query = window.location.search || ''
-  window.location.replace(`${window.location.origin}/#/payment-status${query}`)
-} else if (legacyPath === '/admin') {
-  window.location.replace(`${window.location.origin}/#/admin`)
+if (!BRANDING.siteLocked) {
+  if (legacyPath === '/payment-status') {
+    const query = window.location.search || ''
+    window.location.replace(`${window.location.origin}/#/payment-status${query}`)
+  } else if (legacyPath === '/admin') {
+    window.location.replace(`${window.location.origin}/#/admin`)
+  }
+} else if (legacyPath === '/admin' || legacyPath === '/payment-status') {
+  window.location.replace(`${window.location.origin}/`)
 }
 
 createRoot(document.getElementById('root')).render(
