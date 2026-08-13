@@ -93,6 +93,36 @@ export default function App() {
 
   // WebSocket updates state trigger
   const [wsTrigger, setWsTrigger] = useState(0);
+  const [remoteMaintenance, setRemoteMaintenance] = useState(null);
+
+  const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
+  const showMaintenance = maintenanceActive && !authAdmin;
+
+  const resetPublicUrl = () => {
+    const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
+    if (cleanPath === '/admin') {
+      if (!authAdmin) {
+        setAdminLoginMode(true);
+      }
+      window.history.replaceState({}, document.title, '/');
+      return;
+    }
+    if (window.location.hash || window.location.search) {
+      window.history.replaceState({}, document.title, cleanPath === '/' ? '/' : cleanPath);
+    }
+  };
+
+  const clearPublicSession = () => {
+    setAuthNominee(null);
+    localStorage.removeItem('voteeq_auth');
+    setLoginMode(false);
+    setRegisterMode(false);
+    setMobileMenuOpen(false);
+    setActiveVoteNominee(null);
+    setCheckoutData(null);
+    setRushPayData(null);
+    setCurrentPage(null);
+  };
 
   const parseHashRoute = () => {
     const rawHash = window.location.hash || `#/${BRANDING.defaultTab}`;
@@ -213,9 +243,54 @@ export default function App() {
   };
 
   useEffect(() => {
-    document.title = BRANDING.documentTitle;
+    document.title = showMaintenance
+      ? `Maintenance | ${BRANDING.platformName}`
+      : BRANDING.documentTitle;
     applyAccentTheme(getStoredAccent());
+  }, [showMaintenance]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`${API_BASE_URL}/api/site-status`)
+      .then((res) => (res.ok ? res.json() : { maintenance: BRANDING.siteLocked }))
+      .then((data) => {
+        if (!cancelled) {
+          setRemoteMaintenance(Boolean(data.maintenance));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRemoteMaintenance(BRANDING.siteLocked);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!showMaintenance) return undefined;
+
+    if (authNominee) {
+      clearPublicSession();
+    } else {
+      resetPublicUrl();
+    }
+
+    const blockNavigation = () => {
+      resetPublicUrl();
+    };
+
+    window.addEventListener('hashchange', blockNavigation);
+    window.addEventListener('popstate', blockNavigation);
+
+    return () => {
+      window.removeEventListener('hashchange', blockNavigation);
+      window.removeEventListener('popstate', blockNavigation);
+    };
+  }, [showMaintenance, authAdmin, authNominee]);
 
   const changeAccent = (color) => {
     setAccent(color);
@@ -255,8 +330,13 @@ export default function App() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (BRANDING.siteLocked && !authAdmin) {
+      if (showMaintenance) {
         setLoading(false);
+        const cleanPath = window.location.pathname.replace(/\/$/, '');
+        if (cleanPath === '/admin' && !authAdmin) {
+          setAdminLoginMode(true);
+        }
+        resetPublicUrl();
         return;
       }
 
@@ -277,7 +357,7 @@ export default function App() {
     }, 0);
 
     const pollIfVisible = () => {
-      if (BRANDING.siteLocked && !authAdmin) return;
+      if (showMaintenance) return;
       if (!document.hidden && !authAdmin && !authNominee) {
         loadData();
       }
@@ -292,11 +372,20 @@ export default function App() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [authAdmin, authNominee]);
+  }, [authAdmin, authNominee, showMaintenance]);
 
   // Sync state with URL Hash for proper routing/navigation
   useEffect(() => {
     const handleHashChange = () => {
+      if (showMaintenance) {
+        const { path } = parseHashRoute();
+        if (path === 'admin' && !authAdmin) {
+          setAdminLoginMode(true);
+        }
+        resetPublicUrl();
+        return;
+      }
+
       if (authAdmin) {
         setCurrentPage(null);
         syncDashboardHash('admin');
@@ -355,10 +444,10 @@ export default function App() {
     return () => {
       window.removeEventListener('hashchange', handleHashChange);
     };
-  }, [authAdmin, authNominee]);
+  }, [authAdmin, authNominee, showMaintenance]);
 
   useEffect(() => {
-    if (BRANDING.siteLocked && !authAdmin) return undefined;
+    if (showMaintenance) return undefined;
 
     let socket = null;
     let reconnectTimeout = null;
@@ -489,6 +578,10 @@ export default function App() {
   };
 
   const handleOpenVoteModal = (nominee) => {
+    if (showMaintenance) {
+      triggerToast('The site is under maintenance. Please try again later.');
+      return;
+    }
     if (!BRANDING.votingOpen) {
       triggerToast('Voting has officially ended. Thank you for participating!');
       return;
@@ -539,6 +632,10 @@ export default function App() {
   // Nominee Login Flow
   const handleNomineeLogin = async (e) => {
     e.preventDefault();
+    if (showMaintenance) {
+      setLoginError('The site is under maintenance. Please try again later.');
+      return;
+    }
     setLoginError('');
     setLoginSubmitting(true);
     try {
@@ -688,8 +785,6 @@ export default function App() {
     adminLoginMode ||
     mobileMenuOpen
   );
-
-  const showMaintenance = BRANDING.siteLocked && !authAdmin;
 
   return (
     <div className={`app-container${authAdmin ? ' admin-mode' : ''}`} style={{ position: 'relative' }}>
@@ -1252,7 +1347,7 @@ export default function App() {
       {/* ---------------------------------------------------- */}
 
       {/* Nominee Login Modal */}
-      {loginMode && (
+      {!showMaintenance && loginMode && (
         <div className="luxury-modal-overlay" role="dialog" aria-modal="true">
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">
@@ -1318,7 +1413,7 @@ export default function App() {
       )}
 
       {/* Nominee Registration / PIN Activation Modal */}
-      {registerMode && (
+      {!showMaintenance && registerMode && (
         <div className="luxury-modal-overlay" role="dialog" aria-modal="true">
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">
@@ -1488,7 +1583,7 @@ export default function App() {
       )}
 
       {/* Mobile Control Center Drawer overlay */}
-      {mobileMenuOpen && (
+      {!showMaintenance && mobileMenuOpen && (
         <div className="control-center-overlay" onClick={() => setMobileMenuOpen(false)} role="dialog" aria-modal="true">
           <div className="control-center-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="control-center-header">
@@ -1632,7 +1727,7 @@ export default function App() {
       )}
 
       {/* Web Vote Modal Checkout */}
-      {activeVoteNominee && (
+      {!showMaintenance && activeVoteNominee && (
         <VoteModal
           nominee={activeVoteNominee}
           onClose={() => setActiveVoteNominee(null)}
@@ -1642,7 +1737,7 @@ export default function App() {
       )}
 
       {/* Secure Payment Checkout Screen */}
-      {checkoutData && (
+      {!showMaintenance && checkoutData && (
         <MockPaystack
           checkoutData={checkoutData}
           onComplete={handlePaymentSuccess}
@@ -1651,7 +1746,7 @@ export default function App() {
       )}
 
       {/* RushPay Embedded Payment Widget */}
-      {rushPayData && (
+      {!showMaintenance && rushPayData && (
         <RushPayWidgetModal
           paymentReference={rushPayData.paymentReference}
           widgetSessionToken={rushPayData.widgetSessionToken}
