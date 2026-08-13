@@ -320,11 +320,9 @@ app.use(bodyParser.json({
 })); // support large canvas uploads
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-function isMaintenanceExemptPath(path, req) {
+function isMaintenanceExemptPath(path) {
   if (path === '/health') return true;
   if (path === '/api/site-status') return true;
-  if (path === '/api/admin/login') return true;
-  if (path.startsWith('/api/admin/')) return true;
   return false;
 }
 
@@ -336,7 +334,7 @@ function sendMaintenanceResponse(res) {
 }
 
 app.use((req, res, next) => {
-  if (!SITE_MAINTENANCE || isMaintenanceExemptPath(req.path, req)) {
+  if (!SITE_MAINTENANCE || isMaintenanceExemptPath(req.path)) {
     return next();
   }
   return sendMaintenanceResponse(res);

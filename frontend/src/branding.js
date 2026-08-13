@@ -82,8 +82,8 @@ export const BRANDING = {
   documentTitle: '"Praemia Pro Virtute" Dinner & Awards Night | VoteEQ',
 };
 
-export function isSiteLockedForUser(authAdmin) {
-  return BRANDING.siteLocked && !authAdmin;
+export function isSiteLockedForUser() {
+  return BRANDING.siteLocked;
 }
 
 /** Direct link supporters use to open the vote page for this nominee */

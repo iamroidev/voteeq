@@ -1,6 +1,6 @@
 import { BRANDING } from '../branding';
 
-export default function MaintenancePage({ onAdminLogin }) {
+export default function MaintenancePage() {
   const message =
     BRANDING.maintenanceMessage ||
     'We are currently performing scheduled maintenance. Please check back soon.';
@@ -123,29 +123,6 @@ export default function MaintenancePage({ onAdminLogin }) {
         }}
       >
         &copy; {new Date().getFullYear()} {BRANDING.platformName}
-        {onAdminLogin && (
-          <>
-            {' · '}
-            <button
-              type="button"
-              onClick={onAdminLogin}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                fontSize: 'inherit',
-                letterSpacing: 'inherit',
-                textTransform: 'inherit',
-                cursor: 'pointer',
-                padding: 0,
-                textDecoration: 'underline',
-                textUnderlineOffset: '2px',
-              }}
-            >
-              Admin
-            </button>
-          </>
-        )}
       </p>
     </div>
   );
