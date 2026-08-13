@@ -46,6 +46,7 @@ const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
 const LEADERBOARD_LOCKED = true;
 const ELECTIONS_PAUSED = true;
+const SITE_MAINTENANCE = process.env.SITE_MAINTENANCE !== 'false';
 const {
   isValidEmail,
   normalizeEmail,
@@ -316,6 +317,23 @@ app.use(bodyParser.json({
   }
 })); // support large canvas uploads
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
+
+function isMaintenanceExemptPath(path) {
+  if (path === '/health') return true;
+  if (path === '/api/admin/login') return true;
+  if (path.startsWith('/api/admin/')) return true;
+  return false;
+}
+
+app.use((req, res, next) => {
+  if (!SITE_MAINTENANCE || isMaintenanceExemptPath(req.path)) {
+    return next();
+  }
+  return res.status(503).json({
+    error: 'Site is under maintenance. Please try again later.',
+    maintenance: true,
+  });
+});
 
 app.get('/health', async (req, res) => {
   try {

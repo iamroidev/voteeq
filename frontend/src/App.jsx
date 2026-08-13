@@ -18,6 +18,7 @@ import LeaderboardPanel from './components/LeaderboardPanel';
 import PublicVoteFilters from './components/PublicVoteFilters';
 import PaymentStatusPage from './pages/PaymentStatusPage';
 import NotFoundPage from './pages/NotFoundPage';
+import MaintenancePage from './pages/MaintenancePage';
 import { API_BASE_URL, WS_BASE_URL } from './config';
 import { BRANDING, formatEventDate, formatEventMeta, getNomineeShareUrl, displayEventTitle } from './branding';
 import { readStoredAuth } from './utils/storage';
@@ -254,6 +255,11 @@ export default function App() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
+      if (BRANDING.siteLocked && !authAdmin) {
+        setLoading(false);
+        return;
+      }
+
       loadData();
 
       // Intercept direct navigation to /admin or /admin/
@@ -271,6 +277,7 @@ export default function App() {
     }, 0);
 
     const pollIfVisible = () => {
+      if (BRANDING.siteLocked && !authAdmin) return;
       if (!document.hidden && !authAdmin && !authNominee) {
         loadData();
       }
@@ -351,6 +358,8 @@ export default function App() {
   }, [authAdmin, authNominee]);
 
   useEffect(() => {
+    if (BRANDING.siteLocked && !authAdmin) return undefined;
+
     let socket = null;
     let reconnectTimeout = null;
     let delay = 1000;
@@ -680,26 +689,18 @@ export default function App() {
     mobileMenuOpen
   );
 
+  const showMaintenance = BRANDING.siteLocked && !authAdmin;
+
   return (
     <div className={`app-container${authAdmin ? ' admin-mode' : ''}`} style={{ position: 'relative' }}>
       {/* Dynamic Ambient Blur Glows */}
       <div className="ambient-glow-1" />
       <div className="ambient-glow-2" />
 
-      {/* Toast Alert System */}
-      {toastMessage && (
-        <div
-          className="luxury-toast visible"
-          role="status"
-          aria-live="polite"
-          onClick={dismissToast}
-          onKeyDown={(e) => { if (e.key === 'Escape') dismissToast(); }}
-          tabIndex={0}
-          title="Dismiss"
-        >
-          {toastMessage}
-        </div>
-      )}
+      {showMaintenance ? (
+        <MaintenancePage onAdminLogin={() => setAdminLoginMode(true)} />
+      ) : (
+      <>
 
       {/* Main Luxury Navigation Bar — hidden while modals/drawers are open */}
       {!isOverlayOpen && (
@@ -1226,6 +1227,24 @@ export default function App() {
             <span>&copy; {new Date().getFullYear()} {BRANDING.platformName.toUpperCase()} · {BRANDING.organizerName} {BRANDING.eventTitle}</span>
           </div>
         </footer>
+      )}
+
+    </>
+      )}
+
+      {/* Toast Alert System */}
+      {toastMessage && (
+        <div
+          className="luxury-toast visible"
+          role="status"
+          aria-live="polite"
+          onClick={dismissToast}
+          onKeyDown={(e) => { if (e.key === 'Escape') dismissToast(); }}
+          tabIndex={0}
+          title="Dismiss"
+        >
+          {toastMessage}
+        </div>
       )}
 
       {/* ---------------------------------------------------- */}
