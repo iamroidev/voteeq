@@ -46,7 +46,6 @@ const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
 const LEADERBOARD_LOCKED = true;
 const ELECTIONS_PAUSED = true;
-const SITE_MAINTENANCE = process.env.SITE_MAINTENANCE !== 'false';
 const {
   isValidEmail,
   normalizeEmail,
@@ -54,6 +53,9 @@ const {
   sendTicketReceiptEmail,
 } = require('./email');
 require('dotenv').config();
+
+const SITE_MAINTENANCE = process.env.SITE_MAINTENANCE !== 'false';
+const SITE_MAINTENANCE_MESSAGE = 'Site is under maintenance. Please try again later.';
 
 validateProductionConfig();
 
@@ -318,20 +320,32 @@ app.use(bodyParser.json({
 })); // support large canvas uploads
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-function isMaintenanceExemptPath(path) {
+function isMaintenanceExemptPath(path, req) {
   if (path === '/health') return true;
+  if (path === '/api/site-status') return true;
   if (path === '/api/admin/login') return true;
   if (path.startsWith('/api/admin/')) return true;
   return false;
 }
 
+function sendMaintenanceResponse(res) {
+  return res.status(503).json({
+    error: SITE_MAINTENANCE_MESSAGE,
+    maintenance: true,
+  });
+}
+
 app.use((req, res, next) => {
-  if (!SITE_MAINTENANCE || isMaintenanceExemptPath(req.path)) {
+  if (!SITE_MAINTENANCE || isMaintenanceExemptPath(req.path, req)) {
     return next();
   }
-  return res.status(503).json({
-    error: 'Site is under maintenance. Please try again later.',
-    maintenance: true,
+  return sendMaintenanceResponse(res);
+});
+
+app.get('/api/site-status', (req, res) => {
+  res.json({
+    maintenance: SITE_MAINTENANCE,
+    message: SITE_MAINTENANCE_MESSAGE,
   });
 });
 
