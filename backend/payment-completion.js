@@ -3,6 +3,8 @@
  * Used by webhooks and mock-verify paths so concurrent retries cannot double-count.
  */
 
+const { ensurePaidTicketCapacity } = require('./ticket-reservations');
+
 const inFlightByReference = new Map();
 
 function dedupeByReference(reference, fn) {
@@ -75,8 +77,29 @@ async function completeTicketPaymentTx(db, reference) {
       return { outcome: 'not_found' };
     }
 
+    if (ticket.payment_status === 'paid') {
+      return { outcome: 'already_completed', ticket };
+    }
+
+    if (ticket.payment_status !== 'pending' && ticket.payment_status !== 'expired') {
+      return { outcome: 'not_payable', ticket };
+    }
+
+    try {
+      await ensurePaidTicketCapacity(tx, ticket.event_id, ticket.quantity);
+    } catch (err) {
+      if (err.message !== 'SOLD_OUT') {
+        throw err;
+      }
+      await tx.run(
+        "UPDATE tickets SET payment_status = 'capacity_failed' WHERE id = ? AND payment_status IN ('pending', 'expired')",
+        [ticket.id]
+      );
+      return { outcome: 'capacity_failed', ticket };
+    }
+
     const updated = await tx.run(
-      "UPDATE tickets SET payment_status = 'paid' WHERE id = ? AND payment_status = 'pending'",
+      "UPDATE tickets SET payment_status = 'paid' WHERE id = ? AND payment_status IN ('pending', 'expired')",
       [ticket.id]
     );
 

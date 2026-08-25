@@ -100,7 +100,8 @@ const SCHEMA = `
     payment_reference TEXT UNIQUE NOT NULL,
     payment_status TEXT DEFAULT 'pending',
     scanned INTEGER DEFAULT 0,
-    scanned_at DATETIME
+    scanned_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE nominee_registrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

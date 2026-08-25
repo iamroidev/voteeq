@@ -113,6 +113,37 @@ describe('completeTicketPayment', () => {
     const event = await ctx.db.get('SELECT tickets_sold FROM events WHERE id = 1');
     assert.equal(event.tickets_sold, 2);
   });
+
+  it('does not mark a ticket paid when completion would exceed capacity', async () => {
+    if (ctx) await destroyTestDb(ctx);
+    ctx = await createTestDb();
+    await seedTicketFixture(ctx.db, { totalTickets: 1, ticketsSold: 1, quantity: 1 });
+
+    const result = await completeTicketPayment(ctx.db, 'tix_test_ref_001');
+    assert.equal(result.outcome, 'capacity_failed');
+
+    const event = await ctx.db.get('SELECT tickets_sold FROM events WHERE id = 1');
+    assert.equal(event.tickets_sold, 1);
+
+    const ticket = await ctx.db.get('SELECT payment_status FROM tickets WHERE payment_reference = ?', ['tix_test_ref_001']);
+    assert.equal(ticket.payment_status, 'capacity_failed');
+  });
+
+  it('can complete an expired reservation if paid capacity remains', async () => {
+    await ctx.db.run(
+      "UPDATE tickets SET payment_status = 'expired' WHERE payment_reference = ?",
+      ['tix_test_ref_001']
+    );
+
+    const result = await completeTicketPayment(ctx.db, 'tix_test_ref_001');
+    assert.equal(result.outcome, 'completed');
+
+    const event = await ctx.db.get('SELECT tickets_sold FROM events WHERE id = 1');
+    assert.equal(event.tickets_sold, 2);
+
+    const ticket = await ctx.db.get('SELECT payment_status FROM tickets WHERE payment_reference = ?', ['tix_test_ref_001']);
+    assert.equal(ticket.payment_status, 'paid');
+  });
 });
 
 describe('completeRegistrationPayment', () => {
