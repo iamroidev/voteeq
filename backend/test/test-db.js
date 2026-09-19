@@ -76,7 +76,9 @@ const SCHEMA = `
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
+    photo_url TEXT,
     category_id INTEGER NOT NULL,
+    passcode TEXT DEFAULT '',
     votes_count INTEGER DEFAULT 0
   );
   CREATE TABLE votes (
@@ -107,8 +109,16 @@ const SCHEMA = `
     name TEXT NOT NULL,
     email TEXT NOT NULL,
     phone TEXT NOT NULL,
+    photo_url TEXT,
+    category_id INTEGER,
+    custom_category TEXT,
+    bio TEXT,
     payment_reference TEXT UNIQUE,
-    payment_status TEXT DEFAULT 'pending'
+    payment_status TEXT DEFAULT 'pending',
+    form_fee REAL DEFAULT 10.00,
+    approval_status TEXT DEFAULT 'pending',
+    nominee_code TEXT,
+    activation_pin TEXT
   );
 `;
 
