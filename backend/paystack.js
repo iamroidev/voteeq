@@ -1,3 +1,5 @@
+const { normalizeGhanaPhone } = require('./phone');
+
 async function initializePaystackTransaction({
   secretKey,
   email,
@@ -114,6 +116,7 @@ async function chargeMobileMoney({
   if (!key) {
     throw new Error('Paystack secret key is not configured');
   }
+  const normalizedPhone = normalizeGhanaPhone(phone);
 
   const payload = {
     email: email || 'customer@voteeq.online',
@@ -121,7 +124,7 @@ async function chargeMobileMoney({
     currency: 'GHS',
     reference: String(reference),
     mobile_money: {
-      phone: String(phone),
+      phone: String(normalizedPhone || phone),
       provider: String(provider)
     }
   };
