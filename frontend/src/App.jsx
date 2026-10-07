@@ -33,6 +33,15 @@ const MOBILE_MENU_PAGES = [
   { id: 'guidelines', label: 'Nominee Guidelines' },
 ];
 
+function getRoutePathFromLocation() {
+  const cleanPath = window.location.pathname.replace(/\/$/, '');
+  if (cleanPath === '/payment-status') return 'payment-status';
+  const rawHash = window.location.hash || '';
+  if (!rawHash.startsWith('#/')) return '';
+  const [path = ''] = rawHash.substring(2).split('?');
+  return path;
+}
+
 export default function App() {
   // Navigation & Page State
   const [categories, setCategories] = useState([]);
@@ -90,6 +99,7 @@ export default function App() {
   // Footer page navigation state
   const [currentPage, setCurrentPage] = useState(null);
   const [previousTab, setPreviousTab] = useState('vote');
+  const [routePath, setRoutePath] = useState(() => getRoutePathFromLocation());
 
   // Accent Color Theme state (Sophisticated antique gold default)
   const [accent, setAccent] = useState(() => getStoredAccent());
@@ -100,7 +110,8 @@ export default function App() {
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
 
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive;
+  const paymentStatusDuringMaintenance = maintenanceActive && routePath === 'payment-status';
+  const showMaintenance = maintenanceActive && !paymentStatusDuringMaintenance;
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
@@ -257,6 +268,17 @@ export default function App() {
   }, [showMaintenance]);
 
   useEffect(() => {
+    const syncRoutePath = () => setRoutePath(getRoutePathFromLocation());
+    window.addEventListener('hashchange', syncRoutePath);
+    window.addEventListener('popstate', syncRoutePath);
+    syncRoutePath();
+    return () => {
+      window.removeEventListener('hashchange', syncRoutePath);
+      window.removeEventListener('popstate', syncRoutePath);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     fetch(`${API_BASE_URL}/api/site-status`)
@@ -278,13 +300,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!showMaintenance) return undefined;
+    if (!maintenanceActive) return undefined;
 
     if (authNominee || authAdmin) {
       clearAllSessions();
-    } else {
+    } else if (showMaintenance) {
       resetPublicUrl();
     }
+
+    if (!showMaintenance) return undefined;
 
     const blockNavigation = () => {
       resetPublicUrl();
@@ -297,7 +321,7 @@ export default function App() {
       window.removeEventListener('hashchange', blockNavigation);
       window.removeEventListener('popstate', blockNavigation);
     };
-  }, [showMaintenance, authAdmin, authNominee]);
+  }, [maintenanceActive, showMaintenance, authAdmin, authNominee]);
 
   const changeAccent = (color) => {
     setAccent(color);
@@ -337,9 +361,9 @@ export default function App() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (showMaintenance) {
+      if (maintenanceActive) {
         setLoading(false);
-        resetPublicUrl();
+        if (showMaintenance) resetPublicUrl();
         return;
       }
 
@@ -360,7 +384,7 @@ export default function App() {
     }, 0);
 
     const pollIfVisible = () => {
-      if (showMaintenance) return;
+      if (maintenanceActive) return;
       if (!document.hidden && !authAdmin && !authNominee) {
         loadData();
       }
@@ -375,7 +399,7 @@ export default function App() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [authAdmin, authNominee, showMaintenance]);
+  }, [authAdmin, authNominee, maintenanceActive, showMaintenance]);
 
   // Sync state with URL Hash for proper routing/navigation
   useEffect(() => {
@@ -446,7 +470,7 @@ export default function App() {
   }, [authAdmin, authNominee, showMaintenance]);
 
   useEffect(() => {
-    if (showMaintenance) return undefined;
+    if (maintenanceActive) return undefined;
 
     let socket = null;
     let reconnectTimeout = null;
@@ -515,7 +539,7 @@ export default function App() {
         socket.close();
       }
     };
-  }, []);
+  }, [maintenanceActive]);
 
   // Toast notifier helper
   const triggerToast = (msg) => {
@@ -795,7 +819,15 @@ export default function App() {
       <div className="ambient-glow-1" />
       <div className="ambient-glow-2" />
 
-      {showMaintenance ? (
+      {paymentStatusDuringMaintenance ? (
+        <div style={{ paddingTop: '4rem' }}>
+          <PaymentStatusPage
+            onBack={() => navigateToTab(BRANDING.defaultTab)}
+            onGoToVote={() => navigateToTab('vote')}
+            onGoToTickets={() => navigateToTab('tickets')}
+          />
+        </div>
+      ) : showMaintenance ? (
         <MaintenancePage />
       ) : (
       <>
