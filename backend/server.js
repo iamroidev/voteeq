@@ -44,6 +44,7 @@ const { sendSMS } = require('./sms');
 
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
+const { isMaintenanceExemptPath } = require('./maintenance');
 const LEADERBOARD_LOCKED = true;
 const ELECTIONS_PAUSED = true;
 const {
@@ -319,12 +320,6 @@ app.use(bodyParser.json({
   }
 })); // support large canvas uploads
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-
-function isMaintenanceExemptPath(path) {
-  if (path === '/health') return true;
-  if (path === '/api/site-status') return true;
-  return false;
-}
 
 function sendMaintenanceResponse(res) {
   return res.status(503).json({
