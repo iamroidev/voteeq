@@ -33,6 +33,16 @@ const MOBILE_MENU_PAGES = [
   { id: 'guidelines', label: 'Nominee Guidelines' },
 ];
 
+function getCurrentRoutePath() {
+  const cleanPath = window.location.pathname.replace(/\/$/, '');
+  if (cleanPath === '/payment-status') return 'payment-status';
+
+  const rawHash = window.location.hash || `#/${BRANDING.defaultTab}`;
+  if (!rawHash.startsWith('#/')) return BRANDING.defaultTab;
+
+  return rawHash.substring(2).split('?')[0] || BRANDING.defaultTab;
+}
+
 export default function App() {
   // Navigation & Page State
   const [categories, setCategories] = useState([]);
@@ -99,8 +109,9 @@ export default function App() {
   const [wsTrigger, setWsTrigger] = useState(0);
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
 
+  const isPaymentStatusRoute = getCurrentRoutePath() === 'payment-status';
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive;
+  const showMaintenance = maintenanceActive && !isPaymentStatusRoute;
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
@@ -278,16 +289,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!showMaintenance) return undefined;
+    if (!maintenanceActive) return undefined;
 
     if (authNominee || authAdmin) {
       clearAllSessions();
-    } else {
+    } else if (!isPaymentStatusRoute) {
       resetPublicUrl();
     }
 
     const blockNavigation = () => {
-      resetPublicUrl();
+      if (getCurrentRoutePath() !== 'payment-status') {
+        resetPublicUrl();
+      }
     };
 
     window.addEventListener('hashchange', blockNavigation);
@@ -297,7 +310,7 @@ export default function App() {
       window.removeEventListener('hashchange', blockNavigation);
       window.removeEventListener('popstate', blockNavigation);
     };
-  }, [showMaintenance, authAdmin, authNominee]);
+  }, [maintenanceActive, isPaymentStatusRoute, authAdmin, authNominee]);
 
   const changeAccent = (color) => {
     setAccent(color);
@@ -337,9 +350,9 @@ export default function App() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (showMaintenance) {
+      if (maintenanceActive) {
         setLoading(false);
-        resetPublicUrl();
+        if (!isPaymentStatusRoute) resetPublicUrl();
         return;
       }
 
@@ -360,7 +373,7 @@ export default function App() {
     }, 0);
 
     const pollIfVisible = () => {
-      if (showMaintenance) return;
+      if (maintenanceActive) return;
       if (!document.hidden && !authAdmin && !authNominee) {
         loadData();
       }
@@ -375,7 +388,7 @@ export default function App() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [authAdmin, authNominee, showMaintenance]);
+  }, [authAdmin, authNominee, maintenanceActive, isPaymentStatusRoute]);
 
   // Sync state with URL Hash for proper routing/navigation
   useEffect(() => {
