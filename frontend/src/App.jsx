@@ -33,6 +33,11 @@ const MOBILE_MENU_PAGES = [
   { id: 'guidelines', label: 'Nominee Guidelines' },
 ];
 
+function isPaymentStatusLocation() {
+  const cleanPath = window.location.pathname.replace(/\/$/, '');
+  return cleanPath === '/payment-status' || (window.location.hash || '').startsWith('#/payment-status');
+}
+
 export default function App() {
   // Navigation & Page State
   const [categories, setCategories] = useState([]);
@@ -98,9 +103,10 @@ export default function App() {
   // WebSocket updates state trigger
   const [wsTrigger, setWsTrigger] = useState(0);
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
+  const [paymentStatusRouteActive, setPaymentStatusRouteActive] = useState(() => isPaymentStatusLocation());
 
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive;
+  const showMaintenance = maintenanceActive && !paymentStatusRouteActive;
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
@@ -278,15 +284,34 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!showMaintenance) return undefined;
+    const updatePaymentStatusRoute = () => {
+      setPaymentStatusRouteActive(isPaymentStatusLocation());
+    };
 
+    window.addEventListener('hashchange', updatePaymentStatusRoute);
+    window.addEventListener('popstate', updatePaymentStatusRoute);
+    updatePaymentStatusRoute();
+
+    return () => {
+      window.removeEventListener('hashchange', updatePaymentStatusRoute);
+      window.removeEventListener('popstate', updatePaymentStatusRoute);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!maintenanceActive) return;
     if (authNominee || authAdmin) {
       clearAllSessions();
-    } else {
-      resetPublicUrl();
     }
+  }, [maintenanceActive, authAdmin, authNominee]);
+
+  useEffect(() => {
+    if (!showMaintenance) return undefined;
+
+    resetPublicUrl();
 
     const blockNavigation = () => {
+      if (isPaymentStatusLocation()) return;
       resetPublicUrl();
     };
 
@@ -297,7 +322,7 @@ export default function App() {
       window.removeEventListener('hashchange', blockNavigation);
       window.removeEventListener('popstate', blockNavigation);
     };
-  }, [showMaintenance, authAdmin, authNominee]);
+  }, [showMaintenance]);
 
   const changeAccent = (color) => {
     setAccent(color);
