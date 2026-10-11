@@ -44,6 +44,8 @@ const { sendSMS } = require('./sms');
 
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
+const { isMaintenanceExemptPath } = require('./maintenance');
+const { buildRushPayCheckoutResponse } = require('./payment-status');
 const LEADERBOARD_LOCKED = true;
 const ELECTIONS_PAUSED = true;
 const {
@@ -320,12 +322,6 @@ app.use(bodyParser.json({
 })); // support large canvas uploads
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-function isMaintenanceExemptPath(path) {
-  if (path === '/health') return true;
-  if (path === '/api/site-status') return true;
-  return false;
-}
-
 function sendMaintenanceResponse(res) {
   return res.status(503).json({
     error: SITE_MAINTENANCE_MESSAGE,
@@ -334,7 +330,7 @@ function sendMaintenanceResponse(res) {
 }
 
 app.use((req, res, next) => {
-  if (!SITE_MAINTENANCE || isMaintenanceExemptPath(req.path)) {
+  if (!SITE_MAINTENANCE || isMaintenanceExemptPath(req.path, req.method)) {
     return next();
   }
   return sendMaintenanceResponse(res);
@@ -711,7 +707,6 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     const ticketPricing = calculatePaystackCheckout(event.ticket_price * qty);
     const totalPrice = ticketPricing.totalDue;
     const mockRef = generateReference('tix');
-    const statusToken = generateStatusToken(mockRef);
 
     const frontendBase = req.headers.origin || process.env.FRONTEND_URL || 'https://voteeq.online';
 
@@ -721,7 +716,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
         const rushpayData = await createRushPayPayment({
           amount: totalPrice,
           description: `Tickets for ${event.title} (${qty} x ticket)`,
-          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/#/payment-status`,
           metadata: {
             type: 'ticket',
             event_id,
@@ -752,13 +747,9 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
           `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, paymentReference]);
         });
 
-        return res.json({
-          paymentReference,
-          widgetSessionToken,
-          statusToken,
-          isMock: false,
+        return res.json(buildRushPayCheckoutResponse(paymentReference, widgetSessionToken, {
           pricing: ticketPricing,
-        });
+        }));
       } catch (rushpayErr) {
         console.error('RushPay ticket init error:', rushpayErr);
         return res.status(400).json({ error: rushpayErr.message || 'RushPay initialization failed' });
@@ -779,6 +770,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
         `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, mockRef]);
       });
 
+      const statusToken = generateStatusToken(mockRef);
       return res.json({
         reference: mockRef,
         statusToken,
@@ -1568,7 +1560,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
         const rushpayData = await createRushPayPayment({
           amount: pricing.totalDue,
           description: `Votes for ${nominee.name} (${parsedVoteCount} votes)`,
-          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/#/payment-status`,
           metadata: {
             type: 'vote',
             nomineeId,
@@ -1599,16 +1591,12 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
           pricing.totalDue,
         ]);
 
-        return res.json({
-          paymentReference,
-          widgetSessionToken,
-          statusToken,
-          isMock: false,
+        return res.json(buildRushPayCheckoutResponse(paymentReference, widgetSessionToken, {
           pricing,
           amount: pricing.totalDue,
           votes: parsedVoteCount,
           nominee: nominee.name,
-        });
+        }));
       } catch (rushpayErr) {
         console.error('RushPay vote init error:', rushpayErr);
         return res.status(400).json({ error: rushpayErr.message || 'RushPay initialization failed' });
@@ -1899,7 +1887,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
         const rushpayData = await createRushPayPayment({
           amount: formFee,
           description: `Nominee Application: ${name}`,
-          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/#/payment-status`,
           metadata: {
             type: 'nominee_form',
             name,
@@ -1930,12 +1918,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
           formFee
         ]);
 
-        return res.json({
-          paymentReference,
-          widgetSessionToken,
-          statusToken,
-          isMock: false,
-        });
+        return res.json(buildRushPayCheckoutResponse(paymentReference, widgetSessionToken));
       } catch (rushpayErr) {
         console.error('RushPay form init error:', rushpayErr);
         return res.status(400).json({ error: rushpayErr.message || 'Form purchase failed to initialize' });
