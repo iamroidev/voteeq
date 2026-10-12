@@ -33,6 +33,12 @@ const MOBILE_MENU_PAGES = [
   { id: 'guidelines', label: 'Nominee Guidelines' },
 ];
 
+function isPaymentStatusLocation() {
+  const cleanPath = window.location.pathname.replace(/\/$/, '');
+  const hashPath = (window.location.hash || '').split('?')[0];
+  return cleanPath === '/payment-status' || hashPath === '#/payment-status';
+}
+
 export default function App() {
   // Navigation & Page State
   const [categories, setCategories] = useState([]);
@@ -98,9 +104,11 @@ export default function App() {
   // WebSocket updates state trigger
   const [wsTrigger, setWsTrigger] = useState(0);
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
+  const [paymentStatusRoute, setPaymentStatusRoute] = useState(() => isPaymentStatusLocation());
 
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive;
+  const showMaintenance = maintenanceActive && !paymentStatusRoute;
+  const paymentStatusOnly = maintenanceActive && paymentStatusRoute;
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
@@ -257,6 +265,19 @@ export default function App() {
   }, [showMaintenance]);
 
   useEffect(() => {
+    const syncPaymentStatusRoute = () => {
+      setPaymentStatusRoute(isPaymentStatusLocation());
+    };
+
+    window.addEventListener('hashchange', syncPaymentStatusRoute);
+    window.addEventListener('popstate', syncPaymentStatusRoute);
+    return () => {
+      window.removeEventListener('hashchange', syncPaymentStatusRoute);
+      window.removeEventListener('popstate', syncPaymentStatusRoute);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     fetch(`${API_BASE_URL}/api/site-status`)
@@ -343,6 +364,11 @@ export default function App() {
         return;
       }
 
+      if (maintenanceActive) {
+        setLoading(false);
+        return;
+      }
+
       loadData();
 
       // Intercept direct navigation to /admin or /admin/
@@ -360,7 +386,7 @@ export default function App() {
     }, 0);
 
     const pollIfVisible = () => {
-      if (showMaintenance) return;
+      if (showMaintenance || maintenanceActive) return;
       if (!document.hidden && !authAdmin && !authNominee) {
         loadData();
       }
@@ -375,7 +401,7 @@ export default function App() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [authAdmin, authNominee, showMaintenance]);
+  }, [authAdmin, authNominee, showMaintenance, maintenanceActive]);
 
   // Sync state with URL Hash for proper routing/navigation
   useEffect(() => {
@@ -446,7 +472,7 @@ export default function App() {
   }, [authAdmin, authNominee, showMaintenance]);
 
   useEffect(() => {
-    if (showMaintenance) return undefined;
+    if (showMaintenance || maintenanceActive) return undefined;
 
     let socket = null;
     let reconnectTimeout = null;
@@ -788,6 +814,20 @@ export default function App() {
     adminLoginMode ||
     mobileMenuOpen
   );
+
+  if (paymentStatusOnly) {
+    return (
+      <div className="app-container" style={{ position: 'relative' }}>
+        <div className="ambient-glow-1" />
+        <div className="ambient-glow-2" />
+        <PaymentStatusPage
+          onBack={() => navigateToTab(BRANDING.defaultTab)}
+          onGoToVote={() => navigateToTab('vote')}
+          onGoToTickets={() => navigateToTab('tickets')}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={`app-container${authAdmin ? ' admin-mode' : ''}`} style={{ position: 'relative' }}>
