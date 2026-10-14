@@ -26,6 +26,13 @@ import { nomineePhotoSrc } from './utils/photoUrl';
 import { COLOR_THEMES, applyAccentTheme, getStoredAccent } from './utils/theme';
 
 const VOTE_GRID_PAGE_SIZE = 12;
+const PAYMENT_STATUS_ROUTE = 'payment-status';
+
+function getHashRoutePath() {
+  const rawHash = window.location.hash || '';
+  if (!rawHash.startsWith('#/')) return '';
+  return rawHash.substring(2).split('?')[0];
+}
 
 const MOBILE_MENU_PAGES = [
   { id: 'about', label: 'About' },
@@ -98,9 +105,11 @@ export default function App() {
   // WebSocket updates state trigger
   const [wsTrigger, setWsTrigger] = useState(0);
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
+  const [hashRoutePath, setHashRoutePath] = useState(() => getHashRoutePath());
 
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive;
+  const maintenancePaymentStatusAllowed = maintenanceActive && hashRoutePath === PAYMENT_STATUS_ROUTE;
+  const showMaintenance = maintenanceActive && !maintenancePaymentStatusAllowed;
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
@@ -257,6 +266,16 @@ export default function App() {
   }, [showMaintenance]);
 
   useEffect(() => {
+    const syncHashRoutePath = () => {
+      setHashRoutePath(getHashRoutePath());
+    };
+    window.addEventListener('hashchange', syncHashRoutePath);
+    return () => {
+      window.removeEventListener('hashchange', syncHashRoutePath);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     fetch(`${API_BASE_URL}/api/site-status`)
@@ -278,16 +297,20 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!showMaintenance) return undefined;
+    if (!maintenanceActive) return undefined;
 
     if (authNominee || authAdmin) {
       clearAllSessions();
-    } else {
+    } else if (!maintenancePaymentStatusAllowed) {
       resetPublicUrl();
     }
 
     const blockNavigation = () => {
-      resetPublicUrl();
+      const nextPath = getHashRoutePath();
+      setHashRoutePath(nextPath);
+      if (nextPath !== PAYMENT_STATUS_ROUTE) {
+        resetPublicUrl();
+      }
     };
 
     window.addEventListener('hashchange', blockNavigation);
@@ -297,7 +320,7 @@ export default function App() {
       window.removeEventListener('hashchange', blockNavigation);
       window.removeEventListener('popstate', blockNavigation);
     };
-  }, [showMaintenance, authAdmin, authNominee]);
+  }, [maintenanceActive, maintenancePaymentStatusAllowed, authAdmin, authNominee]);
 
   const changeAccent = (color) => {
     setAccent(color);
@@ -337,9 +360,11 @@ export default function App() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (showMaintenance) {
+      if (maintenanceActive) {
         setLoading(false);
-        resetPublicUrl();
+        if (!maintenancePaymentStatusAllowed) {
+          resetPublicUrl();
+        }
         return;
       }
 
@@ -360,7 +385,7 @@ export default function App() {
     }, 0);
 
     const pollIfVisible = () => {
-      if (showMaintenance) return;
+      if (maintenanceActive) return;
       if (!document.hidden && !authAdmin && !authNominee) {
         loadData();
       }
@@ -375,7 +400,7 @@ export default function App() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [authAdmin, authNominee, showMaintenance]);
+  }, [authAdmin, authNominee, maintenanceActive, maintenancePaymentStatusAllowed]);
 
   // Sync state with URL Hash for proper routing/navigation
   useEffect(() => {
