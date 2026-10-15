@@ -41,6 +41,7 @@ const { validateGhanaPhone, getMomoProvider } = require('./phone');
 const { createRushPayPayment, createRushPayWidgetSession, verifyRushPayWebhook, verifyRushPayTransaction } = require('./rushpay');
 const { initializePaystackTransaction, verifyPaystackTransaction, verifyPaystackWebhook, chargeMobileMoney } = require('./paystack');
 const { sendSMS } = require('./sms');
+const { isMaintenanceExemptRequest } = require('./maintenance');
 
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
@@ -320,12 +321,6 @@ app.use(bodyParser.json({
 })); // support large canvas uploads
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-function isMaintenanceExemptPath(path) {
-  if (path === '/health') return true;
-  if (path === '/api/site-status') return true;
-  return false;
-}
-
 function sendMaintenanceResponse(res) {
   return res.status(503).json({
     error: SITE_MAINTENANCE_MESSAGE,
@@ -334,7 +329,7 @@ function sendMaintenanceResponse(res) {
 }
 
 app.use((req, res, next) => {
-  if (!SITE_MAINTENANCE || isMaintenanceExemptPath(req.path)) {
+  if (!SITE_MAINTENANCE || isMaintenanceExemptRequest(req)) {
     return next();
   }
   return sendMaintenanceResponse(res);
@@ -711,7 +706,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
     const ticketPricing = calculatePaystackCheckout(event.ticket_price * qty);
     const totalPrice = ticketPricing.totalDue;
     const mockRef = generateReference('tix');
-    const statusToken = generateStatusToken(mockRef);
+    const mockStatusToken = generateStatusToken(mockRef);
 
     const frontendBase = req.headers.origin || process.env.FRONTEND_URL || 'https://voteeq.online';
 
@@ -721,7 +716,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
         const rushpayData = await createRushPayPayment({
           amount: totalPrice,
           description: `Tickets for ${event.title} (${qty} x ticket)`,
-          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/#/payment-status`,
           metadata: {
             type: 'ticket',
             event_id,
@@ -732,6 +727,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
         });
 
         const paymentReference = rushpayData.payment_reference;
+        const statusToken = generateStatusToken(paymentReference);
 
         // 2. Create widget session token
         const widgetSession = await createRushPayWidgetSession(paymentReference);
@@ -781,8 +777,8 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
 
       return res.json({
         reference: mockRef,
-        statusToken,
-        authorization_url: `/mock-paystack-checkout?reference=${mockRef}&statusToken=${statusToken}&amount=${totalPrice}&event=${encodeURIComponent(event.title)}&quantity=${qty}&isTicket=true`,
+        statusToken: mockStatusToken,
+        authorization_url: `/mock-paystack-checkout?reference=${mockRef}&statusToken=${mockStatusToken}&amount=${totalPrice}&event=${encodeURIComponent(event.title)}&quantity=${qty}&isTicket=true`,
         isMock: true,
         pricing: ticketPricing,
       });
@@ -1489,7 +1485,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
   const pricing = calculatePaystackCheckout(basePrice);
 
   const mockRef = generateReference('v');
-  const statusToken = generateStatusToken(mockRef);
+  const mockStatusToken = generateStatusToken(mockRef);
   const rushpayApiKey = process.env.RUSHPAY_API_KEY;
   const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
 
@@ -1522,7 +1518,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
           email: normalizedEmail,
           amountMinor: pricing.amountMinor,
           reference: mockRef,
-          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/#/payment-status?token=${mockStatusToken}`,
           metadata: {
             type: 'vote',
             nomineeId,
@@ -1548,7 +1544,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
 
         return res.json({
           reference: mockRef,
-          statusToken,
+          statusToken: mockStatusToken,
           authorization_url: paystackData.authorization_url,
           isMock: false,
           pricing,
@@ -1568,7 +1564,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
         const rushpayData = await createRushPayPayment({
           amount: pricing.totalDue,
           description: `Votes for ${nominee.name} (${parsedVoteCount} votes)`,
-          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/#/payment-status`,
           metadata: {
             type: 'vote',
             nomineeId,
@@ -1579,6 +1575,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
         });
 
         const paymentReference = rushpayData.payment_reference;
+        const statusToken = generateStatusToken(paymentReference);
 
         // 2. Create widget session token
         const widgetSession = await createRushPayWidgetSession(paymentReference);
@@ -1631,8 +1628,8 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
 
       res.json({
         reference: mockRef,
-        statusToken,
-        authorization_url: `/mock-paystack-checkout?reference=${mockRef}&statusToken=${statusToken}&amount=${pricing.totalDue}&nominee=${encodeURIComponent(nominee.name)}&votes=${parsedVoteCount}`,
+        statusToken: mockStatusToken,
+        authorization_url: `/mock-paystack-checkout?reference=${mockRef}&statusToken=${mockStatusToken}&amount=${pricing.totalDue}&nominee=${encodeURIComponent(nominee.name)}&votes=${parsedVoteCount}`,
         isMock: true,
         pricing,
         amount: pricing.totalDue,
@@ -1882,7 +1879,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
 
   const formFee = 10.00;
   const mockRef = generateReference('reg');
-  const statusToken = generateStatusToken(mockRef);
+  const mockStatusToken = generateStatusToken(mockRef);
   const rushpayApiKey = process.env.RUSHPAY_API_KEY;
 
   if (isProduction() && !rushpayApiKey) {
@@ -1899,7 +1896,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
         const rushpayData = await createRushPayPayment({
           amount: formFee,
           description: `Nominee Application: ${name}`,
-          callbackUrl: `${frontendBase}/#/payment-status?token=${statusToken}`,
+          callbackUrl: `${frontendBase}/#/payment-status`,
           metadata: {
             type: 'nominee_form',
             name,
@@ -1909,6 +1906,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
         });
 
         const paymentReference = rushpayData.payment_reference;
+        const statusToken = generateStatusToken(paymentReference);
 
         // 2. Create widget session token
         const widgetSession = await createRushPayWidgetSession(paymentReference);
@@ -1958,8 +1956,8 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
 
       res.json({
         reference: mockRef,
-        statusToken,
-        authorization_url: `/mock-paystack-checkout?reference=${mockRef}&statusToken=${statusToken}&amount=${formFee}&nominee=${encodeURIComponent('Nominee Form Purchase: ' + name)}&votes=1&isForm=true`,
+        statusToken: mockStatusToken,
+        authorization_url: `/mock-paystack-checkout?reference=${mockRef}&statusToken=${mockStatusToken}&amount=${formFee}&nominee=${encodeURIComponent('Nominee Form Purchase: ' + name)}&votes=1&isForm=true`,
         isMock: true
       });
     }
