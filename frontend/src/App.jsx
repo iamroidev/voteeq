@@ -33,6 +33,14 @@ const MOBILE_MENU_PAGES = [
   { id: 'guidelines', label: 'Nominee Guidelines' },
 ];
 
+function getCurrentHashPath() {
+  const rawHash = window.location.hash || `#/${BRANDING.defaultTab}`;
+  if (!rawHash.startsWith('#/')) {
+    return BRANDING.defaultTab;
+  }
+  return rawHash.substring(2).split('?')[0] || BRANDING.defaultTab;
+}
+
 export default function App() {
   // Navigation & Page State
   const [categories, setCategories] = useState([]);
@@ -99,8 +107,10 @@ export default function App() {
   const [wsTrigger, setWsTrigger] = useState(0);
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
 
+  const currentHashPath = getCurrentHashPath();
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive;
+  const paymentStatusRouteAllowed = currentHashPath === 'payment-status';
+  const showMaintenance = maintenanceActive && !paymentStatusRouteAllowed;
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
