@@ -99,8 +99,18 @@ export default function App() {
   const [wsTrigger, setWsTrigger] = useState(0);
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
 
+  const isPaymentStatusRoute = () => {
+    const cleanPath = window.location.pathname.replace(/\/$/, '');
+    if (cleanPath === '/payment-status') return true;
+    const rawHash = window.location.hash || '';
+    if (!rawHash.startsWith('#/')) return false;
+    const [path] = rawHash.substring(2).split('?');
+    return path === 'payment-status';
+  };
+
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive;
+  const allowPaymentStatusDuringMaintenance = maintenanceActive && isPaymentStatusRoute();
+  const showMaintenance = maintenanceActive && !allowPaymentStatusDuringMaintenance;
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
@@ -337,9 +347,11 @@ export default function App() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (showMaintenance) {
+      if (maintenanceActive) {
         setLoading(false);
-        resetPublicUrl();
+        if (!allowPaymentStatusDuringMaintenance) {
+          resetPublicUrl();
+        }
         return;
       }
 
@@ -360,7 +372,7 @@ export default function App() {
     }, 0);
 
     const pollIfVisible = () => {
-      if (showMaintenance) return;
+      if (maintenanceActive) return;
       if (!document.hidden && !authAdmin && !authNominee) {
         loadData();
       }
@@ -375,7 +387,7 @@ export default function App() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [authAdmin, authNominee, showMaintenance]);
+  }, [authAdmin, authNominee, maintenanceActive, allowPaymentStatusDuringMaintenance]);
 
   // Sync state with URL Hash for proper routing/navigation
   useEffect(() => {
@@ -446,7 +458,7 @@ export default function App() {
   }, [authAdmin, authNominee, showMaintenance]);
 
   useEffect(() => {
-    if (showMaintenance) return undefined;
+    if (maintenanceActive) return undefined;
 
     let socket = null;
     let reconnectTimeout = null;
@@ -515,7 +527,7 @@ export default function App() {
         socket.close();
       }
     };
-  }, []);
+  }, [maintenanceActive]);
 
   // Toast notifier helper
   const triggerToast = (msg) => {
@@ -797,6 +809,12 @@ export default function App() {
 
       {showMaintenance ? (
         <MaintenancePage />
+      ) : allowPaymentStatusDuringMaintenance ? (
+        <PaymentStatusPage
+          onBack={() => { window.location.href = '/'; }}
+          onGoToVote={() => { window.location.href = '/'; }}
+          onGoToTickets={() => { window.location.href = '/'; }}
+        />
       ) : (
       <>
 
@@ -1730,7 +1748,7 @@ export default function App() {
       )}
 
       {/* Web Vote Modal Checkout */}
-      {!showMaintenance && activeVoteNominee && (
+      {!maintenanceActive && activeVoteNominee && (
         <VoteModal
           nominee={activeVoteNominee}
           onClose={() => setActiveVoteNominee(null)}
@@ -1740,7 +1758,7 @@ export default function App() {
       )}
 
       {/* Secure Payment Checkout Screen */}
-      {!showMaintenance && checkoutData && (
+      {!maintenanceActive && checkoutData && (
         <MockPaystack
           checkoutData={checkoutData}
           onComplete={handlePaymentSuccess}
@@ -1749,7 +1767,7 @@ export default function App() {
       )}
 
       {/* RushPay Embedded Payment Widget */}
-      {!showMaintenance && rushPayData && (
+      {!maintenanceActive && rushPayData && (
         <RushPayWidgetModal
           paymentReference={rushPayData.paymentReference}
           widgetSessionToken={rushPayData.widgetSessionToken}
