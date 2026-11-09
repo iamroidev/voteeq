@@ -41,6 +41,7 @@ const { validateGhanaPhone, getMomoProvider } = require('./phone');
 const { createRushPayPayment, createRushPayWidgetSession, verifyRushPayWebhook, verifyRushPayTransaction } = require('./rushpay');
 const { initializePaystackTransaction, verifyPaystackTransaction, verifyPaystackWebhook, chargeMobileMoney } = require('./paystack');
 const { sendSMS } = require('./sms');
+const { isMaintenanceExemptRequest } = require('./maintenance');
 
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
 const { calculatePaystackCheckout } = require('./paystack-fees');
@@ -320,12 +321,6 @@ app.use(bodyParser.json({
 })); // support large canvas uploads
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-function isMaintenanceExemptPath(path) {
-  if (path === '/health') return true;
-  if (path === '/api/site-status') return true;
-  return false;
-}
-
 function sendMaintenanceResponse(res) {
   return res.status(503).json({
     error: SITE_MAINTENANCE_MESSAGE,
@@ -334,7 +329,7 @@ function sendMaintenanceResponse(res) {
 }
 
 app.use((req, res, next) => {
-  if (!SITE_MAINTENANCE || isMaintenanceExemptPath(req.path)) {
+  if (!SITE_MAINTENANCE || isMaintenanceExemptRequest(req.method, req.path)) {
     return next();
   }
   return sendMaintenanceResponse(res);
@@ -732,6 +727,7 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
         });
 
         const paymentReference = rushpayData.payment_reference;
+        const statusToken = generateStatusToken(paymentReference);
 
         // 2. Create widget session token
         const widgetSession = await createRushPayWidgetSession(paymentReference);
@@ -1579,6 +1575,7 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
         });
 
         const paymentReference = rushpayData.payment_reference;
+        const statusToken = generateStatusToken(paymentReference);
 
         // 2. Create widget session token
         const widgetSession = await createRushPayWidgetSession(paymentReference);
@@ -1909,6 +1906,7 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
         });
 
         const paymentReference = rushpayData.payment_reference;
+        const statusToken = generateStatusToken(paymentReference);
 
         // 2. Create widget session token
         const widgetSession = await createRushPayWidgetSession(paymentReference);

@@ -146,6 +146,12 @@ export default function App() {
     return `#/${path}${search.toString() ? `?${search.toString()}` : ''}`;
   };
 
+  const isPaymentStatusRoute = () => {
+    const cleanPath = window.location.pathname.replace(/\/$/, '');
+    if (cleanPath === '/payment-status') return true;
+    return parseHashRoute().path === 'payment-status';
+  };
+
   const navigateToTab = (tab) => {
     window.location.hash = buildPublicHash(tab, activeEventId ? { eventId: activeEventId } : {});
   };
@@ -282,12 +288,21 @@ export default function App() {
 
     if (authNominee || authAdmin) {
       clearAllSessions();
+    } else if (isPaymentStatusRoute()) {
+      setCurrentPage('payment-status');
+      setLoading(false);
     } else {
       resetPublicUrl();
     }
 
     const blockNavigation = () => {
-      resetPublicUrl();
+      if (isPaymentStatusRoute()) {
+        setCurrentPage('payment-status');
+        setLoading(false);
+      } else {
+        setCurrentPage(null);
+        resetPublicUrl();
+      }
     };
 
     window.addEventListener('hashchange', blockNavigation);
@@ -339,7 +354,11 @@ export default function App() {
     const timeoutId = setTimeout(() => {
       if (showMaintenance) {
         setLoading(false);
-        resetPublicUrl();
+        if (isPaymentStatusRoute()) {
+          setCurrentPage('payment-status');
+        } else {
+          resetPublicUrl();
+        }
         return;
       }
 
@@ -381,7 +400,12 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       if (showMaintenance) {
-        resetPublicUrl();
+        if (isPaymentStatusRoute()) {
+          setCurrentPage('payment-status');
+        } else {
+          setCurrentPage(null);
+          resetPublicUrl();
+        }
         return;
       }
 
@@ -795,7 +819,7 @@ export default function App() {
       <div className="ambient-glow-1" />
       <div className="ambient-glow-2" />
 
-      {showMaintenance ? (
+      {showMaintenance && !isPaymentStatusRoute() ? (
         <MaintenancePage />
       ) : (
       <>
