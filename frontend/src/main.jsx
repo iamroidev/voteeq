@@ -21,14 +21,12 @@ window.addEventListener('error', (event) => {
 
 // Paystack and other external redirects land on path URLs — map to hash routes before React boots
 const legacyPath = window.location.pathname.replace(/\/$/, '')
-if (!BRANDING.siteLocked) {
-  if (legacyPath === '/payment-status') {
-    const query = window.location.search || ''
-    window.location.replace(`${window.location.origin}/#/payment-status${query}`)
-  } else if (legacyPath === '/admin') {
-    window.location.replace(`${window.location.origin}/#/admin`)
-  }
-} else if (legacyPath === '/admin' || legacyPath === '/payment-status') {
+if (legacyPath === '/payment-status') {
+  const query = window.location.search || ''
+  window.location.replace(`${window.location.origin}/#/payment-status${query}`)
+} else if (!BRANDING.siteLocked && legacyPath === '/admin') {
+  window.location.replace(`${window.location.origin}/#/admin`)
+} else if (BRANDING.siteLocked && legacyPath === '/admin') {
   window.location.replace(`${window.location.origin}/`)
 }
 

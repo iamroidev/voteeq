@@ -33,6 +33,13 @@ const MOBILE_MENU_PAGES = [
   { id: 'guidelines', label: 'Nominee Guidelines' },
 ];
 
+function isPaymentStatusRoute() {
+  const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
+  if (cleanPath === '/payment-status') return true;
+  const hash = window.location.hash || '';
+  return hash === '#/payment-status' || hash.startsWith('#/payment-status?');
+}
+
 export default function App() {
   // Navigation & Page State
   const [categories, setCategories] = useState([]);
@@ -88,7 +95,7 @@ export default function App() {
   const [activeEventId, setActiveEventId] = useState(undefined);
 
   // Footer page navigation state
-  const [currentPage, setCurrentPage] = useState(null);
+  const [currentPage, setCurrentPage] = useState(() => (isPaymentStatusRoute() ? 'payment-status' : null));
   const [previousTab, setPreviousTab] = useState('vote');
 
   // Accent Color Theme state (Sophisticated antique gold default)
@@ -98,9 +105,11 @@ export default function App() {
   // WebSocket updates state trigger
   const [wsTrigger, setWsTrigger] = useState(0);
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
+  const [paymentStatusRouteActive, setPaymentStatusRouteActive] = useState(() => isPaymentStatusRoute());
 
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive;
+  const paymentStatusOnlyMode = maintenanceActive && paymentStatusRouteActive;
+  const showMaintenance = maintenanceActive && !paymentStatusRouteActive;
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
@@ -257,6 +266,19 @@ export default function App() {
   }, [showMaintenance]);
 
   useEffect(() => {
+    const syncPaymentStatusRoute = () => {
+      setPaymentStatusRouteActive(isPaymentStatusRoute());
+    };
+    window.addEventListener('hashchange', syncPaymentStatusRoute);
+    window.addEventListener('popstate', syncPaymentStatusRoute);
+    syncPaymentStatusRoute();
+    return () => {
+      window.removeEventListener('hashchange', syncPaymentStatusRoute);
+      window.removeEventListener('popstate', syncPaymentStatusRoute);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     fetch(`${API_BASE_URL}/api/site-status`)
@@ -337,6 +359,17 @@ export default function App() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
+      if (paymentStatusOnlyMode) {
+        setLoading(false);
+        const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
+        if (cleanPath === '/payment-status') {
+          const query = window.location.search;
+          window.location.hash = `#/payment-status${query}`;
+          window.history.replaceState({}, document.title, '/');
+        }
+        return;
+      }
+
       if (showMaintenance) {
         setLoading(false);
         resetPublicUrl();
@@ -360,7 +393,7 @@ export default function App() {
     }, 0);
 
     const pollIfVisible = () => {
-      if (showMaintenance) return;
+      if (showMaintenance || paymentStatusOnlyMode) return;
       if (!document.hidden && !authAdmin && !authNominee) {
         loadData();
       }
@@ -375,7 +408,7 @@ export default function App() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [authAdmin, authNominee, showMaintenance]);
+  }, [authAdmin, authNominee, showMaintenance, paymentStatusOnlyMode]);
 
   // Sync state with URL Hash for proper routing/navigation
   useEffect(() => {
@@ -446,7 +479,7 @@ export default function App() {
   }, [authAdmin, authNominee, showMaintenance]);
 
   useEffect(() => {
-    if (showMaintenance) return undefined;
+    if (showMaintenance || paymentStatusOnlyMode) return undefined;
 
     let socket = null;
     let reconnectTimeout = null;
@@ -515,7 +548,7 @@ export default function App() {
         socket.close();
       }
     };
-  }, []);
+  }, [showMaintenance, paymentStatusOnlyMode]);
 
   // Toast notifier helper
   const triggerToast = (msg) => {
@@ -801,7 +834,7 @@ export default function App() {
       <>
 
       {/* Main Luxury Navigation Bar — hidden while modals/drawers are open */}
-      {!isOverlayOpen && (
+      {!paymentStatusOnlyMode && !isOverlayOpen && (
       <nav className="luxury-nav">
         <a href={`#/${BRANDING.defaultTab}`} onClick={(e) => { e.preventDefault(); navigateToTab(BRANDING.defaultTab); }} className="luxury-logo">
           {BRANDING.platformName.toUpperCase()}
