@@ -25,6 +25,14 @@ import { readStoredAuth } from './utils/storage';
 import { nomineePhotoSrc } from './utils/photoUrl';
 import { COLOR_THEMES, applyAccentTheme, getStoredAccent } from './utils/theme';
 
+function isPaymentStatusLocation() {
+  const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
+  const hashPath = window.location.hash.startsWith('#/')
+    ? window.location.hash.substring(2).split('?')[0]
+    : '';
+  return cleanPath === '/payment-status' || hashPath === 'payment-status';
+}
+
 const VOTE_GRID_PAGE_SIZE = 12;
 
 const MOBILE_MENU_PAGES = [
@@ -100,7 +108,7 @@ export default function App() {
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
 
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive;
+  const showMaintenance = maintenanceActive && !isPaymentStatusLocation();
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';

@@ -40,6 +40,8 @@ const { prepareProfilePhotoFromDataUrl, buildProfilePhotoUrl } = require('./prof
 const { validateGhanaPhone, getMomoProvider } = require('./phone');
 const { createRushPayPayment, createRushPayWidgetSession, verifyRushPayWebhook, verifyRushPayTransaction } = require('./rushpay');
 const { initializePaystackTransaction, verifyPaystackTransaction, verifyPaystackWebhook, chargeMobileMoney } = require('./paystack');
+const { isMaintenanceExemptRequest } = require('./maintenance');
+const { buildRushPayCheckoutResponse } = require('./payment-status');
 const { sendSMS } = require('./sms');
 
 const { generateShareCardImage, resolveShareOgImage } = require('./share-card');
@@ -320,12 +322,6 @@ app.use(bodyParser.json({
 })); // support large canvas uploads
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-function isMaintenanceExemptPath(path) {
-  if (path === '/health') return true;
-  if (path === '/api/site-status') return true;
-  return false;
-}
-
 function sendMaintenanceResponse(res) {
   return res.status(503).json({
     error: SITE_MAINTENANCE_MESSAGE,
@@ -334,7 +330,7 @@ function sendMaintenanceResponse(res) {
 }
 
 app.use((req, res, next) => {
-  if (!SITE_MAINTENANCE || isMaintenanceExemptPath(req.path)) {
+  if (!SITE_MAINTENANCE || isMaintenanceExemptRequest(req)) {
     return next();
   }
   return sendMaintenanceResponse(res);
@@ -752,13 +748,11 @@ app.post('/api/tickets/purchase', rateLimiter(5 * 60 * 1000, 25), async (req, re
           `, [event_id, ticketCode, buyer_name, normalizedBuyerEmail, phoneCheck.normalized, qty, totalPrice, paymentReference]);
         });
 
-        return res.json({
+        return res.json(buildRushPayCheckoutResponse({
           paymentReference,
           widgetSessionToken,
-          statusToken,
-          isMock: false,
           pricing: ticketPricing,
-        });
+        }));
       } catch (rushpayErr) {
         console.error('RushPay ticket init error:', rushpayErr);
         return res.status(400).json({ error: rushpayErr.message || 'RushPay initialization failed' });
@@ -1599,16 +1593,14 @@ app.post('/api/payment/initialize', rateLimiter(1 * 60 * 1000, 10), async (req, 
           pricing.totalDue,
         ]);
 
-        return res.json({
+        return res.json(buildRushPayCheckoutResponse({
           paymentReference,
           widgetSessionToken,
-          statusToken,
-          isMock: false,
           pricing,
           amount: pricing.totalDue,
           votes: parsedVoteCount,
           nominee: nominee.name,
-        });
+        }));
       } catch (rushpayErr) {
         console.error('RushPay vote init error:', rushpayErr);
         return res.status(400).json({ error: rushpayErr.message || 'RushPay initialization failed' });
@@ -1930,12 +1922,10 @@ app.post('/api/nominees/apply', rateLimiter(15 * 60 * 1000, 5), async (req, res)
           formFee
         ]);
 
-        return res.json({
+        return res.json(buildRushPayCheckoutResponse({
           paymentReference,
           widgetSessionToken,
-          statusToken,
-          isMock: false,
-        });
+        }));
       } catch (rushpayErr) {
         console.error('RushPay form init error:', rushpayErr);
         return res.status(400).json({ error: rushpayErr.message || 'Form purchase failed to initialize' });
