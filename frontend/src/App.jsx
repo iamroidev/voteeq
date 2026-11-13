@@ -33,6 +33,11 @@ const MOBILE_MENU_PAGES = [
   { id: 'guidelines', label: 'Nominee Guidelines' },
 ];
 
+function isPaymentStatusRoute() {
+  const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
+  return cleanPath === '/payment-status' || window.location.hash.startsWith('#/payment-status');
+}
+
 export default function App() {
   // Navigation & Page State
   const [categories, setCategories] = useState([]);
@@ -90,6 +95,7 @@ export default function App() {
   // Footer page navigation state
   const [currentPage, setCurrentPage] = useState(null);
   const [previousTab, setPreviousTab] = useState('vote');
+  const [, setRouteVersion] = useState(0);
 
   // Accent Color Theme state (Sophisticated antique gold default)
   const [accent, setAccent] = useState(() => getStoredAccent());
@@ -100,7 +106,8 @@ export default function App() {
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
 
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive;
+  const paymentStatusDuringMaintenance = maintenanceActive && isPaymentStatusRoute();
+  const showMaintenance = maintenanceActive && !paymentStatusDuringMaintenance;
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
@@ -278,16 +285,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!showMaintenance) return undefined;
+    const refreshRoute = () => setRouteVersion((version) => version + 1);
+    window.addEventListener('hashchange', refreshRoute);
+    window.addEventListener('popstate', refreshRoute);
+    return () => {
+      window.removeEventListener('hashchange', refreshRoute);
+      window.removeEventListener('popstate', refreshRoute);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!maintenanceActive) return undefined;
 
     if (authNominee || authAdmin) {
       clearAllSessions();
     } else {
-      resetPublicUrl();
+      if (!paymentStatusDuringMaintenance) {
+        resetPublicUrl();
+      }
     }
 
     const blockNavigation = () => {
-      resetPublicUrl();
+      if (!isPaymentStatusRoute()) {
+        resetPublicUrl();
+      }
     };
 
     window.addEventListener('hashchange', blockNavigation);
@@ -297,7 +318,7 @@ export default function App() {
       window.removeEventListener('hashchange', blockNavigation);
       window.removeEventListener('popstate', blockNavigation);
     };
-  }, [showMaintenance, authAdmin, authNominee]);
+  }, [maintenanceActive, paymentStatusDuringMaintenance, authAdmin, authNominee]);
 
   const changeAccent = (color) => {
     setAccent(color);
@@ -337,9 +358,11 @@ export default function App() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (showMaintenance) {
+      if (maintenanceActive) {
         setLoading(false);
-        resetPublicUrl();
+        if (!paymentStatusDuringMaintenance) {
+          resetPublicUrl();
+        }
         return;
       }
 
@@ -360,7 +383,7 @@ export default function App() {
     }, 0);
 
     const pollIfVisible = () => {
-      if (showMaintenance) return;
+      if (maintenanceActive) return;
       if (!document.hidden && !authAdmin && !authNominee) {
         loadData();
       }
@@ -375,13 +398,15 @@ export default function App() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [authAdmin, authNominee, showMaintenance]);
+  }, [authAdmin, authNominee, maintenanceActive, paymentStatusDuringMaintenance]);
 
   // Sync state with URL Hash for proper routing/navigation
   useEffect(() => {
     const handleHashChange = () => {
-      if (showMaintenance) {
-        resetPublicUrl();
+      if (maintenanceActive) {
+        if (!isPaymentStatusRoute()) {
+          resetPublicUrl();
+        }
         return;
       }
 
@@ -443,10 +468,10 @@ export default function App() {
     return () => {
       window.removeEventListener('hashchange', handleHashChange);
     };
-  }, [authAdmin, authNominee, showMaintenance]);
+  }, [authAdmin, authNominee, maintenanceActive]);
 
   useEffect(() => {
-    if (showMaintenance) return undefined;
+    if (maintenanceActive) return undefined;
 
     let socket = null;
     let reconnectTimeout = null;
@@ -515,7 +540,7 @@ export default function App() {
         socket.close();
       }
     };
-  }, []);
+  }, [maintenanceActive]);
 
   // Toast notifier helper
   const triggerToast = (msg) => {
@@ -797,6 +822,8 @@ export default function App() {
 
       {showMaintenance ? (
         <MaintenancePage />
+      ) : paymentStatusDuringMaintenance ? (
+        <PaymentStatusPage onBack={handleBackToPortal} onGoToVote={() => navigateToTab('vote')} onGoToTickets={() => navigateToTab('tickets')} />
       ) : (
       <>
 
