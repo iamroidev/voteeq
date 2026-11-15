@@ -33,6 +33,16 @@ const MOBILE_MENU_PAGES = [
   { id: 'guidelines', label: 'Nominee Guidelines' },
 ];
 
+function isPaymentStatusLocation() {
+  if (typeof window === 'undefined') return false;
+
+  const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
+  if (cleanPath === '/payment-status') return true;
+
+  const hash = window.location.hash || '';
+  return hash === '#/payment-status' || hash.startsWith('#/payment-status?');
+}
+
 export default function App() {
   // Navigation & Page State
   const [categories, setCategories] = useState([]);
@@ -88,7 +98,9 @@ export default function App() {
   const [activeEventId, setActiveEventId] = useState(undefined);
 
   // Footer page navigation state
-  const [currentPage, setCurrentPage] = useState(null);
+  const [currentPage, setCurrentPage] = useState(() => (
+    isPaymentStatusLocation() ? 'payment-status' : null
+  ));
   const [previousTab, setPreviousTab] = useState('vote');
 
   // Accent Color Theme state (Sophisticated antique gold default)
@@ -98,9 +110,11 @@ export default function App() {
   // WebSocket updates state trigger
   const [wsTrigger, setWsTrigger] = useState(0);
   const [remoteMaintenance, setRemoteMaintenance] = useState(null);
+  const [paymentStatusRoute, setPaymentStatusRoute] = useState(() => isPaymentStatusLocation());
 
   const maintenanceActive = BRANDING.siteLocked || remoteMaintenance === true;
-  const showMaintenance = maintenanceActive;
+  const paymentStatusDuringMaintenance = maintenanceActive && paymentStatusRoute;
+  const showMaintenance = maintenanceActive && !paymentStatusRoute;
 
   const resetPublicUrl = () => {
     const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
@@ -278,16 +292,38 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!showMaintenance) return undefined;
+    const syncPaymentStatusRoute = () => {
+      setPaymentStatusRoute(isPaymentStatusLocation());
+    };
+
+    window.addEventListener('hashchange', syncPaymentStatusRoute);
+    window.addEventListener('popstate', syncPaymentStatusRoute);
+    syncPaymentStatusRoute();
+
+    return () => {
+      window.removeEventListener('hashchange', syncPaymentStatusRoute);
+      window.removeEventListener('popstate', syncPaymentStatusRoute);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!maintenanceActive) return undefined;
 
     if (authNominee || authAdmin) {
       clearAllSessions();
-    } else {
+      if (paymentStatusRoute) {
+        setCurrentPage('payment-status');
+      }
+    } else if (!paymentStatusRoute) {
       resetPublicUrl();
     }
 
     const blockNavigation = () => {
-      resetPublicUrl();
+      const onPaymentStatus = isPaymentStatusLocation();
+      setPaymentStatusRoute(onPaymentStatus);
+      if (!onPaymentStatus) {
+        resetPublicUrl();
+      }
     };
 
     window.addEventListener('hashchange', blockNavigation);
@@ -297,7 +333,7 @@ export default function App() {
       window.removeEventListener('hashchange', blockNavigation);
       window.removeEventListener('popstate', blockNavigation);
     };
-  }, [showMaintenance, authAdmin, authNominee]);
+  }, [maintenanceActive, paymentStatusRoute, authAdmin, authNominee]);
 
   const changeAccent = (color) => {
     setAccent(color);
@@ -337,9 +373,11 @@ export default function App() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (showMaintenance) {
+      if (maintenanceActive) {
         setLoading(false);
-        resetPublicUrl();
+        if (!paymentStatusRoute) {
+          resetPublicUrl();
+        }
         return;
       }
 
@@ -360,7 +398,7 @@ export default function App() {
     }, 0);
 
     const pollIfVisible = () => {
-      if (showMaintenance) return;
+      if (maintenanceActive) return;
       if (!document.hidden && !authAdmin && !authNominee) {
         loadData();
       }
@@ -375,12 +413,15 @@ export default function App() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [authAdmin, authNominee, showMaintenance]);
+  }, [authAdmin, authNominee, maintenanceActive, paymentStatusRoute]);
 
   // Sync state with URL Hash for proper routing/navigation
   useEffect(() => {
     const handleHashChange = () => {
-      if (showMaintenance) {
+      const onPaymentStatus = isPaymentStatusLocation();
+      setPaymentStatusRoute(onPaymentStatus);
+
+      if (maintenanceActive && !onPaymentStatus) {
         resetPublicUrl();
         return;
       }
@@ -443,10 +484,10 @@ export default function App() {
     return () => {
       window.removeEventListener('hashchange', handleHashChange);
     };
-  }, [authAdmin, authNominee, showMaintenance]);
+  }, [authAdmin, authNominee, maintenanceActive]);
 
   useEffect(() => {
-    if (showMaintenance) return undefined;
+    if (maintenanceActive) return undefined;
 
     let socket = null;
     let reconnectTimeout = null;
@@ -797,6 +838,12 @@ export default function App() {
 
       {showMaintenance ? (
         <MaintenancePage />
+      ) : paymentStatusDuringMaintenance ? (
+        <PaymentStatusPage
+          onBack={handleBackToPortal}
+          onGoToVote={() => navigateToTab('vote')}
+          onGoToTickets={() => navigateToTab('tickets')}
+        />
       ) : (
       <>
 
@@ -1350,7 +1397,7 @@ export default function App() {
       {/* ---------------------------------------------------- */}
 
       {/* Nominee Login Modal */}
-      {!showMaintenance && loginMode && (
+      {!maintenanceActive && loginMode && (
         <div className="luxury-modal-overlay" role="dialog" aria-modal="true">
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">
@@ -1416,7 +1463,7 @@ export default function App() {
       )}
 
       {/* Nominee Registration / PIN Activation Modal */}
-      {!showMaintenance && registerMode && (
+      {!maintenanceActive && registerMode && (
         <div className="luxury-modal-overlay" role="dialog" aria-modal="true">
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">
@@ -1522,7 +1569,7 @@ export default function App() {
       )}
 
       {/* Admin Login Modal */}
-      {!showMaintenance && adminLoginMode && (
+      {!maintenanceActive && adminLoginMode && (
         <div className="luxury-modal-overlay" role="dialog" aria-modal="true">
           <div className="luxury-modal" style={{ maxWidth: '420px' }}>
             <div className="luxury-modal-header">
@@ -1586,7 +1633,7 @@ export default function App() {
       )}
 
       {/* Mobile Control Center Drawer overlay */}
-      {!showMaintenance && mobileMenuOpen && (
+      {!maintenanceActive && mobileMenuOpen && (
         <div className="control-center-overlay" onClick={() => setMobileMenuOpen(false)} role="dialog" aria-modal="true">
           <div className="control-center-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="control-center-header">
@@ -1730,7 +1777,7 @@ export default function App() {
       )}
 
       {/* Web Vote Modal Checkout */}
-      {!showMaintenance && activeVoteNominee && (
+      {!maintenanceActive && activeVoteNominee && (
         <VoteModal
           nominee={activeVoteNominee}
           onClose={() => setActiveVoteNominee(null)}
@@ -1740,7 +1787,7 @@ export default function App() {
       )}
 
       {/* Secure Payment Checkout Screen */}
-      {!showMaintenance && checkoutData && (
+      {!maintenanceActive && checkoutData && (
         <MockPaystack
           checkoutData={checkoutData}
           onComplete={handlePaymentSuccess}
@@ -1749,7 +1796,7 @@ export default function App() {
       )}
 
       {/* RushPay Embedded Payment Widget */}
-      {!showMaintenance && rushPayData && (
+      {!maintenanceActive && rushPayData && (
         <RushPayWidgetModal
           paymentReference={rushPayData.paymentReference}
           widgetSessionToken={rushPayData.widgetSessionToken}
